@@ -1,0 +1,12 @@
+[     523ms] [LOG]  _    _            _              ____             
+| |  | |          | |            / __ \            
+| |__| | __ _  ___| | _____ _ __| |  | |_ __   ___ 
+|  __  |/ _` |/ __| |/ / _ \ '__| |  | | '_ \ / _ \
+| |  | | (_| | (__|   <  __/ |  | |__| | | | |  __/
+|_|  |_|\__,_|\___|_|\_\___|_|   \____/|_| |_|\___|
+
+Security issues? https://hackerone.com/security
+Something broken? https://support.hackerone.com/
+You want to fix it yourself? https://www.hackerone.com/careers @ https://hackerone.com/assets/static/vendor-2MDsyN52.js:25
+[     729ms] [ERROR] Access to fetch at 'https://errors.hackerone.net/api/26/envelope/?sentry_version=7&sentry_key=90427e0cbcf0487db664e4357d17761b&sentry_client=sentry.javascript.browser%2F8.55.2' from origin 'https://hackerone.com' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource. @ https://hackerone.com/reports/1087489:0
+[     729ms] [ERROR] Failed to load resource: net::ERR_FAILED @ https://errors.hackerone.net/api/26/envelope/?sentry_version=7&sentry_key=90427e0cbcf0487db664e4357d17761b&sentry_client=sentry.javascript.browser%2F8.55.2:0

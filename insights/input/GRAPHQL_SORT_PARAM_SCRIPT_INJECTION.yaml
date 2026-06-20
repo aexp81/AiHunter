@@ -1,0 +1,115 @@
+name: "GraphQL 排序参数差分测试——逐步证明后端脚本注入执行"
+id: "GRAPHQL_SORT_PARAM_SCRIPT_INJECTION"
+applicable: "blackbox"
+phase: "input"
+also_phases: ["chain"]
+tags: ["graphql", "elasticsearch", "painless", "script-injection", "differential-testing", "code-execution"]
+source: "https://hackerone.com/reports/3694007"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。报告者观察到 HackerOne GraphQL API 的 search 查询接受 sort_query 参数，
+  该参数为字符串形式的 JSON，用于指定排序规则。
+
+hypothesis: >
+  未叙述（仅结果）。推断：sort_query 可能直接传递给后端 Elasticsearch，
+  若未做白名单验证，可能允许注入 Elasticsearch DSL 中的 _script 排序
+  （支持 Painless 脚本语言），从而在 Elasticsearch 集群上执行任意代码。
+
+action_result: >
+  采用差分测试法（differential testing），通过 4 步逐步升级证据链：
+
+  Step 1 - 确认测试账户身份：普通 reporter 级别，无特殊权限。
+
+  Step 2 - 验证 JSON 解析：
+  发送 sort_query: "[{\"id\":\"asc\"}]" →
+  返回正常排序结果，证明 JSON 被解析并应用于 Elasticsearch sort。
+
+  Step 3 - 差分 Painless 编译证据：
+  对比以下不同 source 的响应，观察错误消息差异：
+
+  Payload 1: _script 缺少 script 字段 → 报错（field missing）
+  Payload 2: script.source = "" → 不同错误（empty source）
+  Payload 3: script.source = "\"unterminated" → 语法错误（证明 Painless 编译器被调用）
+  Payload 4: script.source = "1" → 成功编译（无错误）
+  Payload 5: script.source = "1+1" → 成功编译
+
+  结论：Painless 脚本确实被编译，不同 source 产生不同错误模式。
+
+  Step 4 - 差分 per-document 执行证据（关键）：
+  构造两个请求，对比返回文档顺序：
+
+  Request A: sort by constant "1" → 返回顺序 = 默认顺序（无排序效果）
+  Request B: sort by "doc[\"_seq_no\"].value"（读取每个文档的 _seq_no 字段）→
+  返回顺序 = 按 _seq_no 升序排序（与 A 完全不同）
+
+  结论：Request B 的排序效果只能通过 Painless 脚本在每个文档上执行并返回字段值来实现。
+  这是 per-document 脚本执行的直接证据。
+
+  报告者停止在最小 PoC，明确说明：
+  "I deliberately restricted testing to the minimum evidence required to establish execution.
+  I did not test sandbox boundaries...I did not read any user data belonging to any other account."
+  (原文)
+
+  修复：HackerOne 修复了 search 字段，不再允许任意 JSON 作为 sort_query。
+
+why_here_first: >
+  未叙述（仅结果）。推断优先级：GraphQL API 的复杂查询参数（尤其是涉及排序、过滤的 JSON 结构）
+  是高价值测试点——这类参数常直接传递给后端数据库（Elasticsearch/MongoDB/SQL），
+  若未做白名单验证，可能触发后端查询语言的高级特性（如脚本执行、聚合函数）。
+
+chaining: >
+  单独的参数注入若仅能影响排序结果，危害有限。
+  关键升级链：
+  GraphQL sort_query 参数注入 → Elasticsearch _script sort 语法 →
+  Painless 脚本执行（per-document）→ 可读取 Elasticsearch 集群中所有文档字段 →
+  通过 boolean oracle 攻击枚举跨租户敏感数据（程序名、严重性、CWE ID 等元数据）。
+
+  额外危害：恶意脚本（深循环、大内存分配）可造成共享 Elasticsearch 集群的 DoS。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对 GraphQL/REST API 中接受 JSON 结构的复杂参数（排序、过滤、聚合），
+  采用差分测试法（differential testing）逐步验证后端是否直接解析并执行用户可控的查询语法，
+  从编译错误 → 有效执行 → per-document 执行构建证据链，而不是一次性注入完整 payload。
+
+reasoning_chain:
+  - "问：目标 API 是否有复杂查询参数（排序 sort / 过滤 filter / 聚合 aggregate / 搜索 query）接受 JSON 字符串或嵌套对象？"
+  - "如果有：问：该参数是否支持后端数据库的高级语法（如 Elasticsearch DSL、MongoDB aggregation pipeline、SQL ORDER BY 子句）？"
+  - "黑盒差分测试 Step 1：发送基础有效 JSON（如 {\"field\":\"asc\"}）→ 观察是否正常排序（证明 JSON 被解析）。"
+  - "黑盒差分测试 Step 2：发送带脚本语法的 JSON（Elasticsearch: _script、MongoDB: $function、SQL: CASE WHEN）→ 观察响应：a) 报错（field missing/syntax error）→ 证明后端尝试解析 b) 正常返回 → 可能被过滤或静默失败。"
+  - "黑盒差分测试 Step 3：构造语法错误的脚本（如未闭合引号、无效函数名）→ 对比错误消息与 Step 2 的差异 → 若错误消息提到编译/解析失败，证明脚本被后端编译。"
+  - "黑盒差分测试 Step 4：构造两个脚本——constant 返回值（如 return 1）vs 读取文档字段（如 doc['field'].value）→ 对比返回文档顺序 → 若顺序不同，证明脚本在每个文档上执行。"
+  - "问：若证明 per-document 执行，能否通过 boolean oracle（脚本返回 true/false 影响排序）枚举敏感字段？（如：script 中判断 doc['username'].value == 'admin' 返回 1 否则返回 0）"
+  - "问：若后端是 Elasticsearch，能否通过 Painless 脚本访问：a) 跨索引文档 b) Java 类（反射）c) 文件系统 d) 网络？"
+  - "白盒审计：搜索代码中直接拼接用户输入到 Elasticsearch query DSL / MongoDB aggregation / SQL 的位置，检查是否有白名单验证。"
+
+vuln_root: >
+  开发者假设 GraphQL 参数的 JSON 结构由前端控制且"安全"，
+  未意识到复杂 JSON 参数（尤其是 sort/filter）会直接传递给后端数据库执行，
+  攻击者可注入数据库查询语言的高级特性（如脚本执行）。
+  核心失误：信任前端生成的 JSON 结构，未做服务端白名单验证。
+
+transferable_to:
+  - "任何使用 Elasticsearch 的 GraphQL/REST API，sort/filter 参数接受 JSON 且未白名单验证"
+  - "MongoDB aggregation pipeline API（$function / $accumulator 操作符可执行 JavaScript）"
+  - "SQL 数据库的动态 ORDER BY / WHERE 子句拼接（可注入 CASE WHEN 语句或函数调用）"
+  - "搜索引擎 API（Solr function queries、Lucene custom scoring scripts）"
+  - "ORM 框架的动态查询接口（如 ActiveRecord order()、Sequelize order()）未做参数净化"
+  - "任何将用户可控 JSON 直接反序列化为查询对象的后端（如 Spring Data REST、Prisma）"
+
+cases:
+  - url: "https://hackerone.com/reports/3694007"
+    title: "Authenticated Elasticsearch Painless script execution via Query.search.sort_query on hackerone.com/graphql"
+    platform: "HackerOne"
+    severity: "High"
+    bounty: "未披露具体金额"
+    note: >
+      触发点：GraphQL search 查询的 sort_query 参数（字符串形式 JSON）。
+      方法论：差分测试法（differential testing）4 步升级：
+      1) 验证 JSON 解析 2) 触发 Painless 编译错误 3) 有效脚本编译 4) per-document 执行证据。
+      关键：通过对比 constant return vs field read 的排序结果差异，证明脚本确实执行。
+      影响：可通过 boolean oracle 枚举跨租户元数据 + DoS（恶意脚本消耗 Elasticsearch 集群资源）。
+      修复：sort_query 参数增加白名单验证，禁止 _script 语法。

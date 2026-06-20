@@ -1,0 +1,96 @@
+name: "Cache proxy 按扩展名缓存 + web server 对追加路径返回动态页面内容——受害者敏感数据被公开缓存"
+id: "WEB_CACHE_DECEPTION_SENSITIVE_PAGE"
+applicable: "blackbox"
+phase: "logic"
+also_phases: ["auth"]
+tags: ["web-cache-deception", "cdn", "reverse-proxy", "cache", "extension", "path-confusion", "information-disclosure", "account-takeover"]
+source: "http://omergil.blogspot.co.il/2017/02/web-cache-deception-attack.html"
+
+# ——— L3 核心 ———
+
+observation: >
+  目标网站通过 CDN/reverse proxy/load balancer 提供服务，cache 配置为按文件扩展名缓存静态文件，
+  忽略动态页面的 HTTP 缓存头。同时，web server 对
+  `http://example.com/home.php/non-existent.css` 这类 URL 会返回 `home.php` 的内容
+  （而非 404），URL 保持原样。
+  (原文: "the URL remains http://www.example.com/home.php/non-existent.css.
+  The HTTP headers will be the same as for accessing http://www.example.com/home.php directly")
+
+hypothesis: >
+  若 cache proxy 认为 `.css` 文件应该缓存（忽略 no-cache 头），
+  而 web server 返回的实际内容是动态的敏感页面，
+  则受害者访问 `home.php/fake.css` 后，该页面的个人敏感数据会被缓存到 CDN 上，
+  攻击者可在无需认证的情况下直接读取缓存内容。
+  (原文: "The proxy identifies that the file has a css extension...
+  caches the imposter 'CSS' file (non-existent.css) inside")
+
+action_result: >
+  攻击成功：
+  1. 攻击者诱导受害者（已登录）访问 `https://www.paypal.com/myaccount/home/attack.css`
+  2. Web server 返回 myaccount/home 页面内容（含用户 PII）+ no-cache 头
+  3. CDN 看到 `.css` 扩展名，忽略 no-cache，将内容缓存 ~5 小时
+  4. 攻击者无需登录，直接访问同一 URL，从缓存获取受害者的姓名、余额、信用卡后4位等数据
+
+  PayPal 受影响：40+ 种静态文件扩展名可触发缓存（css, js, png, jpg, gif, txt 等），
+  3 个端点确认可利用，获得 $3,000 bounty。
+
+  其他应用中更严重：某些页面在 HTML 中包含 session ID 或密码安全答案 → 账户接管。
+
+why_here_first: >
+  灵感来自 RPO（Relative Path Overwrite）攻击：
+  "The web cache deception attack counts on similar browsers' and web servers' reactions,
+  in the same way as the RPO attack"
+  (原文引用了 http://www.thespanner.co.uk/2014/03/21/rpo/ 和 http://blog.innerht.ml/rpo-gadgets/)
+  RPO 和 Web Cache Deception 都利用了两个组件（proxy/browser vs web server）对同一 URL 路径
+  的解析差异——这是一类通用的架构缺陷模式。
+
+chaining: >
+  轻量版：受害者访问攻击者提供的链接 → 敏感 PII 被缓存 → 攻击者读取 → 数据泄露。
+
+  重量版（账户接管）：
+  若缓存页面 HTML 中包含 session ID → 攻击者获取受害者 session → 完全接管账户。
+  若包含密码恢复安全答案 → 攻击者重置受害者密码 → 账户接管。
+
+  引诱受害者访问恶意链接的方法：钓鱼邮件、Open Redirect、XSS、社交工程。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对使用 CDN/reverse proxy 的目标，在认证后的敏感页面 URL 末尾追加静态文件扩展名（如 /home.css、/profile.png），
+  诱导受害者访问后，以无认证状态访问同一 URL，检查是否能从 cache 读取受害者的敏感内容。
+
+reasoning_chain:
+  - "问：目标是否使用 CDN 或 reverse proxy（如 Cloudflare、Akamai、Nginx、Varnish、IIS ARR）？（响应头 Via、CF-Cache-Status、X-Cache 等暗示 cache 层存在）"
+  - "问：对认证后的动态页面 URL 追加 /fake.css，web server 是否仍返回该页面内容（而非 404/403）？"
+  - "黑盒测试：用受害者账户访问 https://target.com/account/home/test.css，检查响应内容是否包含敏感数据。"
+  - "问：对同一 URL，用另一个账户（或无认证）访问，是否从 cache 获取了受害者的内容？"
+  - "检查 Cache-Control 响应头：若 CDN 返回 X-Cache: HIT，则内容已被缓存。"
+  - "枚举可触发缓存的扩展名：.css, .js, .png, .jpg, .gif, .svg, .txt, .ico — 不同 CDN 配置缓存的扩展名可能不同。"
+  - "问：缓存的页面是否包含 session ID、CSRF token、安全答案等高价值数据？若有，评估是否可串链为账户接管。"
+  - "识别高价值目标页面：账户设置、个人信息页、支付信息、通知设置、历史记录等含 PII 的页面。"
+  - "问：页面 URL 结构是否支持追加路径？（某些路由框架如 Rails、Django 对多余路径返回 404，则不受影响）"
+  - "白盒审计：检查 CDN/proxy 缓存配置，查找 cache_content_type 或 cache_extension 规则是否忽略了 Cache-Control 头。"
+
+vuln_root: >
+  Cache proxy 假设带有静态文件扩展名（.css/.js/.png）的 URL 总是静态文件，
+  因此可安全地忽略 HTTP 缓存头按扩展名缓存；
+  但 web server 会把 `/page.php/fake.css` 解析为对 `/page.php` 的访问，
+  返回动态的个人敏感内容。两个组件对同一 URL 的语义理解不一致，导致私密内容被公开缓存。
+
+transferable_to:
+  - "任何通过 CDN/reverse proxy 部署且按扩展名缓存的 Web 应用（PayPal、Facebook、电商平台、银行等）"
+  - "Rails/PHP/Python web 应用（对多余路径返回内容而非 404）"
+  - "Nginx + Cloudflare/Fastly/Akamai：proxy 配置缓存 css/js 扩展名，忽略应用层缓存头"
+  - "IIS + Application Request Routing (ARR)：默认将 .php 路径视为目录时尤其易受影响"
+  - "任何页面 HTML 中包含 session token、security answer、CSRF token 的应用（可升级为账户接管）"
+
+cases:
+  - source: "http://omergil.blogspot.co.il/2017/02/web-cache-deception-attack.html"
+    author: "Omer Gil"
+    platform: "PayPal"
+    bounty: "$3,000"
+    note: >
+      受影响页面：/myaccount/home/、/myaccount/settings/notifications/、history.paypal.com/cgi-bin/webscr/
+      可泄露：姓名、余额、信用卡后4位、交易数据、护照号、邮箱、地址、电话。
+      40+ 种静态扩展名可触发。缓存有效期约 5 小时，每次访问延长。
+      在其他未披露应用中，session ID 或安全答案被缓存，导致完全账户接管。

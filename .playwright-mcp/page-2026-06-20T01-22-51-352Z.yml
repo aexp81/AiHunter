@@ -1,0 +1,439 @@
+- generic [ref=e5]:
+  - banner [ref=e6]:
+    - generic [ref=e7]:
+      - link "Skip to main content >" [ref=e9] [cursor=pointer]:
+        - /url: "#main-content"
+      - generic [ref=e10]:
+        - link "Go back to homepage" [ref=e12] [cursor=pointer]:
+          - /url: /
+          - img "Hackerone logo" [ref=e13]
+        - generic [ref=e15]:
+          - link [ref=e18] [cursor=pointer]:
+            - /url: /hacktivity/overview
+            - img [ref=e19]:
+              - img [ref=e21]
+          - link [ref=e25] [cursor=pointer]:
+            - /url: /opportunities/all
+            - img [ref=e26]:
+              - img [ref=e28]
+          - link [ref=e32] [cursor=pointer]:
+            - /url: /directory/programs
+            - img [ref=e33]:
+              - img [ref=e35]
+          - link [ref=e39] [cursor=pointer]:
+            - /url: /leaderboard
+            - img [ref=e40]:
+              - img [ref=e42]
+    - generic [ref=e44]:
+      - link "Learn more about HackerOne" [ref=e45] [cursor=pointer]:
+        - /url: https://www.hackerone.com
+        - img [ref=e47]:
+          - img [ref=e49]
+        - strong [ref=e51]: Learn more about HackerOne
+      - link "Log in" [ref=e53] [cursor=pointer]:
+        - /url: /users/sign_in
+        - generic [ref=e54]: Log in
+  - main [ref=e56]:
+    - generic [ref=e61]:
+      - generic [ref=e66]:
+        - generic [ref=e68]:
+          - generic [ref=e70]:
+            - 'button "upvote the report titled: \"Token leak in security challenge flow allows retrieving victim''s PayPal email and plain text password\"" [ref=e72] [cursor=pointer]':
+              - img [ref=e73]:
+                - img [ref=e75]
+              - generic [ref=e78]: "1407"
+            - generic [ref=e79]:
+              - generic [ref=e81]:
+                - link "#739737" [ref=e83] [cursor=pointer]:
+                  - /url: https://hackerone.com/reports/739737
+                - button "Copy report id" [ref=e85] [cursor=pointer]:
+                  - img "Copy report id" [ref=e86]:
+                    - img "Copy report id" [ref=e88]
+              - generic "Token leak in security challenge flow allows retrieving victim's PayPal email and plain text password" [ref=e93]
+          - list [ref=e95]:
+            - listitem [ref=e96]: "Share:"
+            - listitem [ref=e97]:
+              - link "" [ref=e98] [cursor=pointer]:
+                - /url: https://www.facebook.com/sharer.php?u=https%3A%2F%2Fhackerone.com%2Freports%2F739737
+                - generic [ref=e99]: 
+            - listitem [ref=e100]:
+              - link "" [ref=e101] [cursor=pointer]:
+                - /url: https://x.com/intent/post?url=https%3A%2F%2Fhackerone.com%2Freports%2F739737&text=Token%20leak%20in%20security%20challenge%20flow%20allows%20retrieving%20victim's%20PayPal%20email%20and%20plain%20text%20password
+                - generic [ref=e102]: 
+            - listitem [ref=e103]:
+              - link "" [ref=e104] [cursor=pointer]:
+                - /url: https://www.linkedin.com/shareArticle?url=https%3A%2F%2Fhackerone.com%2Freports%2F739737
+                - generic [ref=e105]: 
+            - listitem [ref=e106]:
+              - link "" [ref=e107] [cursor=pointer]:
+                - /url: https://news.ycombinator.com/submitlink?u=https%3A%2F%2Fhackerone.com%2Freports%2F739737&t=Token%20leak%20in%20security%20challenge%20flow%20allows%20retrieving%20victim's%20PayPal%20email%20and%20plain%20text%20password
+                - generic [ref=e108]: 
+            - listitem [ref=e109]:
+              - link "" [ref=e110] [cursor=pointer]:
+                - /url: https://www.reddit.com/submit?url=https%3A%2F%2Fhackerone.com%2Freports%2F739737&title=Token%20leak%20in%20security%20challenge%20flow%20allows%20retrieving%20victim's%20PayPal%20email%20and%20plain%20text%20password
+                - generic [ref=e111]: 
+            - listitem
+        - generic [ref=e112]:
+          - tablist [ref=e114]:
+            - tab "Report" [selected] [ref=e115] [cursor=pointer]:
+              - generic [ref=e116]: Report
+          - tabpanel "Report" [ref=e119]:
+            - generic [ref=e121]:
+              - generic [ref=e122]:
+                - strong [ref=e124]: Summary by PayPal
+                - generic [ref=e125]:
+                  - link [ref=e127] [cursor=pointer]:
+                    - /url: https://hackerone.com/paypal
+                    - img [ref=e131]
+                  - generic [ref=e136]:
+                    - generic [ref=e137]: A bug was identified whereby sensitive, unique tokens were being leaked in a JS file used by the recaptcha implementation. In certain cases, a user must solve a CAPTCHA challenge after authenticating. When the security challenge is completed, the authentication request is replayed to log in. The exposed tokens were used in the POST request to solve the CAPTCHA.
+                    - generic [ref=e138]: The researcher identified a method by which a user, starting from a malicious site, could expose the security challenge token to a third party via a cross-site script inclusion (XSSI) attack. If the user then followed a login link from the malicious site and entered their credentials, the malicious third party could complete the security challenge, triggering the authentication request replay and exposing the user's password. This exposure only occurred if a user followed a login link from a malicious site, similar to a phishing page.
+                    - generic [ref=e139]: PayPal implemented additional controls on the security challenge request to prevent token reuse, which resolved the issue, and no evidence of abuse was found.
+              - generic [ref=e140]:
+                - strong [ref=e142]: Summary by alexbirsan
+                - generic [ref=e143]:
+                  - link [ref=e145] [cursor=pointer]:
+                    - /url: /alexbirsan
+                    - img [ref=e149]
+                  - generic [ref=e154]:
+                    - generic [ref=e155]: "Full write-up available here:"
+                    - link "https://medium.com/@alex.birsan/the-bug-that-exposed-your-paypal-password-539fc2896da9?sk=aeba33c3c331c3f06d230296a21a41e7" [ref=e157] [cursor=pointer]:
+                      - /url: https://medium.com/@alex.birsan/the-bug-that-exposed-your-paypal-password-539fc2896da9?sk=aeba33c3c331c3f06d230296a21a41e7
+              - generic [ref=e158]: Timeline
+              - generic [ref=e159]:
+                - generic [ref=e160]:
+                  - link "alexbirsan" [ref=e163] [cursor=pointer]:
+                    - /url: /alexbirsan
+                    - generic [ref=e165]:
+                      - img "alexbirsan" [ref=e167]
+                      - img [ref=e169]:
+                        - img "Clear-verified badge" [ref=e170]
+                  - generic [ref=e176]:
+                    - generic [ref=e177]:
+                      - link "alexbirsan" [ref=e181] [cursor=pointer]:
+                        - /url: /alexbirsan
+                      - text: submitted a report to
+                      - link "PayPal" [ref=e182] [cursor=pointer]:
+                        - /url: https://hackerone.com/paypal
+                        - strong [ref=e183]: PayPal
+                      - text: .
+                    - generic [ref=e184]: November 18, 2019, 2:31pm UTC
+                - generic [ref=e190] [cursor=pointer]: Show older activities
+                - generic [ref=e196]:
+                  - generic [ref=e197]:
+                    - generic [ref=e198]:
+                      - link "h1_analyst_decimo" [ref=e202] [cursor=pointer]:
+                        - /url: /h1_analyst_decimo
+                      - generic [ref=e207]: HackerOne triage
+                    - generic [ref=e208]:
+                      - generic [ref=e209]:
+                        - text: changed the status to
+                        - strong [ref=e210]: Needs more info
+                      - text: .
+                  - generic "November 19, 2019, 1:51pm UTC" [ref=e213]:
+                    - link "November 19, 2019, 1:51pm UTC" [ref=e214] [cursor=pointer]:
+                      - /url: "#activity-6345845"
+                - generic [ref=e220]:
+                  - generic [ref=e221]:
+                    - link "alexbirsan" [ref=e226] [cursor=pointer]:
+                      - /url: /alexbirsan
+                    - generic [ref=e227]:
+                      - generic [ref=e228]:
+                        - text: changed the status to
+                        - strong [ref=e229]: New
+                      - text: .
+                  - generic "November 19, 2019, 2:11pm UTC" [ref=e232]:
+                    - link "November 19, 2019, 2:11pm UTC" [ref=e233] [cursor=pointer]:
+                      - /url: "#activity-6346026"
+                - generic [ref=e239]:
+                  - generic [ref=e240]:
+                    - link "alexbirsan" [ref=e245] [cursor=pointer]:
+                      - /url: /alexbirsan
+                    - generic [ref=e246]: posted a comment.
+                  - generic "November 19, 2019, 9:28pm UTC" [ref=e247]:
+                    - link "November 19, 2019, 9:28pm UTC" [ref=e248] [cursor=pointer]:
+                      - /url: "#activity-6350699"
+                - generic [ref=e254]:
+                  - generic [ref=e255]:
+                    - link "alexbirsan" [ref=e260] [cursor=pointer]:
+                      - /url: /alexbirsan
+                    - generic [ref=e261]: posted a comment.
+                  - generic "November 21, 2019, 11:25am UTC" [ref=e262]:
+                    - link "November 21, 2019, 11:25am UTC" [ref=e263] [cursor=pointer]:
+                      - /url: "#activity-6367631"
+                - generic [ref=e269]:
+                  - generic [ref=e270]:
+                    - link "beagle" [ref=e275] [cursor=pointer]:
+                      - /url: /beagle
+                    - generic [ref=e276]:
+                      - generic [ref=e277]:
+                        - text: updated the severity from
+                        - generic [ref=e280]:
+                          - text: high
+                          - generic [ref=e281]: (8.0)
+                        - text: to
+                        - generic [ref=e284]:
+                          - text: high
+                          - generic [ref=e285]: (8.1)
+                      - text: .
+                  - generic "December 6, 2019, 4:29pm UTC" [ref=e286]:
+                    - link "December 6, 2019, 4:29pm UTC" [ref=e287] [cursor=pointer]:
+                      - /url: "#activity-6485036"
+                - generic [ref=e293]:
+                  - generic [ref=e294]:
+                    - link "beagle" [ref=e299] [cursor=pointer]:
+                      - /url: /beagle
+                    - generic [ref=e300]:
+                      - generic [ref=e301]:
+                        - text: changed the status to
+                        - strong [ref=e302]: Triaged
+                      - text: .
+                  - generic "December 6, 2019, 4:30pm UTC" [ref=e305]:
+                    - link "December 6, 2019, 4:30pm UTC" [ref=e306] [cursor=pointer]:
+                      - /url: "#activity-6485040"
+                - generic [ref=e312]:
+                  - generic [ref=e313]:
+                    - link "space_pp" [ref=e318] [cursor=pointer]:
+                      - /url: /space_pp
+                    - generic [ref=e319]:
+                      - generic [ref=e320]:
+                        - text: updated the severity from
+                        - generic [ref=e323]:
+                          - text: high
+                          - generic [ref=e324]: (8.1)
+                        - text: to
+                        - generic [ref=e327]:
+                          - text: high
+                          - generic [ref=e328]: (8.0)
+                      - text: .
+                  - generic "December 6, 2019, 5:52pm UTC" [ref=e329]:
+                    - link "December 6, 2019, 5:52pm UTC" [ref=e330] [cursor=pointer]:
+                      - /url: "#activity-6485651"
+                - generic [ref=e336]:
+                  - generic [ref=e337]:
+                    - link "space_pp" [ref=e342] [cursor=pointer]:
+                      - /url: /space_pp
+                    - generic [ref=e343]: posted a comment.
+                  - generic "December 6, 2019, 6:03pm UTC" [ref=e344]:
+                    - link "December 6, 2019, 6:03pm UTC" [ref=e345] [cursor=pointer]:
+                      - /url: "#activity-6485711"
+                - generic [ref=e351]:
+                  - generic [ref=e352]:
+                    - link "alexbirsan" [ref=e357] [cursor=pointer]:
+                      - /url: /alexbirsan
+                    - generic [ref=e358]: posted a comment.
+                  - generic "December 6, 2019, 6:22pm UTC" [ref=e359]:
+                    - link "December 6, 2019, 6:22pm UTC" [ref=e360] [cursor=pointer]:
+                      - /url: "#activity-6486126"
+                - generic [ref=e366]:
+                  - generic [ref=e367]:
+                    - link "space_pp" [ref=e372] [cursor=pointer]:
+                      - /url: /space_pp
+                    - generic [ref=e373]: changed the weakness.
+                  - generic "December 9, 2019, 9:56pm UTC" [ref=e374]:
+                    - link "December 9, 2019, 9:56pm UTC" [ref=e375] [cursor=pointer]:
+                      - /url: "#activity-6507143"
+                - generic [ref=e381]:
+                  - generic [ref=e382]:
+                    - link "space_pp" [ref=e387] [cursor=pointer]:
+                      - /url: /space_pp
+                    - generic [ref=e388]: posted a comment.
+                  - generic "December 9, 2019, 10:10pm UTC" [ref=e389]:
+                    - link "December 9, 2019, 10:10pm UTC" [ref=e390] [cursor=pointer]:
+                      - /url: "#activity-6507222"
+                - generic [ref=e396]:
+                  - generic [ref=e397]:
+                    - link "space_pp" [ref=e402] [cursor=pointer]:
+                      - /url: /space_pp
+                    - generic [ref=e403]: posted a comment.
+                  - generic "December 9, 2019, 11:11pm UTC" [ref=e404]:
+                    - link "December 9, 2019, 11:11pm UTC" [ref=e405] [cursor=pointer]:
+                      - /url: "#activity-6508375"
+                - generic [ref=e411]:
+                  - generic [ref=e412]:
+                    - link "alexbirsan" [ref=e417] [cursor=pointer]:
+                      - /url: /alexbirsan
+                    - generic [ref=e418]: posted a comment.
+                  - generic "December 9, 2019, 11:28pm UTC" [ref=e419]:
+                    - link "December 9, 2019, 11:28pm UTC" [ref=e420] [cursor=pointer]:
+                      - /url: "#activity-6508439"
+                - generic [ref=e426]:
+                  - generic [ref=e427]:
+                    - link "alexbirsan" [ref=e432] [cursor=pointer]:
+                      - /url: /alexbirsan
+                    - generic [ref=e433]: posted a comment.
+                  - generic "December 10, 2019, 2pm UTC" [ref=e434]:
+                    - link "December 10, 2019, 2pm UTC" [ref=e435] [cursor=pointer]:
+                      - /url: "#activity-6512616"
+                - generic [ref=e441]:
+                  - generic [ref=e442]:
+                    - link "PayPal" [ref=e444] [cursor=pointer]:
+                      - /url: /paypal
+                    - generic [ref=e445]:
+                      - generic [ref=e446]:
+                        - text: rewarded
+                        - link "alexbirsan" [ref=e448] [cursor=pointer]:
+                          - /url: /alexbirsan
+                        - text: with a
+                        - generic [ref=e449]:
+                          - strong [ref=e450]:
+                            - generic [ref=e451]: $15,300
+                          - text: bounty
+                      - text: .
+                  - generic "December 10, 2019, 4:37pm UTC" [ref=e452]:
+                    - link "December 10, 2019, 4:37pm UTC" [ref=e453] [cursor=pointer]:
+                      - /url: "#activity-6514271"
+                - generic [ref=e459]:
+                  - generic [ref=e460]:
+                    - link "space_pp" [ref=e465] [cursor=pointer]:
+                      - /url: /space_pp
+                    - generic [ref=e466]: posted a comment.
+                  - generic "December 11, 2019, 7:52pm UTC" [ref=e467]:
+                    - link "December 11, 2019, 7:52pm UTC" [ref=e468] [cursor=pointer]:
+                      - /url: "#activity-6526237"
+                - generic [ref=e474]:
+                  - generic [ref=e475]:
+                    - link "alexbirsan" [ref=e480] [cursor=pointer]:
+                      - /url: /alexbirsan
+                    - generic [ref=e481]: posted a comment.
+                  - generic "December 11, 2019, 8:34pm UTC" [ref=e482]:
+                    - link "December 11, 2019, 8:34pm UTC" [ref=e483] [cursor=pointer]:
+                      - /url: "#activity-6526486"
+                - generic [ref=e489]:
+                  - generic [ref=e490]:
+                    - link "space_pp" [ref=e495] [cursor=pointer]:
+                      - /url: /space_pp
+                    - generic [ref=e496]:
+                      - generic [ref=e497]:
+                        - text: closed the report and changed the status to
+                        - strong [ref=e498]: Resolved
+                      - text: .
+                  - generic "December 11, 2019, 9:03pm UTC" [ref=e501]:
+                    - link "December 11, 2019, 9:03pm UTC" [ref=e502] [cursor=pointer]:
+                      - /url: "#activity-6526677"
+                - generic [ref=e508]:
+                  - generic [ref=e509]:
+                    - link "alexbirsan" [ref=e514] [cursor=pointer]:
+                      - /url: /alexbirsan
+                    - generic [ref=e515]: posted a comment.
+                  - generic "December 11, 2019, 10:24pm UTC" [ref=e516]:
+                    - link "December 11, 2019, 10:24pm UTC" [ref=e517] [cursor=pointer]:
+                      - /url: "#activity-6527085"
+                - generic [ref=e523]:
+                  - generic [ref=e524]:
+                    - link "space_pp" [ref=e529] [cursor=pointer]:
+                      - /url: /space_pp
+                    - generic [ref=e530]: posted a comment.
+                  - generic "December 12, 2019, 3:25pm UTC" [ref=e531]:
+                    - link "December 12, 2019, 3:25pm UTC" [ref=e532] [cursor=pointer]:
+                      - /url: "#activity-6533296"
+                - generic [ref=e538]:
+                  - generic [ref=e539]:
+                    - link "alexbirsan" [ref=e544] [cursor=pointer]:
+                      - /url: /alexbirsan
+                    - generic [ref=e545]: posted a comment.
+                  - generic "December 12, 2019, 3:30pm UTC" [ref=e546]:
+                    - link "December 12, 2019, 3:30pm UTC" [ref=e547] [cursor=pointer]:
+                      - /url: "#activity-6533338"
+                - generic [ref=e553]:
+                  - generic [ref=e554]:
+                    - link "space_pp" [ref=e559] [cursor=pointer]:
+                      - /url: /space_pp
+                    - generic [ref=e560]: posted a comment.
+                  - generic "December 16, 2019, 8:52pm UTC" [ref=e561]:
+                    - link "December 16, 2019, 8:52pm UTC" [ref=e562] [cursor=pointer]:
+                      - /url: "#activity-6562580"
+                - generic [ref=e568]:
+                  - generic [ref=e569]:
+                    - link "alexbirsan" [ref=e574] [cursor=pointer]:
+                      - /url: /alexbirsan
+                    - generic [ref=e575]: requested to disclose this report.
+                  - generic "January 8, 2020, 4:06pm UTC" [ref=e576]:
+                    - link "January 8, 2020, 4:06pm UTC" [ref=e577] [cursor=pointer]:
+                      - /url: "#activity-6718987"
+                - generic [ref=e583]:
+                  - generic [ref=e584]:
+                    - link "space_pp" [ref=e589] [cursor=pointer]:
+                      - /url: /space_pp
+                    - generic [ref=e590]: agreed to disclose this report.
+                  - generic "January 8, 2020, 4:31pm UTC" [ref=e591]:
+                    - link "January 8, 2020, 4:31pm UTC" [ref=e592] [cursor=pointer]:
+                      - /url: "#activity-6719164"
+                - generic [ref=e597]:
+                  - generic [ref=e599]: This report has been disclosed.
+                  - generic "January 8, 2020, 4:31pm UTC" [ref=e600]:
+                    - link "January 8, 2020, 4:31pm UTC" [ref=e601] [cursor=pointer]:
+                      - /url: "#activity-6719165"
+      - generic [ref=e604]:
+        - img [ref=e611] [cursor=pointer]
+        - generic [ref=e614]:
+          - generic [ref=e615]:
+            - generic [ref=e616]:
+              - generic [ref=e618]: Reported on
+              - generic [ref=e620]: November 18, 2019, 2:31pm UTC
+            - generic [ref=e621]:
+              - generic [ref=e623]: Reported by
+              - generic [ref=e628] [cursor=pointer]:
+                - img "alexbirsan" [ref=e632]
+                - link "alexbirsan" [ref=e633]:
+                  - /url: /alexbirsan
+                  - generic [ref=e634]: alexbirsan
+            - generic [ref=e635]:
+              - generic [ref=e637]: Reported to
+              - generic [ref=e641]:
+                - strong [ref=e642]:
+                  - link "PayPal" [ref=e643] [cursor=pointer]:
+                    - /url: /paypal
+                - generic [ref=e650] [cursor=pointer]: Managed
+            - generic [ref=e651]:
+              - generic [ref=e653]: Participants
+              - generic [ref=e655]:
+                - link "alexbirsan" [ref=e659] [cursor=pointer]:
+                  - /url: https://hackerone.com/alexbirsan
+                  - img "alexbirsan" [ref=e664]
+                - link "space_pp" [ref=e668] [cursor=pointer]:
+                  - /url: https://hackerone.com/space_pp
+                  - img "space_pp" [ref=e673]
+                - link "beagle" [ref=e677] [cursor=pointer]:
+                  - /url: https://hackerone.com/beagle
+                  - img "beagle" [ref=e682]
+                - link "h1_analyst_decimo" [ref=e686] [cursor=pointer]:
+                  - /url: https://hackerone.com/h1_analyst_decimo
+                  - img "h1_analyst_decimo" [ref=e691]
+            - generic [ref=e692] [cursor=pointer]:
+              - generic [ref=e694]: Report Id
+              - generic [ref=e696]:
+                - link "#739737" [ref=e697]:
+                  - /url: /reports/739737
+                - generic [ref=e699]: Resolved
+            - generic [ref=e701]:
+              - generic [ref=e703]: Severity
+              - generic [ref=e717]:
+                - text: High
+                - generic [ref=e718]: (8.0)
+            - separator [ref=e719]
+          - generic [ref=e720]:
+            - generic [ref=e721]:
+              - generic [ref=e723]: Disclosed
+              - generic [ref=e725]: January 8, 2020, 4:31pm UTC
+            - generic [ref=e727]:
+              - generic [ref=e729]: Weakness
+              - generic [ref=e731]: Missing Authentication for Critical Function
+            - generic [ref=e732]:
+              - generic [ref=e734]: CVE ID
+              - generic [ref=e736]: None
+            - separator [ref=e737]
+            - generic [ref=e738]:
+              - generic [ref=e740]: Bounty
+              - generic [ref=e743]: $15,300
+            - generic [ref=e744]:
+              - generic [ref=e746]: Retest
+              - generic [ref=e748]: None
+            - generic [ref=e749]:
+              - generic [ref=e751]: Total reward
+              - generic [ref=e753]: None
+            - separator [ref=e754]
+            - generic [ref=e755]:
+              - generic [ref=e757]: Account details
+              - generic [ref=e760] [cursor=pointer]: None
+            - separator [ref=e761]

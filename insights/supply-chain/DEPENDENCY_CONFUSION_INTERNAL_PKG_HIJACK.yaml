@@ -1,0 +1,119 @@
+name: "公开代码中泄露的内部包名在公共 registry 未注册——注册同名包劫持依赖安装触发 RCE"
+id: "DEPENDENCY_CONFUSION_INTERNAL_PKG_HIJACK"
+applicable: "blackbox"
+phase: "supply-chain"
+also_phases: ["recon"]
+tags: ["dependency-confusion", "supply-chain", "npm", "pypi", "rubygems", "package-hijack", "rce", "ci-cd", "dns-exfiltration", "preinstall-script"]
+source: "https://medium.com/@alex.birsan/dependency-confusion-4a5d60fec610"
+
+# ——— L3 核心 ———
+
+observation: >
+  Justin Gardner 在 GitHub 上发现 PayPal 内部 Node.js 代码的 package.json，
+  其中混合了公共包和内部包名，内部包名在公共 npm registry 上不存在。
+  (原文: "in its package.json file, appeared to contain a mix of public and private dependencies —
+  public packages from npm, as well as non-public package names, most likely hosted internally by PayPal.
+  These names did not exist on the public npm registry at the time.")
+
+hypothesis: >
+  若在 npm 上注册与内部包同名的恶意包，目标公司的构建系统可能优先安装公共 registry 的版本
+  （因为包管理器在同时配置内外部源时，会按版本号选择最高版本）。
+  (原文: "What happens if malicious code is uploaded to npm under these names?
+  Is it possible that some of PayPal's internal projects will start defaulting
+  to the new public packages instead of the private ones?")
+
+action_result: >
+  成功执行：
+  1. 在 npm/PyPI/RubyGems 注册内部包同名包，preinstall 脚本执行时通过 DNS exfiltration 发送
+     hostname、username、路径、外部 IP 到攻击者控制的 authoritative nameserver
+  2. 结果：35+ 大型组织受影响，从开发者个人机器到 CI/CD 系统均触发回调
+  3. PayPal、Apple、Shopify、Microsoft（Office 365）等均在数小时至数天内触发
+
+  关键技术选择：
+  - DNS exfiltration（非 HTTP）→ 绕过企业防火墙出站限制
+  - preinstall 脚本（npm）/ setup.py 中的 install_requires（Python）→ 安装时自动执行
+  - 版本号设为极大值（如 9000.0.0）→ 确保公共包优先于内部包
+
+  (原文: "squatting valid internal package names was a nearly sure-fire method to get into
+  the networks of some of the biggest tech companies out there")
+
+why_here_first: >
+  两个触发点：
+  1. 对包管理器盲信的长期直觉：
+     (原文: "Ever since I started learning how to code, I have been fascinated by the
+     level of trust we put in a simple command like this one: pip install package_name")
+  2. Justin Gardner 发现的 PayPal 源码泄露：内部包名在公共 registry 未注册这一具体 gap
+     (原文: "Justin Gardner (@Rhynorater) shared an interesting bit of Node.js source code
+     found on GitHub...These names did not exist on the public npm registry at the time.")
+
+chaining: >
+  单独的 Dependency Confusion 本身即可触发 RCE（preinstall 脚本在安装时执行）。
+  典型触发场景：
+  1. CI/CD 构建服务器执行 npm install → 安装恶意包 → 执行代码
+  2. 开发者本地 npm install → 攻击者可渗透内网
+  3. 云端构建系统（Lambda、Cloud Build）→ 可能访问云 IAM token
+
+  进一步串链（如已获取 CI/CD 访问）：
+  → 读取 CI/CD 环境变量中的 secrets（API key、AWS credentials）
+  → 污染构建产物（backdoor 注入）
+  → 横向移动到内部网络
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在目标公司的公开代码（GitHub、JS 文件、构建产物）中搜索内部包名，
+  检查这些包名是否在公共 registry（npm/PyPI/RubyGems）中未被注册，
+  若未注册则注册同名包（含 preinstall/callback 脚本）测试是否触发。
+
+reasoning_chain:
+  - "问：目标公司的 GitHub 仓库中是否有 package.json、requirements.txt、Gemfile 包含非常规包名（带公司前缀/内部命名风格的包）？"
+  - "搜索策略1（GitHub）：搜索 org:target-company package.json，查找 @company/ 前缀或明显内部命名的依赖。"
+  - "搜索策略2（JS 文件）：扫描目标域名下的 JS 文件，搜索 require(、import 语句，提取包名——构建过程常将 package.json 嵌入 bundle。"
+  - "工具：使用 @streaak 风格的大规模 JS 文件扫描（waybackurls + httpx 获取 JS URLs，grep 提取 require/import）。"
+  - "搜索策略3（公开 registry）：检查目标是否意外将内部包发布到 PyPI/npm（可搜索公司邮箱或名称的 publisher）。"
+  - "验证：对发现的每个候选包名，在 npm/PyPI/RubyGems 上检查是否已注册（npm info package-name、pip index versions package-name）。"
+  - "问：发现的未注册包名是否有明确的 scope/前缀（如 @company-name/xxx）？npm 的 scoped packages 注册需要相应 org，可能需要额外步骤。"
+  - "注册测试包：创建包含 preinstall/postinstall 脚本的包，脚本仅发送 DNS query 到自控 nameserver（不执行任何破坏性操作）。"
+  - "问：公司使用的包管理器配置是否使用 --extra-index-url（Python）、虚拟 registry（JFrog Artifactory）？若是，版本号策略尤为关键。"
+  - "DNS callback 监控：使用 Burp Collaborator、interactsh 或自建 authoritative DNS server 记录回调，验证哪些机器触发。"
+  - "问：触发回调的 IP 是否属于目标公司的 IP 范围？（WHOIS 查询、ASN 查询验证）"
+  - "写报告时：区分受影响环境（生产服务器 vs 开发者机器 vs CI/CD），评估实际影响范围。"
+
+vuln_root: >
+  包管理器假设：若同一包名同时存在于内部 registry 和公共 registry，
+  开发者配置的"内部优先"策略是可靠的；
+  实际上 pip --extra-index-url、JFrog Artifactory 等工具默认按版本号优先而非来源优先，
+  导致攻击者只需在公共 registry 上传高版本号同名包即可劫持依赖安装。
+
+transferable_to:
+  - "任何混合使用内部和公共包 registry 的公司（npm+内部 npm proxy、PyPI+JFrog、RubyGems+Gemfury）"
+  - "使用 JFrog Artifactory 虚拟仓库的企业（默认版本号优先算法，无法配置来源优先）"
+  - "Python 项目使用 --extra-index-url 参数的 CI/CD pipeline"
+  - "具有公开 GitHub 仓库的大型科技公司（Apple、PayPal、Shopify、Microsoft、Netflix、Uber 等）"
+  - "使用 monorepo 且 package.json 暴露在公开构建产物中的公司"
+  - "cloud-native 构建系统（AWS CodeBuild、GCP Cloud Build、GitHub Actions）：可访问云 IAM credentials"
+
+cases:
+  - source: "https://medium.com/@alex.birsan/dependency-confusion-4a5d60fec610"
+    author: "Alex Birsan（协作：Justin Gardner @Rhynorater、@streaak）"
+    platforms: "Apple, PayPal, Shopify, Microsoft, Netflix, Yelp, Uber, 35+ 组织"
+    bounties: "Apple $30k, PayPal $30k, Shopify $30k, Microsoft $40k, 总计 $130k+"
+    note: >
+      内部包名发现来源：GitHub 源码（最直接）、JS 文件嵌入（最广泛：Apple/Yelp/Tesla）、
+      误发布到公共 registry 的内部包。
+      触发场景：数小时内 CI/CD 自动安装（Shopify）、多台内部服务器（Apple ID 系统）、
+      Office 365 云端构建（Microsoft）。
+      DNS exfiltration 关键：绕过企业防火墙出站限制（HTTP 常被拦截，DNS 很少被阻止）。
+      35+ 组织，75% 来自 npm，RubyGems 命中率高（8 发现中 4 受影响）。
+      JFrog Artifactory 的"version-priority"设计缺陷至今仍是业界难题（2021年时无修复 ETA）。
+
+  - source: "https://medium.com/@p0lyxena/2-500-bug-bounty-write-up-remote-code-execution-rce-via-unclaimed-node-package-6b9108d10643"
+    author: "Fuleki Ioan"
+    platform: "匿名 Bug Bounty 程序"
+    bounty: "$2,500"
+    note: >
+      触发点：检查目标 JS 文件，发现 /node_modules/@confidential-package-name，
+      对应包在公共 npm registry 未注册。
+      使用 preinstall curl 脚本发送 hostname+whoami 到 OAST 域名，
+      数小时内收到生产和非生产环境 150+ HTTP/DNS 回调。
+      验证：WHOIS 查询确认 IP 归属目标公司。属于 Alex Birsan 原始研究方法的直接应用。

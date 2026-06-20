@@ -1,0 +1,85 @@
+- generic [ref=e5]:
+  - banner [ref=e6]:
+    - generic [ref=e7]:
+      - link "Skip to main content >" [ref=e9] [cursor=pointer]:
+        - /url: "#main-content"
+      - generic [ref=e10]:
+        - link "Go back to homepage" [ref=e12] [cursor=pointer]:
+          - /url: /
+          - img "Hackerone logo" [ref=e13]
+        - generic [ref=e15]:
+          - link [ref=e18] [cursor=pointer]:
+            - /url: /hacktivity/overview
+            - img [ref=e19]:
+              - img [ref=e21]
+          - link [ref=e25] [cursor=pointer]:
+            - /url: /opportunities/all
+            - img [ref=e26]:
+              - img [ref=e28]
+          - link [ref=e32] [cursor=pointer]:
+            - /url: /directory/programs
+            - img [ref=e33]:
+              - img [ref=e35]
+          - link [ref=e39] [cursor=pointer]:
+            - /url: /leaderboard
+            - img [ref=e40]:
+              - img [ref=e42]
+    - generic [ref=e44]:
+      - link "Learn more about HackerOne" [ref=e45] [cursor=pointer]:
+        - /url: https://www.hackerone.com
+        - img [ref=e47]:
+          - img [ref=e49]
+        - strong [ref=e51]: Learn more about HackerOne
+      - link "Log in" [ref=e53] [cursor=pointer]:
+        - /url: /users/sign_in
+        - generic [ref=e54]: Log in
+  - main [ref=e56]:
+    - generic [ref=e61]:
+      - status [ref=e68]
+      - generic [ref=e71]:
+        - img [ref=e78] [cursor=pointer]
+        - generic [ref=e81]:
+          - generic [ref=e82]:
+            - generic [ref=e83]:
+              - generic [ref=e85]: Reported on
+              - generic [ref=e89]: ‌
+            - generic [ref=e90]:
+              - generic [ref=e92]: Reported by
+              - generic [ref=e95]:
+                - generic [ref=e98]: ‌
+                - generic [ref=e101]: ‌
+            - generic [ref=e102]:
+              - generic [ref=e104]: Reported to
+              - generic [ref=e108]: ‌
+            - generic [ref=e109]:
+              - generic [ref=e111]: Participants
+              - generic [ref=e115]: ‌
+            - generic [ref=e117]:
+              - generic [ref=e119]: Severity
+              - generic [ref=e123]: ‌
+            - generic [ref=e124]:
+              - generic [ref=e126]: Visibility
+              - generic [ref=e132] [cursor=pointer]: ‌
+            - separator [ref=e133]
+          - generic [ref=e134]:
+            - generic [ref=e136]:
+              - generic [ref=e138]: Weakness
+              - generic [ref=e142]: ‌
+            - generic [ref=e143]:
+              - generic [ref=e145]: CVE ID
+              - generic [ref=e149]: ‌
+            - separator [ref=e150]
+            - generic [ref=e151]:
+              - generic [ref=e153]: Bounty
+              - generic [ref=e157]: ‌
+            - generic [ref=e158]:
+              - generic [ref=e160]: Retest
+              - generic [ref=e164]: ‌
+            - generic [ref=e165]:
+              - generic [ref=e167]: Total reward
+              - generic [ref=e171]: ‌
+            - separator [ref=e172]
+            - generic [ref=e173]:
+              - generic [ref=e175]: Account details
+              - generic [ref=e181] [cursor=pointer]: ‌
+            - separator [ref=e182]

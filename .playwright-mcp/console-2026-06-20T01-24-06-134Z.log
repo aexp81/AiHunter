@@ -1,0 +1,2 @@
+[    2920ms] [LOG] {id: 1781918649053-8685787417016, name: Next.js-hydration, startTime: 2898.2000000029802, value: 17.100000008940697, label: custom} @ https://ine.com/_next/static/chunks/pages/_app-d2d8a2dfd6c0e72a.js:0
+[    3330ms] [LOG] {id: 1781918649463-7324876996470, name: Next.js-hydration, startTime: 394.5, value: 12.099999994039536, label: custom} @ https://ine.com/_next/static/chunks/pages/_app-d2d8a2dfd6c0e72a.js:0

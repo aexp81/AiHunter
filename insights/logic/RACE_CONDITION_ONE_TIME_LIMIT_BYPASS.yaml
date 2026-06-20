@@ -1,0 +1,116 @@
+name: "一次性限制操作（优惠码、点赞、评价）通过并发请求绕过限制——重复利用资源"
+id: "RACE_CONDITION_ONE_TIME_LIMIT_BYPASS"
+applicable: "blackbox"
+phase: "logic"
+tags: ["race-condition", "concurrent-request", "promo-code", "coupon", "review", "one-time-limit", "financial-impact"]
+source: "http://josipfranjkovic.blogspot.com/2015/04/race-conditions-on-facebook.html"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。推断：作者在研究 race condition 漏洞时，
+  识别出 Facebook 页面评价系统（每用户限评一次）、DigitalOcean promo code 兑换（每码限用一次）
+  这类**一次性限制**操作作为 race condition 的理想目标。
+  (原文: "Lately I have been looking into race condition bugs affecting websites/web-applications")
+
+hypothesis: >
+  未叙述（仅结果）。推断：若服务器端对"一次性限制"的检查（check）和执行（execute）不是原子操作，
+  则可在检查通过后、数据库更新前，同时发送多个请求，绕过限制。
+
+action_result: >
+  Facebook Bug 1（页面评价重复）：
+  1. 截获 /ajax/pages/review/add 请求
+  2. 短时间内发送多个请求（尽可能快）
+  3. 结果：成功创建 5 个评价（原本限制 1 个）
+  4. 删除其中 1 个评价（只能删除 1 次）→ 剩余 4 个
+  5. 重复上述流程 → 可无限刷评分
+  时间线：2014-04-14 报告，2014-06-15 修复，获 bounty（未披露金额）
+  (原文: "Using race conditions you could rate a page multiple times,
+  then delete one of your reviews, and then rate again")
+
+  Facebook Bug 2（创建多个用户名）：
+  同样原理，发送多个修改用户名的请求 → 单账户绑定多个用户名。
+  结果：不被认为安全问题，未获 bounty，但已修复。
+  (原文: "The issue you describe is not a security issue...
+  However, we have made changes to the codebase")
+
+  DigitalOcean Bug（promo code 重复兑换）：
+  1. 找到可用 promo code
+  2. 截获 POST https://cloud.digitalocean.com/promos 请求
+  3. 多线程短时间内发送多次
+  4. 结果：同一 promo code 被兑换多次，账户余额累加 ~$550
+  时间线：2015-01-11 报告，2015-01-21 修复，无单独 bounty 但保留测试账户余额
+  (原文: "Money will be added multiple times to your account")
+
+  类似漏洞在 LastPass 也被发现，3 天内修复（最快响应）。
+
+why_here_first: >
+  未叙述（仅结果）。推断：race condition 测试需要识别"一次性限制"的高价值操作——
+  优惠码、点赞、评价、投票、转账这类操作通常有明确的业务价值，
+  且限制逻辑（每用户/每码限一次）容易在并发场景下失效。
+  (原文引用资源：https://defuse.ca/race-conditions-in-web-applications.htm)
+
+chaining: >
+  Race condition 本身可独立造成影响（promo code 重复兑换 → 财务损失），
+  无需串链其他漏洞。但可组合使用：
+  - Race condition + IDOR → 为他人账户重复兑换优惠码
+  - Race condition + CSRF → 自动化大规模刷单/刷票
+  - Race condition在转账操作 → 负余额/透支攻击
+
+# ——— 落地检查清单 ———
+
+approach: >
+  识别应用中"一次性限制"的操作（优惠码兑换、点赞、评价、投票、转账、礼品卡充值），
+  在短时间内并发发送多个相同请求，检查限制是否被绕过。
+
+reasoning_chain:
+  - "问：目标应用有哪些操作标记为'一次性限制'？（每用户限一次、每码限一次、每天限一次）"
+  - "识别高价值目标：优惠码/promo code、礼品卡、点赞/评价/投票、转账/提现、邀请奖励、首次购买折扣。"
+  - "黑盒测试：用 Burp Repeater 或 Python 脚本，同时发送 10-50 个相同请求（并发，而非顺序），观察是否有多个请求成功。"
+  - "工具推荐：Burp Intruder（Null Payloads + Threads），Turbo Intruder，自定义多线程脚本（Python threading/asyncio）。"
+  - "问：响应中是否有迹象表明多次成功？（余额累加、多个评价/点赞、返回多个成功状态）"
+  - "验证：检查数据库/账户状态，确认是否真的绕过限制（有时响应成功但数据库只写入一次）。"
+  - "扩展测试：问：操作是否有时间窗口限制（如'每24小时一次'）？能否通过修改系统时间或快速重复操作绕过？"
+  - "白盒审计：检查代码中 check-then-act 模式，查找缺少事务/锁保护的关键操作（SELECT → UPDATE 之间无锁）。"
+  - "白盒审计：搜索 unique constraint、transaction、lock、semaphore 相关代码，确认是否对一次性操作做了原子性保护。"
+  - "问：操作是否依赖外部状态（如数据库）而非 session？若在 session 中记录限制，race condition 通常无效。"
+
+vuln_root: >
+  开发者假设"检查用户是否已使用优惠码"（SELECT）和"标记为已使用"（UPDATE）之间没有时间窗口；
+  未使用数据库事务、乐观锁或唯一约束保证原子性，
+  导致并发请求可在同一瞬间都通过检查，最终多次执行操作。
+
+transferable_to:
+  - "任何有'一次性限制'的 Web 应用（电商、SaaS、社交平台、云服务）"
+  - "优惠码/promo code 兑换系统（Stripe、AWS、DigitalOcean、GitHub Student Pack）"
+  - "点赞/评价/投票系统（Facebook、Reddit、ProductHunt、App Store）"
+  - "邀请奖励/推荐返利系统（Dropbox、Airbnb、PayPal）"
+  - "转账/提现操作（金融应用、钱包系统）——可导致负余额"
+  - "礼品卡/充值卡兑换（Steam、Google Play、iTunes）"
+  - "首次购买折扣、限时抢购（电商平台秒杀系统）"
+
+cases:
+  - source: "http://josipfranjkovic.blogspot.com/2015/04/race-conditions-on-facebook.html"
+    author: "Josip Franjković"
+    platform: "Facebook"
+    bounty: "未披露金额（Bug 1 获 bounty，Bug 2 未获）"
+    note: >
+      Bug 1：页面评价系统，每用户限评一次。并发发送 /ajax/pages/review/add → 创建多个评价。
+      删除其中一个后可再评 → 无限刷评分。2014-04-14 报告，2014-06-15 修复。
+      Bug 2：用户名修改，并发请求 → 单账户绑定多个用户名。不被认为安全问题但已修复。
+
+  - source: "http://josipfranjkovic.blogspot.com/2015/04/race-conditions-on-facebook.html"
+    author: "Josip Franjković"
+    platform: "DigitalOcean"
+    bounty: "未获单独 bounty，但保留测试账户 ~$550 余额"
+    note: >
+      Promo code 兑换，每码限用一次。多线程并发 POST https://cloud.digitalocean.com/promos
+      → 同一 promo code 被兑换多次，余额累加。2015-01-11 报告，2015-01-21 修复（10天）。
+      类似漏洞在 LastPass 也被发现，3 天修复（最快）。
+
+  - source: "http://josipfranjkovic.blogspot.com/2015/04/race-conditions-on-facebook.html"
+    author: "Josip Franjković"
+    platform: "LastPass"
+    bounty: "未单独披露，保留测试账户 premium 时间"
+    note: >
+      Promo code race condition，3 天修复（最快响应）。无人在修复前滥用。

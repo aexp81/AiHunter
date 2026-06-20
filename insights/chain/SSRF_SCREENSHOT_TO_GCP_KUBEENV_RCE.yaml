@@ -1,0 +1,116 @@
+name: "截图/渲染功能触发 SSRF 读 GCP 元数据——token 权限不足时转向 kube-env 找私钥"
+id: "SSRF_SCREENSHOT_TO_GCP_KUBEENV_RCE"
+applicable: "blackbox"
+phase: "chain"
+also_phases: ["input"]
+tags: ["ssrf", "gcp", "metadata", "kubernetes", "kube-env", "rce", "cloud", "shopify"]
+source: "https://hackerone.com/reports/341876"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。报告者发现 Shopify Exchange 的"创建 listing"功能
+  会对店铺 URL 进行服务端截图，意味着服务器会主动请求攻击者可控的 URL——
+  这是 SSRF 的典型触发点。
+
+hypothesis: >
+  未叙述（仅结果）。推断：截图服务在服务端发起 HTTP 请求，
+  若不限制目标地址，可指向 GCP 内部元数据服务
+  （http://metadata.google.internal），读取 service account token。
+
+action_result: >
+  第1步成功：将截图 URL 替换为 GCP 元数据地址，
+  下载 PNG 后（需转 JPEG，Chrome 渲染黑色）读出 service account token。
+  (报告明确列出了元数据 URL 和读取方式)
+
+  第2步 - 三次扑空：
+  扑空1：用 token 尝试添加 SSH key →
+  失败（Required 'compute.projects.setCommonInstanceMetadata' permission）
+
+  扑空2：用 token 调用 setCommonInstanceMetadata →
+  失败（Required 'iam.serviceAccounts.actAs' permission）
+
+  扑空3：检查 token scopes →
+  发现没有 Compute Engine API 读写权限，scope 仅为 cloud-platform 通用授权。
+
+  转向：改读实例属性而非 Compute API →
+  读取 kube-env（http://metadata.google.internal/computeMetadata/v1beta1/instance/attributes/kube-env?alt=json）→
+  发现 kube-env 中包含 RSA 私钥（-----BEGIN RSA PRIVATE KEY-----）及 CA 证书。
+
+  第3步成功：用私钥连接 Kubernetes 集群 →
+  列出所有 namespace 下的 pods → 获取 secret → 在任意容器中执行 shell。
+  (报告明确写出 kubectl 命令序列)
+
+  报告者在实现 RCE 后主动停止探索：
+  "I stopped exploring this when I achieved RCE"
+
+why_here_first: >
+  未叙述（仅结果）。截图功能是 SSRF 的高价值触发点：
+  服务端代表用户发起 HTTP 请求且 URL 由攻击者提供，
+  这类功能（截图、PDF 生成、链接预览、Webhook 测试）
+  在 GCP/AWS/Azure 环境中首选打元数据服务。
+
+chaining: >
+  单独的 SSRF 读元数据通常仅被评为 Medium（信息泄露）。
+  关键升级链：
+  SSRF 读 GCP 元数据 → service account token（权限受限，直接利用失败）→
+  转向读 kube-env（元数据中包含 Kubernetes 配置，含私钥）→
+  私钥连 Kubernetes API server → kubectl exec 进入任意容器 → RCE。
+  核心洞见：service account token 权限不足时，
+  元数据的其他字段（尤其 kube-env）可能包含更高权限的凭证。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在 GCP 环境中，SSRF 读到 service account token 后权限不足时，
+  转向读取实例属性（尤其 kube-env），寻找 Kubernetes 私钥作为提权跳板，
+  而不是停在"token 无权限=无法利用"的结论上。
+
+reasoning_chain:
+  - "问：目标是否有截图、PDF 生成、链接预览、Webhook 测试等服务端发起 HTTP 请求的功能？"
+  - "如果有：问：可以将目标 URL 替换为 http://169.254.169.254/（AWS IMDSv1）或 http://metadata.google.internal/（GCP）？"
+  - "黑盒：发送请求，观察响应或截图内容是否包含元数据服务的响应（如 instance-id、service account token）。"
+  - "如果成功读到 GCP service account token：问：用 token 能否调用 Compute Engine API（setCommonInstanceMetadata / instanceGroups）？"
+  - "如果 Compute API 权限不足：问：能否读取实例属性 /instance/attributes/?recursive=true 列出所有属性？是否存在 kube-env 字段？"
+  - "如果存在 kube-env：读取完整 kube-env，提取 CA_CERT、CLIENT_CERT、CLIENT_KEY（RSA 私钥）和 Kubernetes API server 地址。"
+  - "问：用提取的证书/私钥能否连接 Kubernetes API server？（kubectl --client-certificate ... get pods --all-namespaces）"
+  - "如果可列出 pods：问：能否通过 kubectl exec 进入容器？能否读取 secret？能否创建特权 pod 挂载宿主机 /？"
+  - "AWS 环境类比：问：IMDSv1 是否可读？读取 /iam/security-credentials/<role> 获取 AWS 临时凭证，再查 IAM 权限范围。"
+  - "Webhook/重定向绕过：问：SSRF 防护是否仅过滤直接请求而不过滤 HTTP 303 重定向？（用中间服务器返回 303 Location: http://169.254.169.254/... 测试）"
+
+vuln_root: >
+  开发者假设 GCP service account token 仅用于 Compute API，权限受限即无害；
+  实际上同一元数据端点还暴露 kube-env（含 Kubernetes 私钥），
+  任何能读元数据的 SSRF 都等价于 Kubernetes 集群的完整访问权。
+
+transferable_to:
+  - "任何部署在 GCP/GKE 上的服务，只要存在 SSRF 可读内部 metadata.google.internal"
+  - "AWS EKS 环境：IMDSv1 SSRF → /iam/security-credentials → 临时凭证 → EKS API"
+  - "Azure AKS 环境：SSRF 读 169.254.169.254/metadata/identity/oauth2/token → 获取 managed identity token"
+  - "截图/PDF 生成/链接预览/Webhook 回调等功能，服务端发起请求且 URL 可控"
+  - "内网穿透场景：SSRF 命中内网的 Kubernetes Dashboard（默认无鉴权）"
+
+cases:
+  - url: "https://hackerone.com/reports/341876"
+    title: "SSRF in Exchange leads to ROOT access in all instances"
+    platform: "Shopify"
+    severity: "Critical (treated as Core RCE)"
+    bounty: "$25,000"
+    note: >
+      触发点：Exchange Marketplace 创建 listing 时的截图功能。
+      三次扑空后的关键转向：service account token 无 Compute API 权限 →
+      改读 kube-env → 发现 RSA 私钥 → 接管 Kubernetes 集群。
+      修复：部署元数据隐藏代理 + 禁止基础设施访问内部 IP。
+
+  - url: "https://hackerone.com/reports/508459"
+    title: "SSRF in webhooks leads to AWS private keys disclosure"
+    platform: "Omise"
+    severity: "High"
+    bounty: "$700"
+    note: >
+      触发点：Webhook URL 订阅功能。Webhook 实现跟踪 HTTP 重定向，
+      但对 303 See Other 状态码未做过滤（仅限制了 301/302）。
+      攻击者设置 Webhook URL 为中间服务器，返回 303 重定向到
+      http://169.254.169.254/latest/meta-data/iam/security-credentials/aws-opsworks-ec2-role，
+      服务端跟踪重定向并将 AWS IAM 临时凭证返回到 Webhook 响应中。
+      绕过手法：HTTP 303（而非 301/302）绕过重定向白名单。

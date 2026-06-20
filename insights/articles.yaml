@@ -1,0 +1,165 @@
+# 已学文章登记表
+# 作用：防重复学习 + 思路溯源。每学一篇先查这里有没有，学完登记。
+# 与 insights/ 下的思路文件解耦：一篇文章可产出多条 insight，也可能只补 case。
+
+version: "1.0"
+
+articles:
+  - url: "https://mp.weixin.qq.com/s/R-3uPkL88iBndFoWnw9lpA"
+    title: "我用AI挖了隐藏N年的组合拳漏洞"
+    learned_date: "2026-06-19"
+    quality: "high（含完整导航叙事与多次扑空）"
+    produced_insights:
+      - COMMENTED_JS_CRED_LEAK
+      - OAUTH_GRANTTYPE_PIVOT
+      - FRONTEND_ROLE_MAPPING_PRIVESC
+      - OAUTH_CRED_TO_ADMIN_CHAIN
+    added_cases_to: []   # 命中已有思路、仅补 case 时登记在这
+
+  - url: "https://mp.weixin.qq.com/s/gjr4EXjVLRl5_O8DE0MAtQ"
+    title: "从登录页面到服务器登录拿下多个网站权限"
+    learned_date: "2026-06-20"
+    quality: "medium（含扑空路径与串链叙事，思考过程有限但导航信号清晰）"
+    produced_insights:
+      - JSMAP_HIDDEN_ENDPOINT_DISCOVERY
+      - LFI_HISTORY_TO_CREDENTIAL_CHAIN
+    added_cases_to: []
+
+  - url: "https://hackerone.com/reports/867513"
+    title: "Takeover an account that doesn't have a Shopify ID and more"
+    learned_date: "2026-06-20"
+    quality: "medium（清晰串链叙事但无扑空路径，思考过程未详述）"
+    produced_insights:
+      - EMAIL_PREVERIFY_CROSS_ENDPOINT_ACCOUNT_TAKEOVER
+    added_cases_to: []
+
+  - url: "https://hackerone.com/reports/791775"
+    title: "Email Confirmation Bypass in myshop.myshopify.com that Leads to Full Privilege Escalation"
+    learned_date: "2026-06-20"
+    quality: "medium（清晰串链叙事，发现修复后变种，无扑空路径与思考过程叙述）"
+    produced_insights:
+      - EMAIL_CONFIRM_SENT_TO_WRONG_INBOX
+    added_cases_to: []
+
+  - url: "https://hackerone.com/reports/1087489"
+    title: "Github access token exposure in Shopify desktop app"
+    learned_date: "2026-06-20"
+    quality: "low（纯结果文，仅含解包命令和验证步骤，无任何导航叙事）"
+    produced_insights: []
+    added_cases_to:
+      - COMMENTED_JS_CRED_LEAK  # 作为 Electron App 凭证泄露 case 补充
+
+  - url: "https://hackerone.com/reports/827052"
+    title: "Arbitrary file read via the UploadsRewriter when moving an issue (GitLab)"
+    learned_date: "2026-06-20"
+    quality: "medium（清晰串链叙事 LFI→Rails secret→RCE，但无扑空路径与 why_here_first 叙述）"
+    produced_insights:
+      - LFI_RAILS_SECRET_TO_RCE
+    added_cases_to: []
+
+  - url: "https://hackerone.com/reports/739737"
+    title: "Token leak in security challenge flow (PayPal password exposure)"
+    learned_date: "2026-06-20"
+    quality: "high（完整 L3 三元素：明确 why_here_first、两次扑空转向、四环串链）"
+    produced_insights:
+      - XSSI_TOKEN_TRACE_TO_CREDENTIAL_LEAK
+    added_cases_to: []
+    external_writeup: "https://medium.com/@alex.birsan/the-bug-that-exposed-your-paypal-password-539fc2896da9"
+
+  - url: "https://hackerone.com/reports/341876"
+    title: "SSRF in Exchange leads to ROOT access in all instances (Shopify)"
+    learned_date: "2026-06-20"
+    quality: "high（完整扑空路径：三次失败后转向 kube-env，串链 SSRF→GCP元数据→K8s RCE）"
+    produced_insights:
+      - SSRF_SCREENSHOT_TO_GCP_KUBEENV_RCE
+    added_cases_to: []
+
+  - url: "https://hackerone.com/reports/508459"
+    title: "SSRF in webhooks leads to AWS private keys disclosure (Omise)"
+    learned_date: "2026-06-20"
+    quality: "low（纯结果文，仅说明 303 绕过手法，无导航叙事）"
+    produced_insights: []
+    added_cases_to:
+      - SSRF_SCREENSHOT_TO_GCP_KUBEENV_RCE  # 作为 AWS + 303 重定向绕过 case 补充
+
+  - url: "https://hackerone.com/reports/3694007"
+    title: "Authenticated Elasticsearch Painless script execution via GraphQL sort_query (HackerOne)"
+    learned_date: "2026-06-20"
+    quality: "high（完整差分测试方法论，4步升级证据链，明确最小PoC原则）"
+    produced_insights:
+      - GRAPHQL_SORT_PARAM_SCRIPT_INJECTION
+    added_cases_to: []
+
+  - url: "https://portswigger.net/research/exploiting-cors-misconfigurations-for-bitcoins-and-bounties"
+    title: "Exploiting CORS misconfigurations for Bitcoins and bounties (James Kettle)"
+    learned_date: "2026-06-20"
+    quality: "high（完整方法论：动态反射检测→null origin→URL解析欺骗→子域信任绕过，含多个实际案例）"
+    produced_insights:
+      - CORS_DYNAMIC_ORIGIN_REFLECTION
+    added_cases_to: []
+
+  - url: "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/"
+    title: "Confusion Attacks: Exploiting Hidden Semantic Ambiguity in Apache HTTP Server (Orange Tsai, Black Hat USA 2024)"
+    learned_date: "2026-06-20"
+    quality: "high（顶级研究，完整 why_here_first、3类攻击面、20+利用技术、9个CVE，架构层面洞见）"
+    produced_insights:
+      - APACHE_REWRITE_PERCENT3F_ACL_BYPASS
+      - APACHE_DOCROOT_CONFUSION_LOCAL_GADGETS
+    added_cases_to:
+      - LFI_RAILS_SECRET_TO_RCE  # Redmine symlink jailbreak → secret_key.txt → RCE case
+
+  - url: "https://www.geekboy.ninja/blog/airbnb-bug-bounty-turning-self-xss-into-good-xss-2/"
+    title: "AirBnb Bug Bounty: Turning Self-XSS into Good-XSS #2 (Geekboy)"
+    learned_date: "2026-06-20"
+    quality: "medium（完整串链叙事但无 why_here_first 导航，关键洞见：社交登录无密码验证）"
+    produced_insights:
+      - SOCIAL_LOGIN_NO_PASSWORD_REAUTH
+    added_cases_to: []
+
+  - url: "https://script.hashnode.dev/self-xss-to-ato-via-site-features"
+    title: "Self-XSS to ATO via Site Features (Hossein Shourabi)"
+    learned_date: "2026-06-20"
+    quality: "high（两次扑空转向：Login CSRF 失败→JWT 破解失败→Quick Login；Gmail API 自动化绕过时间限制）"
+    produced_insights:
+      - SELF_XSS_QUICK_LOGIN_MAGIC_LINK_ATO
+    added_cases_to: []
+
+  - url: "http://omergil.blogspot.co.il/2017/02/web-cache-deception-attack.html"
+    title: "Web Cache Deception Attack (Omer Gil, 2017)"
+    learned_date: "2026-06-20"
+    quality: "high（灵感来自 RPO 攻击，完整攻击原理，PayPal 真实案例 $3k，可升级为账户接管）"
+    produced_insights:
+      - WEB_CACHE_DECEPTION_SENSITIVE_PAGE
+    added_cases_to: []
+
+  - url: "http://homakov.blogspot.com/2014/02/how-i-hacked-github-again.html"
+    title: "How I hacked Github again (Egor Homakov, 2014)"
+    learned_date: "2026-06-20"
+    quality: "medium（5 bug 串链叙事完整，redirect_uri 路径穿越手法有迁移价值，但无 why_here_first 导航）"
+    produced_insights:
+      - OAUTH_REDIRECT_URI_PATH_TRAVERSAL
+    added_cases_to: []
+
+  - url: "http://josipfranjkovic.blogspot.com/2015/04/race-conditions-on-facebook.html"
+    title: "Race conditions on Facebook, DigitalOcean and others (Josip Franjković, 2015)"
+    learned_date: "2026-06-20"
+    quality: "medium（3 个真实案例，race condition 测试方法论清晰，但无 why_here_first 导航，纯结果展示）"
+    produced_insights:
+      - RACE_CONDITION_ONE_TIME_LIMIT_BYPASS
+    added_cases_to: []
+
+  - url: "http://blog.intothesymmetry.com/2017/10/slack-saml-authentication-bypass.html"
+    title: "Slack SAML authentication bypass (asanso, 2017)"
+    learned_date: "2026-06-20"
+    quality: "medium（有 why_here_first：灵感来自 Ioannis 的 SAML 研究；无扑空路径；直接成功；$3k）"
+    produced_insights:
+      - SAML_AUDIENCE_RESTRICTION_BYPASS
+    added_cases_to: []
+
+  - url: "https://medium.com/@alex.birsan/dependency-confusion-4a5d60fec610"
+    title: "Dependency Confusion: How I Hacked Into Apple, Microsoft and Dozens of Other Companies (Alex Birsan, 2021)"
+    learned_date: "2026-06-20"
+    quality: "high（完整 why_here_first：PayPal 源码泄露触发；多语言扩展；JS 文件扫描方法论；$130k+ bounties；35+ 组织）"
+    produced_insights:
+      - DEPENDENCY_CONFUSION_INTERNAL_PKG_HIJACK
+    added_cases_to: []

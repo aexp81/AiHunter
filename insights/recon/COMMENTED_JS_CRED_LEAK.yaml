@@ -1,0 +1,37 @@
+name: "遍历全部 JS 而非只搜源码，注释/索引文件里捞遗留凭证"
+id: "COMMENTED_JS_CRED_LEAK"
+applicable: "blackbox"
+phase: "recon"
+also_phases: []
+tags: [credential-leak, javascript, oauth, source-review]
+approach: "前端凭证三级递进搜索：源码直搜 → devtools 搜已加载 JS → 遍历全部 JS 含注释/索引文件"
+source: "https://mp.weixin.qq.com/s/R-3uPkL88iBndFoWnw9lpA"
+
+observation: '登录包里有 grant_type 参数判定用了 OAuth，需要 client_id/secret (原文: "在登录请求数据包中，注意到存在 grant_type 参数...判断目标使用了 OAuth 2.0")'
+hypothesis: "OAuth client_credentials 模式需要 client_id/secret，凭证可能遗留在前端某处"
+action_result: '前端源码直接搜→未发现；devtools 搜所有已加载 JS→仍未找到；遍历全部 JS 发现 api.js，其目录索引文件里有一段被注释的 JS，访问该注释 JS 拿到 client_id/secret (原文: "找到了一段被注释掉的 JavaScript 代码。访问该被注释的 JS 文件后，成功获取到 OAuth 2.0 的配置信息")'
+why_here_first: "前端是黑盒下唯一可读的源码；常规搜索扑空后，升级为穷举全部 JS + 看注释/索引等非加载资源（叙述明确：三级递进搜索）"
+chaining: "见 OAUTH_CRED_TO_ADMIN_CHAIN（本条是组合拳第一环）"
+
+reasoning_chain:
+  - "问：登录/认证包里有没有 grant_type / client_id 等 OAuth 特征参数？"
+  - "问：前端直接搜 secret/client 关键字命中吗？devtools 搜所有已加载 JS 命中吗？"
+  - "如果都没有：问：是否遍历了全部 JS（含未被页面加载的）、目录索引文件、注释掉的代码块？"
+  - "如果发现注释/遗留 JS：问：直接访问它能否拿到明文凭证？"
+vuln_root: "敏感凭证以注释/遗留文件形式残留在客户端可达资源中，开发者误以为'注释掉=不可见'"
+transferable_to:
+  - "任何用 OAuth/API key 的前端 SPA（client_secret 不应出现在前端）"
+  - "JS 注释、.map 文件、备份 .js.bak、目录 index 列出的未引用文件"
+  - "Git/CI 泄露的配置、被注释的调试端点"
+  - "Electron 桌面 App：用 'npx asar extract app.asar <out>' 解包 .asar，在源码中搜索 token/secret/key"
+cases:
+  - note: "护网实战：注释 JS 泄露 OAuth client_id/secret"
+    source: "https://mp.weixin.qq.com/s/R-3uPkL88iBndFoWnw9lpA"
+  - url: "https://hackerone.com/reports/1087489"
+    platform: "Shopify"
+    severity: "Critical (10.0)"
+    note: >
+      Shopify 桌面 App 的 .asar 包内硬编码了 GitHub Personal Access Token，
+      拥有对 Shopify 所有私有仓库的 read/write 权限。
+      解包命令：npx asar extract app.asar extracted/；
+      验证命令：curl -H "Authorization: token $GH_TOKEN" https://api.github.com/user

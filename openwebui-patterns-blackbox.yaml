@@ -1,0 +1,718 @@
+# Open WebUI 漏洞挖掘模式库 - 黑盒渗透测试版
+# 从 30+ 真实 CVE 中提炼，适用于无源码的外部渗透测试场景
+
+version: "1.0-blackbox"
+source: "Open WebUI GitHub Advisory 2024-2026"
+target_scenario: "外部渗透测试 / 漏洞赏金 / 红队评估"
+assumption: "无源码访问，纯黑盒测试，通过行为和响应推断漏洞"
+
+# ============================================================
+# 模式 1: 文件上传路径穿越
+# ============================================================
+patterns:
+  - name: "文件上传路径穿越（黑盒探测）"
+    id: "PATH_TRAVERSAL_BLACKBOX"
+    cwe: "CWE-22"
+    severity: "Critical"
+
+    trigger:
+      - "发现文件上传功能"
+      - "上传后可以访问文件（预览/下载）"
+      - "文件 URL 包含文件名"
+
+    blackbox_reasoning:
+      - "问：正常上传 test.txt 后，响应里文件 URL/ID 是什么格式？(记录基准)"
+      - "问：把 filename 改成 ../../tmp/pwned.txt 后，响应码是 200 还是 400/403？"
+      - "如果 400/403：问：换双重编码 %2e%2e%2f 或 ..\\..\\ 后响应码是否变 200？"
+      - "如果 200：问：能否从其他接口（下载/预览/文件列表）读到 /tmp/pwned.txt？"
+      - "问：响应或错误信息里是否回显了完整路径？(如 /app/uploads/../../tmp)"
+      - "问：文件名是否被自动改写成 UUID？(改写则路径不可控，模式不适用)"
+      - "如果穿越确认：问：能否写到敏感位置？(~/.ssh/authorized_keys / web 根目录)"
+
+    behavior_indicators:
+      success_signs:
+        - "上传响应返回非预期路径（如包含 /tmp）"
+        - "后续能从其他接口读取到穿越后的文件"
+        - "错误信息泄露完整路径"
+
+      filtered_signs:
+        - "返回 'Invalid filename' / 'Path not allowed'"
+        - "文件名被自动重命名（如 UUID）"
+        - "只能上传到固定目录（从响应 URL 推断）"
+
+    access_required: "已认证用户（需要上传权限）"
+
+    prerequisite:
+      - "目标有文件上传功能"
+      - "上传后能获得文件访问路径（预览/下载 URL）"
+
+    practical_payloads:
+      - payload: "../../tmp/pwned.txt"
+        purpose: "标准路径穿越"
+      - payload: "../../../etc/passwd"
+        purpose: "读取系统文件（需要下载接口配合）"
+      - payload: "../../var/www/html/shell.php"
+        purpose: "写 webshell（需要知道 web 根目录）"
+      - payload: "../../home/user/.ssh/authorized_keys"
+        purpose: "持久化访问"
+      - payload: "..%252f..%252ftmp%252fpwned.txt"
+        purpose: "双重编码绕过过滤"
+
+    verification_methods:
+      - method: "上传 payload 到 /tmp，尝试访问 http://target/tmp/pwned.txt"
+        note: "如果目标 web 根目录是 /var/www/html，穿越到 /tmp 无法通过 HTTP 访问"
+      - method: "上传到 /tmp，用目标的文件列表/搜索功能查找"
+        note: "某些应用有文件浏览功能，可以看到穿越后的路径"
+      - method: "观察响应头 Content-Location / Location 是否泄露路径"
+        note: "有些应用返回完整文件路径"
+
+    common_frameworks_behavior:
+      - framework: "FastAPI + UploadFile"
+        default_safe: false
+        note: "默认使用 file.filename，不会自动 basename"
+      - framework: "Django FileField"
+        default_safe: true
+        note: "Django 默认会 get_valid_filename() 过滤路径"
+      - framework: "Express.js + multer (DiskStorage)"
+        default_safe: false
+        note: "DiskStorage 默认使用原始文件名，需手动配置 filename 函数才安全（MemoryStorage 无文件名落盘问题）"
+
+    transferable_to:
+      - "任何接受 filename 参数且上传后可访问文件的 Web 应用"
+      - "文件下载/导出接口中的 path 参数（../ 读任意文件）"
+      - "头像/附件上传功能"
+      - "ZIP/TAR 解压功能（Zip Slip：压缩包内含 ../ 路径的条目）"
+
+    cases:
+      - cve: "CVE-2026-44566"
+        note: "Open WebUI /rag/api/v1/doc，未过滤 filename"
+
+  # ============================================================
+  # 模式 2: LDAP 空密码认证绕过（黑盒）
+  # ============================================================
+  - name: "LDAP 空密码认证绕过"
+    id: "LDAP_NULL_PASSWORD_BLACKBOX"
+    cwe: "CWE-287"
+    severity: "Critical"
+
+    trigger:
+      - "登录页面有 LDAP / AD / 域认证选项"
+      - "登录表单提示'企业账户登录'类字眼"
+      - "错误信息提到 LDAP / Directory"
+
+    blackbox_reasoning:
+      - "问：登录请求的字段格式是什么？(username + password，JSON 还是 form)"
+      - "问：前端是否阻止空密码提交？(如阻止，则需抓包/直接打 API 绕过前端校验)"
+      - "问：抓包将 password 置空（password= 或删除该字段）后，响应码和响应体是什么？"
+      - "如果返回有效 token/cookie 或重定向到 dashboard → 疑似认证绕过"
+      - "如果返回 'Password cannot be empty' → 应用层有非空校验，此路不通"
+      - "如果返回 LDAP bind failed / Invalid credentials → 服务器拒绝了 Unauthenticated Bind"
+      - "如果疑似成功：问：用返回的 token 访问受保护资源，是否真的是目标用户身份？"
+      - "问：换 password=%00（空字节）或纯空格，响应是否不同？(测试不同解析行为)"
+
+    behavior_indicators:
+      vulnerable_response:
+        - "返回有效的 JWT / session cookie"
+        - "重定向到用户 dashboard"
+        - "响应包含用户个人信息"
+
+      not_vulnerable:
+        - "'Password cannot be empty'"
+        - "'Invalid credentials'"
+        - "LDAP bind failed"
+
+    access_required: "未认证（公开登录页面）"
+
+    prerequisite:
+      - "目标使用 LDAP Simple Bind 认证（非 SASL）"
+      - "应用层未在 bind 前校验密码非空"
+      - "LDAP 服务器允许 Unauthenticated Bind（RFC 4513 §5.1.2）"
+      - "注意：OpenLDAP 2.5+ 默认拒绝（require authc），AD Windows Server 2019+ 默认也拒绝；能否成功取决于目标版本和配置，需实测"
+
+    practical_payloads:
+      - payload: '{"username": "admin", "password": ""}'
+        note: "JSON API 空密码"
+      - payload: "username=admin&password="
+        note: "Form-encoded 空密码"
+      - payload: "username=admin&password=%00"
+        note: "空字节，某些解析器当空处理"
+      - payload: '{"username": "admin"}'
+        note: "省略 password 字段（取决于后端解析）"
+
+    verification_methods:
+      - method: "用 Burp Repeater 重放空密码请求"
+      - method: "用 curl: curl -X POST -d 'username=admin&password=' https://target/login"
+      - method: "浏览器 devtools: 修改表单提交前的 password 值为空"
+
+    target_identification:
+      ldap_indicators:
+        - "登录页面有'域账户'/'企业账户'选项"
+        - "用户名格式: domain\\username 或 username@domain"
+        - "错误信息: 'LDAP authentication failed'"
+        - "响应头: X-Auth-Method: ldap"
+
+    transferable_to:
+      - "所有提供 LDAP/AD 登录选项的 Web 应用（企业内部系统居多）"
+      - "VPN / 邮件 / Wiki 等使用域账户认证的服务"
+      - "任何登录表单不强制校验密码非空的 LDAP 集成"
+
+    cases:
+      - cve: "CVE-2026-44551"
+        note: "Open WebUI LDAP 认证，空密码触发 Unauthenticated Bind"
+
+  # ============================================================
+  # 模式 3: IDOR - 资源所有权检查缺失（黑盒）
+  # ============================================================
+  - name: "IDOR - 缺少所有权验证"
+    id: "IDOR_BLACKBOX"
+    cwe: "CWE-639 / CWE-862"
+    severity: "High"
+
+    trigger:
+      - "API 端点接受 ID 参数（路径或 query）"
+      - "用户可以创建/查看自己的资源（聊天/文档/订单）"
+      - "资源 ID 可预测（数字递增）或可获取（UUID 从响应中泄露）"
+
+    blackbox_reasoning:
+      - "问：能注册两个账户吗？用 A 创建资源，响应里资源 ID 是什么？(数字递增还是 UUID)"
+      - "问：拿 B 的 token + A 的资源 ID 发 GET /api/resource/{A的ID}，返回 200+A的数据 还是 403/404？"
+      - "如果 200：横向 IDOR 确认，继续问危害更大的方法"
+      - "问：DELETE /api/resource/{A的ID}（B 的 token）返回 200/204 还是 403？(越权删除)"
+      - "问：PUT/PATCH 同一资源是否成功？(越权修改)"
+      - "问：子资源 /api/resource/{A的ID}/messages 是否也无权限检查？(常被漏防)"
+      - "问：普通用户 token 访问 /api/admin/* 是否返回数据？(纵向提权)"
+      - "如果 GET 返回 403 但 DELETE 返回 200 → 部分方法漏防，仍是 IDOR"
+
+    behavior_indicators:
+      vulnerable_response:
+        - "200 OK + 返回其他用户的数据"
+        - "成功删除/修改他人资源（204 / 200）"
+        - "错误信息泄露其他用户数据"
+
+      protected_response:
+        - "403 Forbidden / Unauthorized"
+        - "404 Not Found（资源存在但返回 404，说明有权限检查）"
+        - "'You don't have permission'"
+
+    access_required: "低权限认证用户（需要两个账户）"
+
+    prerequisite:
+      - "能注册多个账户"
+      - "能获取到其他用户的资源 ID"
+
+    id_discovery_techniques:
+      - technique: "从列表接口泄露"
+        example: "GET /api/chats 返回所有用户的聊天 ID（权限配置错误）"
+      - technique: "从共享功能泄露"
+        example: "分享链接包含原始资源 ID"
+      - technique: "ID 递增枚举"
+        example: "资源 ID 是数字，从 1 开始遍历"
+      - technique: "UUID 从响应头泄露"
+        example: "X-Resource-ID / Location 头包含其他资源 ID"
+      - technique: "错误信息泄露"
+        example: "'Chat 123 not found' 暴露了 ID 格式"
+
+    practical_test_matrix:
+      # 横向 IDOR
+      - scenario: "用户 A 访问用户 B 的资源"
+        test: "GET /api/resource/{B的ID} with A's token"
+        impact: "数据泄露"
+
+      # 纵向 IDOR（权限提升）
+      - scenario: "普通用户访问管理员接口"
+        test: "GET /api/admin/users with user's token"
+        impact: "权限提升"
+
+      # 子资源 IDOR
+      - scenario: "访问他人资源的子对象"
+        test: "GET /api/chat/{B的ID}/messages with A's token"
+        impact: "深度数据泄露"
+
+      # HTTP 方法遗漏
+      - scenario: "GET 有检查，DELETE 没检查"
+        test: "DELETE /api/resource/{B的ID} with A's token"
+        impact: "越权删除"
+
+    automation_tips:
+      - tool: "Burp Suite Autorize 插件"
+        usage: "自动用低权限 token 重放所有请求"
+      - tool: "自定义脚本"
+        usage: "批量测试所有 API 端点的 ID 参数"
+      - script_example: |
+          # Python 示例
+          ids = ['123', '124', '125']  # 从用户 A 获取的 ID
+          for id in ids:
+              resp = requests.get(f'/api/resource/{id}',
+                                  headers={'Authorization': f'Bearer {userB_token}'})
+              if resp.status_code == 200:
+                  print(f'IDOR found: {id}')
+
+    transferable_to:
+      - "所有 RESTful API 中按 ID 操作资源的端点"
+      - "多租户 SaaS 的跨租户数据访问"
+      - "对象存储/文件删除接口（key 可枚举）"
+      - "批量操作接口（一次传多个 ID，混入他人 ID）"
+
+    cases:
+      - note: "Open WebUI 15+ API 存在 IDOR"
+        examples: "delete_chat / update_prompt / delete_file"
+      - cve: "CVE-2026-45301"
+        note: "全部 /files/ 端点可列/读/删全实例文件"
+      - cve: "CVE-2026-45666"
+        note: "notes {id} 枚举 UUID 读他人笔记"
+      - cve: "CVE-2026-44570"
+        note: "memories API 跨用户查/删/恢复"
+      - cve: "CVE-2026-45349"
+        note: "chat/completions 用他人 chat_id 继续对话"
+      - cve: "CVE-2026-45399"
+        note: "tasks/stop 越权停他人任务（含 CVE-2025-63681）"
+
+  # ============================================================
+  # 模式 4: 存储型 XSS - 富文本渲染（黑盒）
+  # ============================================================
+  - name: "存储型 XSS - 第三方渲染库"
+    id: "STORED_XSS_RICH_TEXT_BLACKBOX"
+    cwe: "CWE-79"
+    severity: "High"
+
+    trigger:
+      - "应用支持 Markdown / Mermaid / 富文本输入"
+      - "用户输入会被其他用户查看（聊天/评论/文档）"
+      - "前端引入了 mermaid.js / marked.js / KaTeX"
+
+    blackbox_reasoning:
+      - "问：渲染器是哪种？输入 ```mermaid 是否出图、**bold** 是否加粗、$x^2$ 是否出公式？"
+      - "问：对应渲染器的 payload 提交后，刷新或换账户查看，源码里 payload 是原样 HTML 还是被转义成 &lt;？"
+      - "  Mermaid: graph TD; A[\"<img src=x onerror=alert(1)>\"] / click A \"javascript:alert(1)\""
+      - "  Markdown: <script>alert(1)</script> / [x](javascript:alert(1))"
+      - "  KaTeX: $$\\href{javascript:alert(1)}{click}$$"
+      - "如果原样 HTML：问：脚本是否执行？(alert 弹窗 / XSS Hunter 收到回连)"
+      - "如果被转义/移除：问：换 <svg onload=> 或事件处理器 onerror 能否绕过？"
+      - "问：是盲打场景吗？(无法直接看回显) → 用外带 payload 等 XSS Hunter 回连确认"
+
+    behavior_indicators:
+      vulnerable_signs:
+        - "payload 原样出现在 HTML 中"
+        - "JavaScript 执行（alert / 控制台输出）"
+        - "外部资源加载（XSS Hunter 回连）"
+
+      filtered_signs:
+        - "payload 被 HTML 转义（&lt;script&gt; 显示为文本）"
+        - "标签被移除（只显示文本内容）"
+        - "返回错误'Invalid content'"
+
+    access_required: "已认证用户（能发布内容）"
+
+    prerequisite:
+      - "应用支持富文本输入"
+      - "输入会被存储并展示给其他用户"
+
+    渲染器识别:
+      - indicator: "输入 ```mermaid 后出现图表"
+        library: "Mermaid.js"
+      - indicator: "输入 **bold** 后加粗"
+        library: "Markdown 渲染器"
+      - indicator: "输入 $x^2$ 后渲染数学公式"
+        library: "KaTeX / MathJax"
+
+    common_payloads:
+      mermaid:
+        - '```mermaid\ngraph TD; A["<img src=x onerror=alert(document.domain)>"]\n```'
+        - '```mermaid\ngraph TD; A-->B; click A "javascript:alert(1)"\n```'
+      markdown:
+        - '[xss](javascript:alert(1))'
+        - '<svg onload=alert(1)>'
+        - '![](https://x onerror=alert(1))'
+      katex:
+        - '$$\\href{javascript:alert(1)}{click}$$'
+      universal:
+        - '<img src=x onerror=alert(1)>'
+        - '<svg/onload=alert(1)>'
+        - '<iframe src=javascript:alert(1)>'
+
+    transferable_to:
+      - "所有渲染用户输入的富文本/Markdown 的应用（聊天/评论/文档/工单）"
+      - "使用 Mermaid / PlantUML / KaTeX / MathJax 的协作工具"
+      - "Excel/CSV 预览功能（单元格内容未转义）"
+      - "邮件 HTML 正文渲染、Webhook 内容展示"
+
+    cases:
+      - cve: "CVE-2026-54011"
+        note: "Mermaid securityLevel: loose"
+      - cve: "CVE-2026-44549"
+        note: "Excel 单元格内容未转义"
+      - cve: "CVE-2026-45665"
+        note: "DOMPurify 顺序错：可控 markdown 字段提交 [x](javascript:alert(1)) 渲染后点击执行"
+      - cve: "CVE-2026-45314"
+        note: "SVG data URI：头像/webhook 图片设 data:image/svg+xml;base64,<onload> 直接访问触发"
+      - cve: "CVE-2026-45303"
+        note: "iframe sandbox 失效：HTML 渲染视图注入脚本读 localStorage token，分享后他人触发"
+      - cve: "CVE-2026-45318"
+        note: "Office/Excel 文件预览 {@html} 无 DOMPurify"
+
+  # ============================================================
+  # 模式 5: 文件扩展名 XSS（黑盒）
+  # ============================================================
+  - name: "文件扩展名导致的 XSS"
+    id: "FILE_EXTENSION_XSS_BLACKBOX"
+    cwe: "CWE-434 + CWE-79"
+    severity: "High"
+
+    trigger:
+      - "应用支持文件上传和预览"
+      - "文件通过浏览器 inline 渲染（非下载）"
+
+    blackbox_reasoning:
+      - "问：上传文件后访问预览 URL，响应头 Content-Type 是按扩展名设的吗？"
+      - "问：响应是否有 X-Content-Type-Options: nosniff？(有则 sniffing 攻击失效)"
+      - "问：Content-Disposition 是 inline 还是 attachment？(attachment 强制下载，无法执行)"
+      - "问：文件 URL 与主应用同源吗？(跨域受 CORB 保护，需同源才好利用)"
+      - "如果 inline + 无 nosniff：问：上传 test.svg（含 <svg onload=alert(1)>）访问后是否弹窗？"
+      - "问：直接传 .html 文件能否被 inline 渲染执行？(比 polyglot 更直接)"
+      - "如果扩展名被限制：问：用 .svg.jpg / Content-Type 伪造 能否绕过？"
+
+    behavior_indicators:
+      vulnerable_signs:
+        - "响应头无 X-Content-Type-Options: nosniff"
+        - "Content-Disposition: inline"
+        - "SVG 文件中的 JavaScript 执行"
+
+      protected_signs:
+        - "X-Content-Type-Options: nosniff 存在"
+        - "Content-Disposition: attachment（强制下载）"
+        - "SVG 被转码为图片（失去脚本能力）"
+
+    access_required: "已认证用户（需要上传权限）"
+
+    prerequisite:
+      - "服务器响应无 X-Content-Type-Options: nosniff"
+      - "文件以 inline 方式展示"
+
+    practical_test:
+      step1: "curl -I https://target/uploads/file.jpg 检查响应头"
+      step2: "上传 SVG: <svg onload=alert(1)></svg> 保存为 test.svg"
+      step3: "访问上传后的 URL，观察是否弹窗"
+      step4: "如果 SVG 被禁，尝试 polyglot 或 HTML"
+
+    svg_payload_examples:
+      - '<svg onload=alert(document.domain)></svg>'
+      - '<svg><script>alert(1)</script></svg>'
+      - '<svg><foreignObject><body><script>alert(1)</script></body></foreignObject></svg>'
+
+    transferable_to:
+      - "所有允许上传并 inline 预览文件的平台（网盘/CMS/文档系统）"
+      - "用户头像/附件托管在同源路径下的应用"
+      - "CDN 未设 nosniff 且与主站同源的场景"
+      - "SVG 上传场景（浏览器原生执行 SVG 内 JS）"
+
+    cases:
+      - cve: "CVE-2026-45315"
+        note: "文件预览依赖扩展名"
+
+  # ============================================================
+  # 模式 6: SSRF（URL 验证绕过）— 行为探测
+  # 来源：批量学习 2026-06-19
+  # ============================================================
+  - name: "SSRF：用户可控 URL 的服务端请求"
+    id: "SSRF_BLACKBOX"
+    applicable: "blackbox"
+    cwe: "CWE-918"
+    severity: "High"
+
+    trigger:
+      - "任何接受 URL 的功能：webhook、头像 URL、RAG 网页导入、图片代理、PDF 生成"
+
+    blackbox_reasoning:
+      - "问：哪些功能接受 URL 参数（url/image_url/webhook_url）并由服务端获取？"
+      - "问：提交公网 URL（带 Burp Collaborator 回连）后，是否收到服务端发起的请求？"
+      - "如果收到：确认服务端发起请求，进入绕过测试"
+      - "问：直接提交 http://127.0.0.1 / http://169.254.169.254 是否被拦（返回 invalid URL）？"
+      - "如果被拦：问：公网 302 重定向到内网（httpbin/redirect-to?url=http://127.0.0.1）是否返回内网内容？"
+      - "问：backslash 混淆 http://127.0.0.1\\@public.com 是否绕过？"
+      - "问：IPv6 形式 http://[::1] / http://[::ffff:127.0.0.1] 是否绕过？"
+      - "问：IANA 保留段 http://100.64.0.1 / http://203.0.113.1 是否绕过？"
+      - "如果任一通过：SSRF 成立，尝试云元数据 169.254.169.254/latest/meta-data/"
+
+    practical_notes:
+      - "blind SSRF（无回显）用响应时间差异做内网端口扫描"
+      - "Collaborator 回连可确认 blind 场景"
+      - "PDF/HTML 生成功能：注入 <img src='http://internal'> 触发"
+
+    verify:
+      - "Burp Collaborator 收到 DNS/HTTP 回连 = 确认；返回内网响应体 = full-read SSRF"
+
+    transferable_to:
+      - "webhook / RSS / 图片代理 / OAuth 头像 / PDF 生成 / 任何'服务端取 URL'功能"
+
+    cases:
+      - cve: "CVE-2026-45401"
+        note: "302 重定向绕过"
+      - cve: "CVE-2026-45400"
+        note: "backslash 解析差异绕过"
+      - cve: "CVE-2026-45331"
+        note: "IPv6 / IANA 保留段绕过"
+      - cve: "CVE-2025-65958"
+        note: "/retrieval/process/web 无验证"
+
+  # ============================================================
+  # 模式 7: 权限级别混淆（读权限执行写操作）— 行为探测
+  # ============================================================
+  - name: "权限级别混淆：只读共享身份执行写操作"
+    id: "PERMISSION_LEVEL_CONFUSION_BLACKBOX"
+    applicable: "blackbox"
+    cwe: "CWE-863"
+    severity: "High"
+
+    trigger:
+      - "资源支持只读共享（note/channel/document）且有 pin/update/toggle 等操作"
+
+    blackbox_reasoning:
+      - "问：能否拿到一个只读共享的资源（用账户 A 只读共享给账户 B）？"
+      - "问：用 B（只读）调 update/delete → 是否 403？（确认基线正确）"
+      - "问：同样用 B 调 pin/unpin/save/toggle/restore → 是否仍 200？"
+      - "如果：update 被拒但 pin/save 成功 → 读写权限错位"
+      - "问：Socket.IO 协作事件（文档编辑）用只读身份发送是否生效？"
+
+    practical_notes:
+      - "状态修改操作易被误标为'读'：pin、star、toggle、save、restore"
+      - "HTTP 端点和 Socket.IO 事件分别测，权限检查常不一致"
+
+    verify:
+      - "只读身份操作后，换资源所有者视角确认状态确实被改变"
+
+    transferable_to:
+      - "任何分级共享资源：协作文档、看板、wiki、工单"
+
+    cases:
+      - cve: "CVE-2026-45316"
+        note: "notes pin 只检查 read"
+      - cve: "CVE-2026-44571"
+        note: "standard channel 消息 update 只需 read"
+      - cve: "CVE-2026-44564"
+        note: "Socket.IO 文档协作 read 可写"
+
+  # ============================================================
+  # 模式 8: 授权分支遗漏 — 行为探测
+  # ============================================================
+  - name: "授权分支遗漏：非常规类型/停用状态绕过"
+    id: "AUTHZ_BRANCH_GAP_BLACKBOX"
+    applicable: "blackbox"
+    cwe: "CWE-862"
+    severity: "High"
+
+    trigger:
+      - "资源有多种类型（group/dm/standard channel），或成员可被停用/移除"
+
+    blackbox_reasoning:
+      - "问：某操作在 group/dm 类型被拦，换到 standard 类型是否放行？"
+      - "问：被踢出/停用频道后，用旧资源 ID 直接调 API 是否仍 200？"
+      - "问：离开群组后旧 token/session 是否还能访问群组消息？"
+      - "如果：非常规类型漏检 或 停用成员仍可访问 → 授权分支遗漏"
+
+    practical_notes:
+      - "开发者常只对'主流类型'写检查，边缘类型(standard channel)漏掉"
+      - "停用/移除是状态变更，但 membership 检查常只看'是否存在'不看 is_active"
+
+    verify:
+      - "对比常规类型(403)与非常规类型(200)的响应差异"
+
+    transferable_to:
+      - "多类型资源、软删除/停用账号、状态机权限系统"
+
+    cases:
+      - cve: "CVE-2026-44559"
+        note: "standard channel 成员端点漏检"
+      - cve: "CVE-2026-44561"
+        note: "deactivated 成员仍有权限"
+
+  # ============================================================
+  # 模式 9: Mass Assignment（注入额外字段）— 行为探测
+  # ============================================================
+  - name: "Mass Assignment：请求体注入额外敏感字段"
+    id: "MASS_ASSIGN_BLACKBOX"
+    applicable: "blackbox"
+    cwe: "CWE-915"
+    severity: "High"
+
+    trigger:
+      - "任何 create/update 端点接收 JSON 对象"
+
+    blackbox_reasoning:
+      - "问：正常 create 请求响应里有哪些字段（user_id/id/role/created_at）？"
+      - "问：在请求体注入 \"user_id\":\"<他人UUID>\" 后，响应里 user_id 是否变成注入值？"
+      - "如果变成注入值：Mass Assignment 成立（服务端未过滤额外字段）"
+      - "问：还能注入哪些？逐个试 id / role / is_admin / version / created_by"
+      - "问：注入后资源是否归属/影响了他人（如在他人空间创建资源）？"
+
+    practical_notes:
+      - "目标 UUID 从用户搜索/分享链接/响应泄露中获取"
+      - "Pydantic extra='allow' 是常见根因，但黑盒只看行为：注入字段是否被接受"
+
+    verify:
+      - "注入 user_id 后换受害者视角，确认资源出现在其名下"
+
+    transferable_to:
+      - "所有 REST create/update 端点；GraphQL mutation"
+
+    cases:
+      - cve: "CVE-2026-45396"
+        note: "feedback 伪造 user_id"
+      - cve: "CVE-2026-44550"
+        note: "FolderForm 在他人空间建文件夹"
+
+  # ============================================================
+  # 模式 10: 内部参数经 query string 暴露 — 行为探测
+  # ============================================================
+  - name: "内部参数暴露：追加特权 query 参数绕过限制"
+    id: "PARAMETER_BINDING_BLACKBOX"
+    applicable: "blackbox"
+    cwe: "CWE-915"
+    severity: "High"
+
+    trigger:
+      - "端点有访问控制/过滤，怀疑存在内部开关参数"
+
+    blackbox_reasoning:
+      - "问：端点返回受限数据或 403 时，追加 ?bypass_filter=true 是否改变响应？"
+      - "问：追加 ?base_model_id=X / ?admin=true / ?internal=1 是否绕过检查？"
+      - "如果：响应从 403→200 或返回新数据字段 → 内部参数经框架绑定暴露"
+      - "问：对比 API 文档，该参数是否未文档化？"
+
+    practical_notes:
+      - "FastAPI 把未声明来源的函数参数自动绑定到 query string"
+      - "猜测命名：bypass_* / internal_* / base_* / override_* / skip_*"
+
+    verify:
+      - "有无该参数的响应对比，确认参数确实改变了授权/过滤行为"
+
+    transferable_to:
+      - "FastAPI / Spring @RequestParam / ASP.NET [FromQuery] 等自动绑定框架"
+
+    cases:
+      - cve: "CVE-2026-45365"
+        note: "bypass_filter 绕过模型访问控制"
+      - cve: "CVE-2026-44555"
+        note: "base_model_id 模型链绕过"
+
+  # ============================================================
+  # 模式 11: 未认证敏感端点 — 行为探测
+  # ============================================================
+  - name: "未认证敏感端点：无 token 访问配置/计算/解析"
+    id: "UNAUTH_ENDPOINT_BLACKBOX"
+    applicable: "blackbox"
+    cwe: "CWE-306"
+    severity: "High"
+
+    trigger:
+      - "已知部分 API 路径，怀疑个别端点漏加认证"
+
+    blackbox_reasoning:
+      - "问：去掉 Authorization header / cookie 后，curl 该端点返回 200 还是 401？"
+      - "如果 200：问：响应是否回显配置/敏感数据（RAG config、凭据、内部状态）？"
+      - "问：该端点是否触发昂贵计算（embedding/PDF/markdown 解析）？"
+      - "如果是且无认证：重复调用或发超大 payload，观察 CPU/响应时长是否飙升（DoS）"
+      - "问：邻近端点（同前缀）是否都要认证而它不要？（单点遗漏特征）"
+
+    practical_notes:
+      - "诊断/debug 遗留路由是高发区（如 /ef /debug /test）"
+      - "鉴权是逐端点的：有登录系统 ≠ 每个端点都受保护"
+
+    verify:
+      - "无凭据 200 + 敏感回显 = 信息泄露；无凭据触发重计算 = 计费/DoS"
+
+    transferable_to:
+      - "任意按 router 批量加鉴权、可能单点遗漏的框架；遗留 debug 路由"
+
+    cases:
+      - cve: "CVE-2026-45397"
+        note: "未认证 RAG 配置泄露"
+      - cve: "CVE-2026-45667"
+        note: "未认证 embedding 生成计费 DoS"
+      - cve: "CVE-2024-8053"
+        note: "未认证 PDF 生成 DoS"
+
+  # ============================================================
+  # 模式 12: 间接对象引用（借自有资源引用他人对象）— 行为探测
+  # ============================================================
+  - name: "间接对象引用：把他人对象 ID 附加到自有资源"
+    id: "INDIRECT_OBJECT_REF_BLACKBOX"
+    applicable: "blackbox"
+    cwe: "CWE-639"
+    severity: "High"
+
+    trigger:
+      - "资源可引用其他对象 ID：chat 附加 file_id、folder/KB 添加文件、model 设 base_model_id"
+
+    blackbox_reasoning:
+      - "问：能否拿到他人对象 ID（file_id 经分享链接/citation/响应泄露）？"
+      - "问：把他人 file_id 附加到自己的 chat/folder/KB，返回 200 吗？"
+      - "如果 200：通过自有资源读取该文件内容（GET content 或在该 folder 发起 chat）能否拿到他人数据？"
+      - "问：通过自有资源对他人对象发起 remove/delete，是否删除了他人原资源中的对象？"
+      - "问：创建 wrapper model 设 base_model_id=受限模型，访问 wrapper 是否拿到受限数据？"
+
+    practical_notes:
+      - "授权常只验证外层资源所有权，不验证被引用的内层对象归属"
+      - "UUID 不是防护：系统性从列表/citation/URL 泄露"
+
+    verify:
+      - "用受害者账户确认其文件被读取/删除，或受限模型数据经 wrapper 泄露"
+
+    transferable_to:
+      - "容器-成员模型（购物车/收藏/工单附件）；GraphQL 嵌套 mutation；model chaining"
+
+    cases:
+      - cve: "CVE-2026-45402"
+        note: "file_id 跨用户引用读+覆写"
+      - cve: "CVE-2026-45671"
+        note: "shared-chat 分支绕过，读/改/删他人文件"
+      - cve: "CVE-2026-44555"
+        note: "base_model_id 模型链绕过"
+
+# ============================================================
+# 黑盒测试流程指南
+# ============================================================
+blackbox_workflow:
+  phase1_reconnaissance:
+    - "枚举所有功能点：上传、登录、API 端点、富文本输入"
+    - "抓包记录所有请求，构建 API 地图"
+    - "识别框架和技术栈（响应头、前端源码）"
+
+  phase2_pattern_matching:
+    - "看到文件上传 → 测试模式1（Path Traversal）和模式5（扩展名 XSS）"
+    - "看到 LDAP 登录 → 测试模式2（空密码）"
+    - "看到 /api/{id} → 测试模式3（IDOR）"
+    - "看到 Markdown/Mermaid → 测试模式4（XSS）"
+
+  phase3_payload_execution:
+    - "每个模式按 blackbox_reasoning 步骤逐步测试"
+    - "观察响应行为，不要盲目 fuzz"
+    - "记录所有异常响应（错误信息可能泄露信息）"
+
+  phase4_verification:
+    - "确认漏洞影响范围（能读到什么、能删什么）"
+    - "测试深度（子资源、其他 HTTP 方法）"
+    - "生成可复现的 PoC"
+
+# ============================================================
+# 黑盒测试工具箱
+# ============================================================
+recommended_tools:
+  - tool: "Burp Suite Pro"
+    usage: "抓包、重放、Autorize 插件测 IDOR"
+  - tool: "OWASP ZAP"
+    usage: "自动化扫描 + 手动测试"
+  - tool: "ffuf"
+    usage: "API 端点枚举、参数 fuzz"
+  - tool: "Postman / Insomnia"
+    usage: "API 测试、环境变量管理（多账户 token）"
+  - tool: "XSS Hunter"
+    usage: "存储型 XSS 盲打"
+  - tool: "Burp Collaborator"
+    usage: "SSRF / XXE / XSS 回连检测"
+
+behavior_analysis_tips:
+  - "403 vs 404：403 说明资源存在但无权限，404 可能是有权限检查"
+  - "响应时间差异：某些 IDOR 会有时间侧信道（自己的资源快，他人的慢）"
+  - "错误信息：'User 123 not found' vs 'Resource not found'（前者泄露 ID 格式）"
+  - "响应长度：自己的资源返回 5KB，他人的 0.5KB（有权限检查但不完整）"
+

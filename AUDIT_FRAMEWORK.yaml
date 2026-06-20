@@ -1,0 +1,488 @@
+# 安全专家审计框架
+# 每次添加新模式后必须执行审计，持续优化模式库质量
+
+version: "1.0"
+last_updated: "2026-06-19"
+
+# ============================================================
+# 审计者角色定义
+# ============================================================
+auditor_profile:
+  role: "资深赏金猎人 + 0day 研究专家"
+  expertise:
+    - "10+ 年漏洞挖掘经验"
+    - "HackerOne / Bugcrowd 排名前 1%"
+    - "发现过多个 CVE-2024/2025/2026 关键漏洞"
+    - "精通白盒代码审计和黑盒渗透测试"
+    - "擅长 0day 挖掘：未公开漏洞的发现和利用"
+
+  审计视角:
+    practical: "这个模式在真实渗透测试中能直接用吗？"
+    completeness: "是否遗漏了关键的攻击面或绕过技巧？"
+    accuracy: "技术细节是否准确？有没有误导性描述？"
+    transferability: "能否真正迁移到其他目标，还是只适用于 Open WebUI？"
+
+# ============================================================
+# 审计检查清单（每次添加模式后执行）
+# ============================================================
+audit_checklist:
+
+  # 第一项：reasoning_chain 可操作性
+  reasoning_chain_audit:
+    pass_criteria:
+      - "每一步都是问句（'问：...'）或判断条件"
+      - "不包含'发现 XXX'、'存在 XXX'这类结果描述"
+      - "黑盒模式不依赖源码（不能说'检查代码是否有 basename'）"
+      - "白盒模式给出具体的代码搜索命令（grep / Semgrep 规则）"
+      - "步骤顺序逻辑清晰，前一步的结果决定下一步动作"
+
+    fail_examples:
+      - "❌ 'filename 来自用户请求'"  # 这是陈述，不是检查步骤
+      - "❌ '路径拼接使用 f-string'"   # 黑盒时看不到代码
+      - "❌ '没有 basename'"          # 应该是"问：是否有 basename？"
+
+    pass_examples:
+      - "✅ 问：路径中是否包含用户可控输入？"
+      - "✅ 白盒：grep -r 'open(' | grep -v 'basename'"
+      - "✅ 黑盒：发送 ../../，观察响应码是 400 还是 200"
+
+  # 第二项：attack_surface 完整性
+  attack_surface_completeness:
+    必须回答的问题:
+      - "这个模式的所有变种都覆盖了吗？"
+      - "常见的绕过技巧是否列出？"
+      - "子资源 / 边缘路径是否提及？"
+
+    common_omissions:
+      path_traversal:
+        - "只提到 ../../，没提双重编码 %2e%2e%2f"
+        - "只提到 Linux 路径，没提 Windows 路径 ..\\..\\"
+        - "没提到空字节注入 %00"
+
+      idor:
+        - "只测 GET，没测 DELETE / PUT / PATCH"
+        - "只测主资源 /api/resource/{id}，没测子资源 /api/resource/{id}/messages"
+        - "只测横向（用户间），没测纵向（权限提升）"
+
+      xss:
+        - "只测 <script>，没测事件处理器（onerror / onclick）"
+        - "只测 HTML，没测 SVG / MathML"
+        - "没提 CSP 绕过技巧"
+
+  # 第三项：技术细节准确性
+  technical_accuracy:
+    必须验证:
+      - "协议行为是否引用了 RFC / 官方文档"
+      - "浏览器行为是否考虑了现代版本（Chrome 85+）"
+      - "框架默认行为是否准确（Django / Flask / FastAPI）"
+
+    高风险领域:
+      - "认证协议（LDAP / OAuth / SAML）"
+      - "HTTP 安全头（CSP / CORS / nosniff）"
+      - "加密算法和编码（JWT / Base64 / URL编码）"
+
+    验证方法:
+      - "有疑问时查阅官方文档，不凭记忆"
+      - "如果无法验证，标注为'待确认'"
+      - "宁可保守（说'可能'），不要武断"
+
+  # 第四项：实战可操作性
+  practical_usability:
+    黑盒模式必须包含:
+      - "具体的 payload 示例（可直接复制到 Burp）"
+      - "响应特征识别（200 vs 403 vs 404 的含义）"
+      - "自动化测试脚本片段（curl / Python）"
+      - "工具推荐（Burp 插件 / ffuf / 自定义脚本）"
+
+    白盒模式必须包含:
+      - "grep / Semgrep 搜索命令"
+      - "代码模式识别（安全 vs 不安全的写法对比）"
+      - "数据流追踪方法（source → sink）"
+      - "修复建议（不只是发现漏洞）"
+
+  # 第五项：prerequisite 完整性
+  prerequisite_completeness:
+    每个模式必须明确:
+      access_level:
+        - "未认证 / 低权限用户 / 管理员 / 任意"
+        - "黑盒：需要几个测试账户"
+        - "白盒：需要什么级别的代码访问权限"
+
+      environment_conditions:
+        - "目标必须满足什么条件（如'LDAP 服务器允许 Unauthenticated Bind'）"
+        - "攻击者需要什么初始信息（如'知道其他用户的资源 ID'）"
+        - "哪些防御措施会使此模式失效（如'存在 WAF 过滤 ../'）"
+
+  # 第六项：transferability 测试
+  transferability_validation:
+    问自己:
+      - "如果目标不是 Open WebUI，这个模式还能用吗？"
+      - "模式描述中是否有 Open WebUI 特定的细节（需要泛化）"
+      - "transferable_to 列表是否具体（不能只说'所有 Web 应用'）"
+
+    bad_examples:
+      - "❌ '检查 Open WebUI 的 /rag/api/v1/doc 端点'"  # 太具体
+      - "❌ '适用于所有应用'"                         # 太泛化
+
+    good_examples:
+      - "✅ '检查所有接受 filename 参数的文件上传接口'"
+      - "✅ '适用于 FastAPI / Flask 且未使用 secure_filename() 的应用'"
+
+# ============================================================
+# 审计流程（每次添加模式后执行）
+# ============================================================
+audit_workflow:
+  phase1_automated_check:
+    - "运行 YAML linter 检查格式"
+    - "检查必填字段是否存在"
+    - "检查 reasoning_chain 是否包含陈述句关键词（'发现'、'存在'、'没有'）"
+
+  phase2_manual_review:
+    - "逐条检查 reasoning_chain，模拟执行（能否在不看答案的情况下执行）"
+    - "对照 common_omissions 列表，检查是否遗漏攻击面"
+    - "Google 搜索验证技术细节（如 RFC 编号）"
+
+  phase3_red_team_test:
+    - "如果是黑盒模式：用 payload 对一个真实目标（如测试环境）验证"
+    - "如果是白盒模式：用 grep 命令在一个开源项目上测试"
+    - "记录测试结果：模式是否真的能发现漏洞"
+
+  phase4_fix_and_record:
+    - "修复发现的问题"
+    - "在本文件末尾的 audit_log 中记录"
+    - "如果是系统性问题，更新 CLAUDE.md"
+
+# ============================================================
+# 常见问题模式（历史审计发现的问题）
+# ============================================================
+historical_issues:
+
+  issue_001:
+    date: "2026-06-19"
+    problem: "reasoning_chain 写成了结果描述，不是检查步骤"
+    example: "'filename 来自用户请求' → '问：filename 来自哪里？'"
+    fix_applied: "所有模式的 reasoning_chain 改为问句形式"
+    prevention: "CLAUDE.md 第 2 节强制要求问句格式"
+
+  issue_002:
+    date: "2026-06-19"
+    problem: "LDAP 空密码机制描述不准确"
+    example: "说'匿名绑定'，实际是'Unauthenticated Bind'"
+    fix_applied: "补充 RFC 4513 引用，区分两种机制"
+    prevention: "协议相关内容必须引用官方文档"
+
+  issue_003:
+    date: "2026-06-19"
+    problem: "IDOR 模式只提到基础测试，未覆盖子资源和 HTTP 方法遗漏"
+    example: "只说了 GET /api/resource/{id}，没说 DELETE 或子资源"
+    fix_applied: "补充 practical_notes 中的 test_matrix"
+    prevention: "每个模式必须有'常见漏测点'章节"
+
+  issue_004:
+    date: "2026-06-19"
+    problem: "Content Sniffing 触发条件不完整"
+    example: "没提 nosniff header 和现代浏览器行为"
+    fix_applied: "补充 prerequisite：必须无 nosniff"
+    prevention: "浏览器相关行为必须标注版本"
+
+  issue_005:
+    date: "2026-06-19"
+    problem: "缺少 access_required 字段"
+    example: "不知道测试需要什么权限"
+    fix_applied: "所有模式增加 access_required 和 prerequisite"
+    prevention: "强制字段检查脚本"
+
+  issue_006:
+    date: "2026-06-19（第二次审计）"
+    problem: "黑盒模式的 blackbox_reasoning 全部使用陈述句，不是问句"
+    example: "'步骤2：尝试穿越 payload' → '问：将 filename 改为 ../../ 后响应码是 400 还是 200？'"
+    fix_applied: "全部重写为问句+判断条件格式"
+    prevention: "CLAUDE.md 第 2 节强制要求问句；keyword_scanner blacklist 包含'步骤X：'"
+
+  issue_007:
+    date: "2026-06-19（第二次审计）"
+    problem: "multer 默认行为描述错误（写成 default_safe: true）"
+    example: "multer DiskStorage 默认使用原始文件名，不是随机文件名"
+    fix_applied: "修正为 default_safe: false，区分 MemoryStorage vs DiskStorage"
+    prevention: "框架默认行为必须查官方文档验证，不凭记忆"
+
+  issue_008:
+    date: "2026-06-19（第二次审计）"
+    problem: "LDAP Unauthenticated Bind 的服务器默认行为描述不准确"
+    example: "'大多数默认允许' → 现代 OpenLDAP 2.5+ 和 AD 2019+ 默认拒绝"
+    fix_applied: "补充版本说明，改为'需要确认目标版本和配置'"
+    prevention: "涉及协议/框架默认行为必须注明版本号"
+
+  issue_009:
+    date: "2026-06-19（第二次审计）"
+    problem: "全部黑盒模式缺少 transferable_to 字段"
+    example: "5 个模式全部遗漏，违反 audit_checklist 强制要求"
+    fix_applied: "全部补充 transferable_to 字段"
+    prevention: "yaml_validator 自动化检查此字段是否存在"
+
+  issue_010:
+    date: "2026-06-19（第二次审计）"
+    problem: "Semgrep 规则 pattern-not 语法逻辑错误"
+    example: "pattern-not: open(os.path.basename(...), ...) 永远不会匹配"
+    fix_applied: "修正为多行 pattern-not 格式"
+    prevention: "所有代码示例必须在本地运行验证后再写入"
+
+  issue_011:
+    date: "2026-06-19（第二次审计）"
+    problem: "白盒模式缺少配套的 grep/Semgrep 命令"
+    example: "模式 1/3/5/6 均无具体搜索命令，只有文字描述"
+    fix_applied: "每个 reasoning_chain 步骤后补充白盒搜索命令"
+    prevention: "CLAUDE.md 新增：白盒模式每个步骤必须附带可执行命令"
+
+  issue_012:
+    date: "2026-06-19（第二次审计）"
+    problem: "Chrome Content Sniffing 描述不准确"
+    example: "'Chrome 85+ 大幅限制 sniffing' → 只限制跨域，同源仍会 sniff"
+    fix_applied: "补充'同源 vs 跨域'区分说明"
+    prevention: "浏览器安全行为必须区分同源/跨域两种场景"
+
+# ============================================================
+# 自动化审计脚本（TODO: 实现）
+# ============================================================
+automation_ideas:
+  yaml_validator:
+    - "检查必填字段"
+    - "检查 reasoning_chain 格式（必须包含 '问：'）"
+    - "检查 transferable_to 不能为空"
+
+  keyword_scanner:
+    blacklist:
+      - "发现 / 存在 / 没有"  # reasoning_chain 中不应出现
+      - "Open WebUI 的"       # transferable_to 中应该泛化
+
+    whitelist:
+      - "问："  # reasoning_chain 必须包含
+      - "RFC"   # 协议相关必须有引用
+
+# ============================================================
+# 审计日志（每次审计后追加）
+# ============================================================
+audit_log:
+  - date: "2026-06-19"
+    target: "openwebui-patterns.yaml (初版)"
+    auditor: "资深专家角色"
+    findings:
+      - "5 个系统性问题（见 historical_issues）"
+      - "所有模式的 reasoning_chain 格式错误"
+      - "技术细节准确性不足"
+    actions:
+      - "拆分为白盒和黑盒两个文件"
+      - "修复所有 reasoning_chain"
+      - "补充 access_required / prerequisite 字段"
+    result: "模式库从 70% 可用提升到 90% 可用"
+
+  - date: "2026-06-19 第二次审计"
+    target: "openwebui-patterns-blackbox.yaml + openwebui-patterns-whitebox.yaml"
+    auditor: "资深赏金猎人（10+ 年经验）"
+
+    blackbox_findings:
+      score: "58/100"
+      critical: 4
+      high: 7
+      medium: 8
+      low: 5
+      key_issues:
+        - "所有 reasoning_chain 使用陈述句，不是问句（系统性违规）"
+        - "multer 默认行为描述错误（会导致漏报）"
+        - "LDAP Unauthenticated Bind 默认配置错误"
+        - "全部模式缺少 transferable_to 字段"
+        - "遗漏关键攻击面：CSP 绕过、ZIP Slip、LDAP 注入"
+
+    whitebox_findings:
+      score: "50/100"
+      critical: 3
+      high: 4
+      medium: 4
+      low: 2
+      key_issues:
+        - "模式 4 和 6 的 reasoning_chain 完全不是问句"
+        - "Semgrep 规则语法错误（pattern-not 逻辑错误）"
+        - "模式 2 宣称白盒专属但黑盒也可测（分类错误）"
+        - "多处缺少 grep/Semgrep 命令（不符合白盒标准）"
+        - "Chrome Content Sniffing 行为描述不准确"
+
+    actions_required:
+      immediate:
+        - "修复所有 reasoning_chain 为问句格式"
+        - "修正 Semgrep 规则语法"
+        - "补充所有模式的 transferable_to 字段"
+        - "修正 multer / LDAP / Chrome 技术错误"
+
+      this_week:
+        - "补充白盒模式的 grep/Semgrep 命令"
+        - "添加遗漏的攻击面（CSP绕过/ZIP Slip/LDAP注入）"
+        - "完善 prerequisite 字段"
+
+      next_iteration:
+        - "优化 grep 命令精确度"
+        - "补充自动化脚本示例"
+        - "添加架构级指导（git log 优先策略）"
+
+  - date: "2026-06-19 Phase 1 修复"
+    target: "openwebui-patterns-blackbox.yaml + openwebui-patterns-whitebox.yaml"
+    operator: "修复所有 Critical 问题（7个）"
+    fixed:
+      blackbox:
+        - "C-001: 5 个模式的 blackbox_reasoning 全部改为问句/条件格式，清除'步骤X：'"
+        - "C-002: multer 修正为 DiskStorage default_safe: false"
+        - "C-003: LDAP prerequisite 改为 OpenLDAP 2.5+/AD 2019+ 默认拒绝，引用 RFC 4513 §5.1.2"
+        - "C-004: 5 个模式全部补充 transferable_to 字段"
+      whitebox:
+        - "WB-001: Pattern 4(渲染库) 和 Pattern 6(Socket.IO) reasoning_chain 改问句并补 grep 命令"
+        - "WB-002: Pattern 2(Fix Inconsistency) 标记 applicable: whitebox，移除矛盾的黑盒表述"
+        - "WB-003: 3 条 Semgrep 规则改用 patterns: 块做 AND 组合（修正顶层平级语法错误）"
+      extra:
+        - "连带修正白盒 Pattern 3 的 LDAP 默认行为描述（与 C-003 同源错误）"
+    verification:
+      - "两个 YAML 文件 safe_load 通过"
+      - "grep '步骤[0-9]' 无残留"
+      - "5 个黑盒模式均含 transferable_to"
+      - "3 条 Semgrep 规则均为 patterns: 结构"
+    not_done:
+      - "Semgrep 规则本机未跑通（环境无 semgrep），已在文件内注明落地前需 --validate"
+      - "Phase 2 (High, 11个) / Phase 3 (Medium-Low, 20个) 待后续"
+    result: "7 个 Critical 全部修复，预计黑盒 58→80+，白盒 50→82+"
+
+  - date: "2026-06-19 批量学习 80 CVE"
+    target: "openwebui-patterns-whitebox.yaml + blackbox.yaml"
+    auditor: "主控 + 7 个并行 subagent（按漏洞聚类）"
+    scope: "feedly 上 86 个有 exploit 的 CVE，扣除已学 7 个 + 无 exploit 14 个，学习剩余 80 个"
+    data_source:
+      - "66 个有完整 GitHub Advisory（API 批量拉取 description，含代码位置+PoC）"
+      - "14 个来自 ZDI/huntr，经 feedly + NVD 补全摘要"
+    method:
+      - "按类型分 7 组（path/ssrf/xss/idor_files/idor_collab/access_model/auth_rce_misc）落地为文件"
+      - "7 个 subagent 并行读取各组完整 advisory，提炼模式，返回结构化精简结果"
+      - "主控合并去重，统一写入 yaml，避免重复劳动"
+    new_patterns_whitebox:
+      - "PERMISSION_LEVEL_CONFUSION: 读权限执行写操作"
+      - "AUTHZ_BRANCH_GAP: 类型/状态/前缀分支遗漏"
+      - "INDIRECT_OBJECT_REF: 借自有容器引用他人对象/模型链"
+      - "ENDPOINT_PARITY_MISSING: create/update/import 检查不一致"
+      - "PARAMETER_BINDING_EXPOSURE: 内部参数经框架绑定暴露"
+      - "SSRF_VALIDATION_BYPASS: URL 验证绕过（重定向/解析差异/IPv6/保留段）"
+      - "MASS_ASSIGN_PYDANTIC_EXTRA: extra='allow' + 不安全 dict merge"
+      - "FEATURE_GATE_UI_ONLY: 开关仅 UI 强制 API 未校验"
+      - "UNAUTH_SENSITIVE_ENDPOINT: router 批量鉴权单点遗漏"
+      - "RCE_DYNAMIC_LOAD_EXEC: 动态加载/命令注入/SSE 执行"
+      - "DOMPURIFY_ORDER_XSS: sanitize 先于 markdown 渲染"
+      - "SVG_DATAURI_XSS: SVG/data URI 同源渲染执行"
+      - "IFRAME_SANDBOX_NULLIFIED: allow-scripts+allow-same-origin 并存"
+    new_patterns_blackbox:
+      - "SSRF / PERMISSION_LEVEL_CONFUSION / AUTHZ_BRANCH_GAP / MASS_ASSIGN / PARAMETER_BINDING / UNAUTH_ENDPOINT / INDIRECT_OBJECT_REF（7 个行为探测版）"
+    enhanced_existing:
+      - "PATH_TRAVERSAL: 补 startswith 边界缺陷(sibling-prefix) + split扩展名 sink + 3 案例"
+      - "MISSING_OWNERSHIP_CHECK: 补 13 个确认案例"
+      - "FIX_INCONSISTENCY: 补 CVE-2026-44567(get_current_user 误用)"
+      - "STALE_SESSION_PRIVILEGE: 补 session fixation + pending 绕过"
+      - "THIRD_PARTY_LOOSE_CONFIG / FILE_EXTENSION_TRUST: 补富文本/文件类型新案例"
+    verification:
+      - "审计1: reasoning_chain 无'步骤X：' 残留（0 问题）"
+      - "审计2: 13 个白盒新模式 reasoning_chain 均含问句+grep（全 ✓）"
+      - "审计3: 白盒新模式 10 个必备字段完整（无缺失）"
+      - "审计4: 80/80 CVE 全部写入模式库 cases"
+      - "两个 YAML safe_load 通过"
+    accuracy_notes:
+      - "SSRF 绕过机制核对：validators.ipv6 private 参数对 IPv6 无效(返回 ValidationError)、urlparse vs requests backslash 解析差异、IANA 保留段(100.64/10 等)ipaddress.is_private 不覆盖"
+      - "DOMPurify 顺序：先 sanitize 后 marked 失效（原始 markdown 无标签原样过，marked 再生成 <a href=javascript:>）"
+      - "iframe sandbox: allow-scripts + allow-same-origin 并存 = 无沙箱"
+      - "SameSite=Lax: 阻止跨站 POST 自动带 cookie，CSRF 需 GET 改状态或 form 顶层导航"
+      - "SVG XSS: 跨域 <img> 不执行脚本，须同源 inline 渲染"
+    result: "白盒 7→20 模式，黑盒 5→12 模式；80 个 CVE 全部沉淀为可迁移模式或案例"
+    not_done:
+      - "新增白盒模式的 Semgrep 规则未补充（后续可加）"
+      - "RCE 类(0765/0766)源自 ZDI 仅有摘要，无完整 PoC 代码路径，模式基于通用 RCE 原理"
+
+  - date: "2026-06-19 首次 writeup 学习（learn-writeup skill）"
+    target: "hunting-insights.yaml（新建 L3 思路库）"
+    source_article: "https://mp.weixin.qq.com/s/R-3uPkL88iBndFoWnw9lpA 《我用AI挖了隐藏N年的组合拳漏洞》"
+    quality_triage: "high — 含完整导航叙事与多次扑空，全量提炼 L3"
+    method:
+      - "WebFetch 被微信域名策略拦截，改用 playwright 渲染取正文（#js_content）"
+      - "按 CLAUDE.md 第8节决策三元组提炼，L3 三项全部锚定原文句子"
+      - "新增 taxonomy(phase) + articles 索引做结构化分类，支撑后续批量学习"
+    new_insights:
+      - "COMMENTED_JS_CRED_LEAK (recon): 遍历全部JS/注释文件捞遗留OAuth凭证"
+      - "OAUTH_GRANTTYPE_PIVOT (auth): client_credentials→password+自助注册拿用户token"
+      - "FRONTEND_ROLE_MAPPING_PRIVESC (authz): 注册注入ownerId提权（交叉引用 MASS_ASSIGN_BLACKBOX）"
+      - "OAUTH_CRED_TO_ADMIN_CHAIN (chain): 四环组合拳串链元思路"
+    verification:
+      - "yaml safe_load 通过，4 条 insight 必填字段无缺失"
+      - "grep '步骤[0-9]' 无残留；reasoning_chain 全问句/条件式"
+      - "L3 三项均带 (原文: \"...\") 锚定，无脑补"
+    not_done:
+      - "文章后半段 AI 工具效果对比为作者实验，非漏洞思路，未提炼（正确忽略）"
+
+  - date: "2026-06-19 思路库结构化重构（C1 修正）"
+    target: "hunting-insights.yaml → insights/ 目录结构"
+    reason: "单文件不可 scale；自审发现去重键设计错误（C1）"
+    changes:
+      - "拆为 insights/<phase>/<ID>.yaml，一条思路一文件，按挖洞阶段分目录"
+      - "C1 修正：去重键由 vuln_root 改为 approach（打法/导航路径），vuln_root 降为标签"
+      - "新增 also_phases 字段解决跨阶段归属（H2），不靠目录硬分"
+      - "新增 insights/articles.yaml 文章登记（防重学+溯源）"
+      - "新增 insights/README.md 说明去重规则与检索约定"
+    deferred:
+      - "C3: 暂不建 INDEX 生成器与 /use-insights 检索 skill，攒到~50条再上"
+      - "C2: 检索须'整阶段 trigger 过一遍'，不可纯关键字（建检索层时落实）"
+      - "H1/H4: INDEX 自动生成、效果反馈闭环，随检索层一起做"
+    verification:
+      - "4 条 insight 全部迁移，必填字段（含 approach）无缺失"
+      - "distinct approach = 4，去重键唯一"
+      - "所有 yaml safe_load 通过；旧 hunting-insights.yaml 已删"
+    result: "结构可 scale 到千篇；去重键不再合并 L3 导航差异"
+
+  - date: "2026-06-20 learn-writeup: 从登录页面到服务器登录拿下多个网站权限"
+    target: "JSMAP_HIDDEN_ENDPOINT_DISCOVERY, LFI_HISTORY_TO_CREDENTIAL_CHAIN"
+    reason: "第二篇 writeup 提炼，验证 L3 镜头与去重键逻辑"
+    checks_performed:
+      - "L3 三项锚定检查：observation/hypothesis/action_result 全部引用原文，why_here_first 有叙述依据"
+      - "reasoning_chain 全问句：每项以'问：'或'如果...问：'开头，黑盒无 grep 命令（正确）"
+      - "去重键 approach 唯一：两条皆为新导航路径，未与已有 COMMENTED_JS_CRED_LEAK / OAUTH_CRED_TO_ADMIN_CHAIN 冲突"
+      - "必填字段完整：phase/tags/approach/transferable_to/chaining/vuln_root 无缺失"
+      - "yaml safe_load：两个新文件均可解析，无语法错误"
+    findings:
+      - "扑空路径保留正确：'命令执行 DNSlog 无回显 → BurpSuite 接口穷尽也无触发 → 转向 JS map' 叙事完整"
+      - "串链记录明确：JSMAP 发现下载接口 → LFI 链条 → 横向多站/root，chain 指向清晰"
+      - "思路命名遵守禁令：未用'任意文件读''LFI'作主名，而是'任意文件读后不止读配置——历史命令和 SSH 私钥才是横向的跳板'"
+      - "transferable_to 具体：指明 SPA 后台/.js.map、混合技术栈场景，不是泛泛'所有 Web'"
+    result: "✓ 通过审计。两条思路符合 L3 规范，approach 去重键生效，无技术准确性问题"
+
+  - date: "2026-06-20 learn-writeup: HackerOne #867513 Shopify Account Takeover"
+    target: "EMAIL_PREVERIFY_CROSS_ENDPOINT_ACCOUNT_TAKEOVER"
+    reason: "第三篇 writeup 提炼（首个 HackerOne 报告），验证对'仅结果文'的分流与 L3 锚定规范"
+    checks_performed:
+      - "质量分流判断：报告含清晰串链叙事（两个低危能力组合），属 L3 有价值内容（非纯结果文），进入全量提炼"
+      - "L3 三项锚定：observation 锚定原文'can be exploited to update...without email confirmation'；hypothesis/why_here_first 标注'未叙述（仅结果）'，未脑补内心戏"
+      - "action_result：明确标注'无扑空叙述（文章直接给出成功路径）'，符合实际"
+      - "chaining 完整：明确记录'单独 API 无验证危害有限 + 单独 Dashboard 预验证不足劫持 → 组合后实现完整 Account Takeover'，引用原文'already verified'"
+      - "reasoning_chain 全问句：7 项全以'问：'开头，包含黑盒探测步骤（replay 请求、观察响应），无 grep 命令（blackbox 正确）"
+      - "去重键 approach：'在同一平台多入口中寻找邮件预验证令牌可跨接口复用的链接点'，与已有 7 条不重叠"
+      - "必填字段：id/applicable/phase/also_phases/tags/approach/vuln_root/transferable_to/cases 均完整"
+      - "yaml safe_load：通过"
+    findings:
+      - "✓ 对'未叙述'的标注正确：HackerOne 报告通常仅记录复现步骤，不记录思考过程，用'未叙述（仅结果）'而非编造内心戏，符合规范"
+      - "✓ 串链记录清晰：cases 注明受害者限制（未合并 Shopify ID、无 2FA）与攻击者前提（Partner 账户 + POS staff 权限），不夸大迁移性"
+      - "✓ approach 命名准确：未用'Email Verification Bypass'泛化名，而是'预验证邮箱状态跨接口劫持账户'，强调关键导航点"
+      - "✓ transferable_to 具体：指明'支持账户合并/SSO 的 SaaS 多租户平台'、'移动端内部 API'、'Partner Dashboard 宽松入口'，可操作"
+    result: "✓ 通过审计。首个 HackerOne 报告提炼正确，L3 锚定符合'有叙述就引用、无叙述就标注'规范，无强行编造"
+
+  - date: "2026-06-20 learn-writeup: HackerOne #791775 Shopify Email Confirmation Bypass"
+    target: "EMAIL_CONFIRM_SENT_TO_WRONG_INBOX"
+    reason: "第四篇 writeup 提炼，测试与已有 EMAIL_PREVERIFY 思路的去重判断"
+    checks_performed:
+      - "去重键判断：approach 为'测试确认链接发送目标（新邮箱 vs 旧邮箱）'，与 EMAIL_PREVERIFY 的'跨接口解耦复用验证状态'导航路径不同，新建独立 insight"
+      - "质量分流：无扑空路径，无 why_here_first 叙述，属 medium 质量结果文；但有串链叙事（确认任意邮箱→SSO合并→接管），进入提炼并标注未叙述"
+      - "L3 三项：observation 锚定原文；hypothesis/why_here_first 标'未叙述（仅结果）'；why_here_first 保留了唯一动机线索'I told Pete I would take a look'"
+      - "变种记录：action_result 中记录了第二变种（修复前变更邮箱）以及两次分别修复和分别奖励的事实"
+      - "reasoning_chain：7 项全问句，含变种检测步骤，yaml safe_load 通过"
+    findings:
+      - "✓ approach 去重有效：同为 Shopify 邮件验证绕过，但打法完全不同（发送目标错误 vs API 解耦）"
+      - "✓ 变种价值：在修复验证步骤中增加'修复前修改邮箱'变种检查，提升 reasoning_chain 实战价值"
+      - "✓ transferable_to 具体：指向'支持 SSO/多账户合并'+'多租户平台'+'Partner 账户'，危害倍增条件清晰"
+    result: "✓ 通过审计。去重键正确区分了两条 Shopify 邮件验证思路，未因同平台/同类漏洞而错误合并"

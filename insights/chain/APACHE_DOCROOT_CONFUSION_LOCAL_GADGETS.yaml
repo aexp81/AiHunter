@@ -1,0 +1,124 @@
+name: "不安全 RewriteRule 逃出 DocumentRoot 利用系统预装软件作为 Local Gadgets"
+id: "APACHE_DOCROOT_CONFUSION_LOCAL_GADGETS"
+applicable: "both"
+phase: "chain"
+also_phases: ["input"]
+tags: ["apache", "rewriterule", "documentroot", "local-gadgets", "usr-share", "symlink", "lfi", "ssrf", "xss", "rce"]
+source: "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/"
+
+# ——— L3 核心 ———
+
+observation: >
+  Apache HTTP Server 的 RewriteRule 在处理路径重写时，会同时尝试有 DocumentRoot 和无 DocumentRoot 两个路径
+  （见 modules/mappers/mod_rewrite.c#L4939）。
+  若 RewriteRule 的 substitution 目标前缀可控（如 ^/html/(.*)$ → /$1.html），
+  攻击者可提供绝对路径（如 /usr/share/...）绕过 DocumentRoot 限制。
+  (原文: "For any RewriteRule, Apache HTTP Server always tries to open both the path with DocumentRoot
+  and without it! [...] But this behavior already lets us 'intentionally' access paths outside the Web Root.")
+
+hypothesis: >
+  结合 Path Truncation primitive（%3F 截断 RewriteRule 添加的后缀），
+  可完全控制访问路径。虽然 Apache 默认阻止根目录 / 访问（Require all denied），
+  但 Debian/Ubuntu 默认允许 /usr/share/（Require all granted），
+  该目录下存在大量系统预装软件的文档、示例脚本、Web Root 等"Local Gadgets"可被滥用。
+
+action_result: >
+  不安全配置：RewriteRule "^/html/(.*)$" "/$1.html"
+
+  攻击1（Path Truncation 截断 .html 后缀）：
+  http://server/html/usr/share/doc/websocketd/examples/php/dump-env.php%3F
+  → 访问 /usr/share/doc/websocketd/examples/php/dump-env.php（泄露环境变量）
+
+  攻击2（XSS via LibreOffice）：
+  http://server/html/usr/share/libreoffice/help/help.html%3F?Version=<script>alert(1)</script>
+  → LibreOffice 帮助文件的语言切换功能存在 XSS（无需部署任何 Web 应用）
+
+  攻击3（LFI via jQuery-jFeed proxy.php）：
+  http://server/html/usr/share/javascript/jquery-jfeed/proxy.php%3F?url=file:///etc/passwd
+  → 读取任意文件
+
+  攻击4（SSRF via MagpieRSS）：
+  http://server/html/usr/share/php/magpierss/scripts/magpie_debug.php%3F?url=http://169.254.169.254/
+  → SSRF 读云元数据
+
+  攻击5（Jailbreak via Symlink 到 Redmine RCE）：
+  /usr/share/redmine/instances/ → /var/lib/redmine/ → /etc/redmine/default/secret_key.txt
+  双重软链接绕出 /usr/share/，读取 Rails secret key，串链到 Server-Side Deserialization RCE。
+  (原文: "through an insecure RewriteRule and two Symbolic Links, we can easily access the
+  application secret key used by Redmine")
+
+why_here_first: >
+  当发现不安全的 RewriteRule（substitution 目标前缀可控）时，第一反应是测试 Path Traversal（../）。
+  但 Apache 会规范化路径，../通常无效。
+  关键洞察：Apache 对 RewriteRule 会同时尝试有/无 DocumentRoot 两种路径——
+  这是"架构设计的技术债"（原文: "technical debt from legacy architecture"），
+  开发者未意识到这让攻击者可以"intentionally access paths outside the Web Root"。
+  目标不是整个文件系统（被默认 ACL 阻止），而是被明确允许的目录（/usr/share/ in Debian/Ubuntu）。
+  (原文: "the show's over? Not really! We have already broken the trust of only-allowed-access to
+  the DocumentRoot, it's a significant step forward!")
+
+chaining: >
+  DocumentRoot Confusion + Path Truncation + Local Gadgets Manipulation 三环串链：
+  1. 不安全 RewriteRule（substitution 前缀可控）
+  2. %3F 截断 RewriteRule 添加的后缀（.html / .gz / etc）
+  3. 访问 /usr/share/ 下的预装软件作为 gadgets：
+     - 信息泄露 → 环境变量 / phpinfo / web.xml
+     - XSS → LibreOffice help / jQuery-jFeed / 其他前端包
+     - LFI → 各种 debug console / proxy script
+     - SSRF → RSS reader / HTTP client wrapper
+     - RCE → 旧版 PHPUnit (CVE-2017-9841) / phpLiteAdmin (默认密码 admin)
+  4. Jailbreak（通过软链接逃出 /usr/share/）→ Rails/Django secret key → Deserialization RCE
+
+# ——— 落地检查清单 ———
+
+approach: >
+  黑盒：在 Apache 环境下，找到 RewriteRule substitution 目标前缀可控的配置
+  （常见：移除查询参数、隐藏扩展名、缓存优化规则），
+  测试是否可通过绝对路径 + %3F 截断访问 /usr/share/ 下的预装软件脚本。
+  白盒：搜索 RewriteRule 配置文件，检查所有 substitution 中用户输入位于路径前缀的规则。
+
+reasoning_chain:
+  - "问：目标 Apache 配置中是否有 RewriteRule，且 substitution 目标的路径前缀包含用户输入（捕获组 $1 / $2 等）？"
+  - "黑盒识别：观察 URL 重写模式，如 /html/about → /about.html、/static/file.css → /file.css.gz、/oldsite/page → /page。"
+  - "问：RewriteRule 是否在 Server Config / VirtualHost 块中（而非 Directory 块）？若是，则受 DocumentRoot Confusion 影响。"
+  - "Path Truncation 测试：在路径中注入 %3F 绕过 RewriteRule 添加的后缀（如 /html/test%3F → 访问 /test 而非 /test.html）。"
+  - "DocumentRoot Jailbreak 测试：提供绝对路径如 /html/etc/passwd%3F，观察是否返回 403（默认 ACL 阻止根目录）。"
+  - "Local Gadgets 枚举（Debian/Ubuntu 环境）：问：目标系统是否安装以下软件包？"
+  - "  - WebSocketd: /usr/share/doc/websocketd/examples/php/dump-env.php（泄露环境变量）"
+  - "  - Nginx/Jetty: /usr/share/nginx/html/ 或 /usr/share/jetty9/webapps/（泄露配置）"
+  - "  - LibreOffice: /usr/share/libreoffice/help/help.html（XSS via 语言切换）"
+  - "  - JpGraph: /usr/share/doc/libphp-jpgraph-examples/examples/show-source.php（LFI）"
+  - "  - jQuery-jFeed: /usr/share/javascript/jquery-jfeed/proxy.php（LFI/SSRF）"
+  - "  - MagpieRSS: /usr/share/php/magpierss/scripts/magpie_debug.php（SSRF）"
+  - "  - Moodle: /usr/share/moodle/mod/assignment/type/wims/getcsv.php（LFI）"
+  - "  - PHPUnit (旧版): /usr/share/php/PHPUnit/...（CVE-2017-9841 RCE）"
+  - "  - phpLiteAdmin: /usr/share/phpliteadmin/...（默认密码 admin）"
+  - "Symlink Jailbreak 枚举：问：/usr/share/ 下是否有软链接指向其他目录？（常见：Cacti → /var/log/cacti/、Redmine → /etc/redmine/、Solr → /var/lib/solr/、MediaWiki → /var/lib/mediawiki/）"
+  - "如果发现 Redmine symlink：尝试读取 /usr/share/redmine/instances/default/config/secret_key.txt%3F → Rails secret key → 串链 Deserialization RCE。"
+  - "白盒审计：搜索所有 RewriteRule，过滤 substitution 包含捕获组且位于路径前缀的规则（如 ^/xxx/(.*)$ → /$1.yyy）。"
+
+vuln_root: >
+  Apache RewriteRule 在处理重写时，无论 substitution 是相对路径还是绝对路径，
+  都会尝试有/无 DocumentRoot 两个路径（为支持灵活配置的历史设计）。
+  开发者假设 RewriteRule 只会在 DocumentRoot 内重写，未意识到绝对路径可绕出 DocumentRoot；
+  同时假设系统目录（/usr/share/）无 Web 可执行内容，忽略了预装软件的示例脚本、文档、Web Root 可作为攻击 gadget。
+
+transferable_to:
+  - "任何使用 Apache RewriteRule 且 substitution 前缀可控的配置（移除查询参数、隐藏扩展名、压缩版本优化、旧 URL 重定向）"
+  - "Debian/Ubuntu 系 Apache 部署（默认允许 /usr/share/ 访问）"
+  - "安装了 Rails/Django/PHP 框架或开发工具的服务器（通过 symlink jailbreak 读取 secret key）"
+  - "Web hosting 环境（多租户共享 /usr/share/ 预装软件）"
+  - "容器化环境（若容器镜像包含完整 OS 软件包，/usr/share/ 同样存在 gadgets）"
+
+cases:
+  - source: "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/"
+    author: "Orange Tsai (Black Hat USA 2024)"
+    cves: ["CVE-2024-38475", "CVE-2024-38476"]
+    note: >
+      核心 primitive：DocumentRoot Confusion Primitive 2-2 (Local Gadgets Manipulation)
+      + Primitive 2-3 (Jailbreak from Local Gadgets)。
+      论文展示了 20+ 利用技术，覆盖信息泄露、XSS、LFI、SSRF、RCE。
+      Redmine RCE 案例：双重软链接 (/usr/share/redmine/ → /var/lib/redmine/ → /etc/redmine/)
+      读取 secret_key.txt，串链到 Rails Marshal Deserialization RCE。
+      与 LFI_RAILS_SECRET_TO_RCE 思路一致但触发点不同（RewriteRule vs UploadsRewriter）。
+      修复：Apache 2.4.60 修复部分问题，但架构性缺陷仍存在，建议审计所有 RewriteRule。

@@ -1,0 +1,106 @@
+name: "Self-XSS 通过 Quick Login（魔法链接）强制受害者登入攻击者账户"
+id: "SELF_XSS_QUICK_LOGIN_MAGIC_LINK_ATO"
+applicable: "blackbox"
+phase: "chain"
+also_phases: ["auth"]
+tags: ["self-xss", "quick-login", "magic-link", "passwordless-auth", "email-automation", "gmail-api", "account-takeover", "xss-escalation"]
+source: "https://script.hashnode.dev/self-xss-to-ato-via-site-features"
+
+# ——— L3 核心 ———
+
+observation: >
+  作者在 Next.js 应用的 profile 页面 name 字段发现 Self-XSS（payload 在 profile 页面编码，
+  但在其他页面执行）。需要将受害者带到攻击者账户下触发 XSS。
+  (原文: "I pasted my XSS payload into the name field on the profile page...
+  After opening many pages, I finally landed on one where my payload executed!")
+
+hypothesis: >
+  最初假设：使用 Login CSRF 让受害者登入攻击者账户。
+  (原文: "Usually, hackers use Login CSRF, but this method didn't work for me.")
+
+action_result: >
+  扑空路径1（Login CSRF 失败）：
+  尝试 Login CSRF 但不成功（原因未明确，可能有 CSRF token 或 SameSite Cookie）。
+  (原文: "Usually, hackers use Login CSRF, but this method didn't work for me.")
+
+  扑空路径2（JWT 破解失败）：
+  发现 redirect 请求响应体中含 JWT，尝试破解密钥失败。
+  (原文: "I discovered a request containing a JWT in the redirect_uri property
+  in the response body, but I didn't have the secret key. I tried to crack it,
+  but it didn't work. I got sad and left the desk.")
+
+  成功转向（Quick Login 功能）：
+  休息后重新观察 landing page，发现 Quick Login 功能——发送一次性登录链接到邮箱，
+  点击后重定向到 landing page（正好触发 XSS）。
+  (原文: "After a break, I opened the landing page in private tab. I figured out
+  there is a button for login... The website sent a login link. After clicking on it,
+  the link redirected me to the landing page.. Bingo. That was exactly what the doctor ordered.")
+
+  挑战：Quick Login 链接 10 分钟有效期 + Cookie 有 HttpOnly（无法直接窃取）。
+
+  解决方案：
+  1. 用 Gmail API（Google App Script）自动读取攻击者邮箱中的魔法链接（绕过时间限制）
+  2. 受害者访问攻击者的钓鱼页面 → 自动触发 Quick Login 请求 → 5秒后从邮箱读取链接 → 重定向受害者
+  3. 受害者被登入攻击者账户 → landing page 的 XSS 执行
+  4. XSS 通过 window.open 打开 Google OAuth popup，轮询 exploitWindow.document.cookie
+  5. OAuth 完成后受害者以自己身份登录 → 窃取受害者 cookie（无 HttpOnly）
+
+why_here_first: >
+  未叙述（仅结果）。推断：作者在 Login CSRF 和 JWT 破解都失败后，
+  重新审视网站所有登录方式（Quick login / 用户名密码 / OAuth），
+  发现 Quick Login 的特性（发送链接 → 重定向到 landing page）天然适合触发 Self-XSS。
+
+chaining: >
+  Self-XSS（低危）→ Quick Login 魔法链接（绕过 Login CSRF 限制）→ Gmail API 自动化（绕过时间限制）
+  → 强制受害者登入攻击者账户 → XSS 执行 → OAuth popup 窃取 cookie → 账户接管（高危）。
+
+  关键跳跃：
+  1. 传统 Login CSRF 受限于 CSRF token，但 Quick Login 魔法链接是单向的、无需 CSRF 验证
+  2. Gmail API 自动化将手动操作变为自动化，绕过 10 分钟时间窗口限制
+  3. window.open + OAuth popup 绕过 HttpOnly（子窗口登录完成后 cookie 可被父窗口读取）
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对存在 Self-XSS 的应用，寻找可强制受害者登入攻击者账户的替代方法：
+  Quick Login（魔法链接/Passwordless 登录）是理想候选——
+  链接无需 CSRF token，可自动化读取（Gmail/Outlook API），重定向到应用内页面触发 XSS。
+
+reasoning_chain:
+  - "问：目标是否存在 Self-XSS（在自己账户的某个页面执行 XSS）？"
+  - "问：目标是否支持 Quick Login / Magic Link / Passwordless 登录（发送一次性登录链接到邮箱）？"
+  - "测试：用攻击者邮箱申请 Quick Login 链接，观察点击后是否重定向到应用内页面（理想情况：重定向到有 Self-XSS 的页面）。"
+  - "问：Quick Login 链接是否有短时间限制（如 10 分钟）？"
+  - "如果有时间限制：问：能否通过邮件 API 自动化读取链接？（Gmail API、Outlook API、自建邮件服务器）"
+  - "PoC 自动化流程：钓鱼页面发起 Quick Login 请求 → 等待 N 秒 → 通过 API 读取邮箱 → 提取链接 → 重定向受害者。"
+  - "问：目标的 Cookie 是否有 HttpOnly？如果有，Self-XSS 无法直接窃取 cookie。"
+  - "如果有 HttpOnly：问：XSS 能否通过 window.open 打开 OAuth/登录流程，在子窗口完成登录后读取 cookie？"
+  - "扩展：问：Quick Login 链接是否可重复使用？如果可以，攻击者可预先生成链接批量钓鱼。"
+  - "扩展：问：Quick Login 请求是否有速率限制？无限制则可暴力枚举用户邮箱。"
+  - "白盒审计：搜索 passwordless、magic_link、quick_login 相关代码，检查链接生成是否绑定 IP/User-Agent/Session。"
+
+vuln_root: >
+  开发者假设 Quick Login 魔法链接的安全性基于"链接发送到用户邮箱，只有邮箱拥有者能访问"；
+  未意识到攻击者可将链接发送到**自己邮箱**并通过 API 自动化读取，
+  绕过 Login CSRF 的防护，强制受害者登入攻击者账户。
+  进一步假设 HttpOnly 能防止 XSS 窃取 cookie，
+  但忽略了 window.open + OAuth 子窗口可绕过此限制。
+
+transferable_to:
+  - "任何支持 Quick Login / Magic Link / Passwordless 登录的应用（Slack、Notion、Medium、Auth0 集成等）"
+  - "结合 Self-XSS 的场景：允许用户自定义内容但某些页面未正确编码（论坛签名、profile bio、用户评论）"
+  - "Gmail/Outlook/自建邮件服务可通过 API 自动化读取邮件，绕过短时间窗口限制"
+  - "任何 Cookie 未设置 HttpOnly 的应用，或可通过 OAuth popup 绕过 HttpOnly 的场景"
+  - "企业内部应用（SSO Magic Link）+ Self-XSS → 员工账户接管"
+
+cases:
+  - source: "https://script.hashnode.dev/self-xss-to-ato-via-site-features"
+    author: "Hossein Shourabi"
+    platform: "匿名 public bug bounty 程序（Next.js）"
+    note: >
+      触发点：profile 页面 name 字段 Self-XSS（在其他页面执行）。
+      扑空路径：Login CSRF 失败 → JWT 破解失败 → 转向 Quick Login。
+      关键创新：用 Google App Script + Gmail API 自动化读取魔法链接（绕过 10 分钟时间限制）。
+      串链：Self-XSS → Quick Login → Gmail API → 强制登入 → XSS → OAuth popup → 窃取 cookie。
+      技术栈：main.html（钓鱼页）+ readEmail.php（Gmail API 读取）+ Google App Script（中继）。
+      未披露具体程序名称，作者称"if I survive, I will write another article"。

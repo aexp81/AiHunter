@@ -1,0 +1,8 @@
+[      57ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:8090/login.html:0
+[  113336ms] [ERROR] Failed to load resource: the server responded with a status of 401 () @ http://localhost:8090/api/me:0
+[  113336ms] [ERROR] Failed to load resource: the server responded with a status of 401 () @ http://localhost:8090/api/login:0
+[  113337ms] [ERROR] Failed to load resource: the server responded with a status of 401 () @ http://localhost:8090/api/ping:0
+[  113337ms] [ERROR] Failed to load resource: the server responded with a status of 401 () @ http://localhost:8090/api/login:0
+[  113339ms] [ERROR] Failed to load resource: the server responded with a status of 401 () @ http://localhost:8090/api/users:0
+[  126294ms] [ERROR] Failed to load resource: the server responded with a status of 403 () @ http://localhost:8090/api/me:0
+[  126295ms] [ERROR] Failed to load resource: the server responded with a status of 403 () @ http://localhost:8090/api/users:0

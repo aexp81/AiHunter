@@ -1,0 +1,114 @@
+name: "GitHub 代码搜索→日志泄露→2FA hidden field 替换→Cookie 路径穿越 SSRF→APK逆向→JS代码审计权限升级→CSS注入窃取2FA"
+id: "CTF_MULTISTAGE_RECON_TO_PAYMENT_TAKEOVER"
+applicable: "blackbox"
+phase: "chain"
+also_phases: ["recon", "auth", "authz"]
+tags: ["ctf", "multi-chain", "github-recon", "log-leak", "2fa-bypass", "ssrf", "cookie-manipulation",
+       "apk-reverse", "osint", "css-exfiltration", "privilege-escalation", "path-traversal",
+       "hidden-field", "response-manipulation", "hackerone-ctf"]
+source: "https://hackerone.com/reports/895172"
+
+# ——— L3 核心 ———
+
+observation: >
+  Google 搜索目标品牌名（BountyPay）时发现 GitHub 上一个 logger.php 文件暴露了
+  日志路径 /bp_web_trace.log，访问后获取 Base64 编码的请求日志，
+  其中包含明文用户名密码和 challenge_answer。
+  (原文: "When performing a search for BountyPay on Google, a result appears on Github
+  https://github.com/bounty-pay-code/request-logger/blob/master/logger.php,
+  we access this and it shows us a Logger file that contains log information in the path /bp_web_trace.log")
+
+hypothesis: >
+  GitHub 泄露的日志路径可能在生产环境也存在同一 trace log，包含过往认证请求中的凭据。
+  即使有 2FA，前端 challenge 的校验可能只依赖客户端 hidden field 中的 hash，
+  替换 hash 为自己生成的值就能绕过。
+  (原文: "When inspecting element, we can see that the following is found:
+  <input type=\"hidden\" name=\"challenge\" value=\"a829e6865ae4ef4ace5c24b091fa8a91\">,
+  where value corresponds to an MD5 hash... We replace the hash in \"value\" and we put ours")
+
+action_result: >
+  整条链路含多次卡壳与转向——
+  1. 日志获取凭据后登录受阻于 2FA → 检查 DOM 发现 hidden field 存储 MD5 hash，
+     替换为自己生成的已知值 → 成功绕过第一重 2FA。
+  2. 进入 Dashboard 后尝试加载交易，所有月份都返回 "No Transactions To Process"，
+     意识到权限不足 → 尝试修改 cookie 但失败 → 停下喝咖啡清脑 →
+     数小时后解码 cookie 发现是 Base64 JSON 含 account_id。
+  3. 在请求中发现 API URL 结构，用 cookie 路径穿越构造
+     ../../redirect?url=https://software.bountypay.h1ctf.com/# 实现 SSRF →
+     遍历目录找到 APK 下载链接。
+  4. 反编译 APK 提取 AndroidManifest 中的 intent 定义，用 ADB 逐步触发三阶段挑战
+     → 从 logcat 捕获泄露的 token。
+  5. Twitter OSINT 发现新员工 Sandra Allison 晒工牌含 staff_id →
+     用 APK 获得的 X-Token POST /api/staff 创建账号获取凭据。
+  6. 进入 staff 面板后源码审计发现 website.js 中 .upgradeToAdmin 函数 →
+     利用 "Report This Page" 功能让 admin 访问含 template[]=login&username=sandra.allison 的 URL
+     触发 hash fragment #tab4 点击 → 成功提权为 Admin。
+  7. 最终支付页面又遇 2FA → 注意到请求中加载外部 CSS → 构建 CSS 属性选择器
+     exfiltrate 2FA 代码到 Burp Collaborator → 支付成功。
+  多处明确卡壳：cookie 修改失败、无权加载交易、admin 面板返回 Only admins。
+  (原文: "At this moment I did not know well what I could do to move forward,
+  so I stopped and went to have a coffee to clear my head for a few moments,
+  after several attempts I could not continue or find something that would help me")
+
+why_here_first: >
+  最初入口选择 GitHub 代码搜索——CTF/Bug Bounty 的经典 OSINT 起手式，
+  从外围代码仓库发现生产环境痕迹（日志路径）。
+  每一步的转向方向选择都基于"当前步骤获得了什么新信息"——
+  凭据→2FA挡住→检查DOM→cookie→API→SSRF→APK→OSINT→JS→CSS。
+  (原文: "When performing a search for BountyPay on Google, a result appears on Github...
+  I started to check other subdomains in search of something to help me continue")
+
+chaining: >
+  7 环串链：GitHub OSINT 日志泄露凭据(Low) → 2FA hidden field hash 替换(Medium)
+  → Cookie account_id 路径穿越 SSRF(Medium) → APK 逆向获取 X-Token(Low)
+  → OSINT 社工 staff_id + API 创建账号(Medium) → JS 代码 .upgradeToAdmin
+  + Report 功能强制 admin 访问(High) → CSS 属性选择器 exfiltrate 2FA 完成支付(Critical)。
+  任何单一环节都不超过 Medium，但 7 环串联实现完整资金转移。
+
+approach: >
+  从外围代码仓库 OSINT 获取日志路径 → 日志泄露凭据 → 逐层利用客户端信任缺陷
+  （hidden field、cookie、CSS 加载）突破多重认证 → 每次卡壳时转向新攻击面
+  （APK 逆向、社交媒体 OSINT、JS 代码审计）→ 最终用 CSS exfiltration 完成支付 2FA 绕过。
+
+reasoning_chain:
+  - "目标系统的品牌关键词在 GitHub 上是否有代码仓库或历史提交泄露了日志路径、配置文件或凭据？"
+  - "暴露的日志文件路径在生产环境是否可访问？日志内容中是否包含认证请求的明文参数？"
+  - "2FA 挑战的校验因子（hash/token）是否存储在客户端 DOM 的 hidden field 中？替换为已知值能否绕过？"
+  - "Cookie/Session token 中的标识符（如 account_id）是否被拼接进后端 API URL？能否用路径穿越（../../）将请求重定向到内部服务？"
+  - "受 IP 白名单保护的内网应用能否通过 SSRF 间接访问？SSRF 响应中是否暴露了可下载的客户端应用（APK/安装包）？"
+  - "移动端 APK 的 AndroidManifest 和硬编码值中是否泄露了 API token 或 intent scheme 可被 ADB 触发？"
+  - "目标组织的社交媒体（Twitter/LinkedIn）上新入职员工是否晒出了工牌/staff ID 等可用于社工的标识？"
+  - "前端 JS 中是否定义了仅限 admin 才触发的操作函数（如 .upgradeToAdmin）？能否通过 XSS/CSRF/Report 功能诱导 admin 触发？"
+  - "需要外部 CSS 加载的 2FA 页面能否被替换为攻击者控制的 CSS？CSS 属性选择器 input[name='code_N'][value^='X'] 能否逐字符 exfiltrate 输入值？"
+
+vuln_root: >
+  系统在多个层面信任客户端提供的值（hidden field hash、cookie account_id、CSS 样式表 URL），
+  且各安全层（2FA、IP 白名单、角色检查）各自为政、互不联动，被逐层突破后无兜底校验。
+
+transferable_to:
+  - "多子域架构的 SaaS 平台——通常有 app/api/staff/software 等子域，SSRF 可跨域访问"
+  - "前端 2FA 校验——任何将 challenge hash 存储在 hidden field 并仅在客户端比对的系统"
+  - "有 Report/举报功能的 CMS/管理后台——report 功能可诱导 admin 访问特定 URL"
+  - "使用可自定义 CSS/模板的认证页面——CSS 属性选择器可用于 exfiltrate 表单输入"
+  - "移动端配套 APK 的 Web 应用——APK 反编译常暴露 token 和内部 API"
+
+cases:
+  - source: "https://hackerone.com/reports/895172"
+    title: "[H1-2006 2020] Bypassing access control checks by modifying the URL, internal application state, or the HTML page"
+    context: >
+      H1-2006 CTF 完整解题过程，7 阶段串链，从 GitHub OSINT 到支付 2FA CSS exfiltration，
+      含多次明确卡壳和转向记录。
+  - source: "https://hackerone.com/reports/894863"
+    title: "[H1-2006 2020] From multiple vulnerabilities to complete ATO on any customer account and staff admin"
+    author: "rreiss"
+    context: >
+      同一 CTF 的另一名参赛者完整 writeup。同样的 7 阶段串链路径，
+      但叙事风格不同——作者明确强调 "focus more on my way of thinking"：
+      1. subfinder 子域枚举 + ffuf 文件枚举发现 .git/HEAD → GitHub repo → logger.php → trace log 泄露凭据
+      2. 2FA 绕过：理解 md5(challenge_answer)==challenge 机制，自己生成 hash 替换
+      3. Cookie base64 解码发现 account_id，路径穿越 + open redirect 构造 SSRF
+      4. SSRF 枚举 software 子域发现 APK，dex2jar+jd-gui 逆向三阶段 deep link
+      5. Twitter OSINT 发现 Sandra 工牌 staff_id，POST /api/staff 创建账号
+      6. website.js 中 .upgradeToAdmin + avatar CSS 注入 tab2 class + template[]=login 参数污染
+      7. 2FA 页面加载外部 CSS → CSS keylogger + nth-child 选择器按序 exfiltrate
+      额外细节：Content-Type 遗漏导致 400 卡壳、MD5 hash 解密尝试失败、凌晨 2 点睡觉等。

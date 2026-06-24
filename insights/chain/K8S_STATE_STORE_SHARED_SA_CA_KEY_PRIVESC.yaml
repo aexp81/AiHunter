@@ -1,0 +1,94 @@
+name: "K8s 集群状态存储桶 SA 共享——任意 Pod 读取 CA 私钥伪造 system:masters 证书提权至集群管理员"
+id: "K8S_STATE_STORE_SHARED_SA_CA_KEY_PRIVESC"
+applicable: "both"
+phase: "chain"
+also_phases: ["authz", "recon"]
+tags: ["kubernetes", "kops", "gcp", "gce", "metadata-api", "state-store", "ca-private-key", "certificate-forgery", "privilege-escalation", "cloud", "service-account"]
+source: "https://hackerone.com/reports/1842829"
+
+# ——— L3 核心 ———
+
+observation: >
+  kOps 使用 GCE/GCP provider 时，所有节点（包括 worker 和 control-plane）
+  通过实例的 service account 共享对 state storage bucket 的访问权限。
+  任何拥有 Pod shell 的用户可通过 GCP 元数据 API 获取 SA token，
+  再用该 token 读取 state bucket 中的 PKI 材料。
+  (原文: "During provisioning of the cluster, kOps gives all nodes access to
+  the state storage bucket through the service account associated with the instance.
+  Any user with shell access can request the service account credentials,
+  and read sensitive information from the state store.")
+
+hypothesis: >
+  如果 state bucket 中存储了 Kubernetes CA 的私钥，
+  那么获取 SA token → 读 bucket → 提取 CA 私钥 → 伪造 system:masters 证书 → 集群管理员。
+  进一步：master node 的 SA 拥有 "Kubernetes Engine Service Agent" 角色，
+  权限极高，可能扩展到整个 GCP 项目。
+  (原文: "Using this information, the user can privesc to cluster admin,
+  compromising the entire cluster. It is further possible to compromise a
+  privileged GCP service account associated with the control-plane nodes
+  and takeover other resources in the GCP project.")
+
+action_result: >
+  完整 15 步攻击链全部成功：
+  1. 从任意 Pod 内通过元数据 API 获取 SA token
+     (wget http://metadata.google.internal/.../default/token)
+  2. 从 startup-script 属性中提取 ConfigBase（state bucket 路径）
+  3. 用 SA token 读 gs://kops-state-test/.../pki/private/kubernetes-ca/keyset.yaml
+  4. 提取 CA 私钥和公钥
+  5. 使用 cfssl 生成 system:masters 组的客户端证书
+  6. 构建新的 kubeconfig 文件
+  7. 验证 'kubectl auth can-i * * -A' → 确认集群管理员
+  8. 部署 Pod 到 master node
+  9. 从 master node Pod 获取特权 GCP SA token
+  10. 使用该 token 创建任意 GCE 实例（如 cryptominer）
+  (原文详细列出了全部命令和输出，包括 "k auth can-i '*' '*' -A" 和
+  "gcloud compute instances create miner")
+
+why_here_first: >
+  未叙述（仅结果）。报告者直接从 kOps 文档中的 state store 架构出发，
+  推断所有节点共享 bucket 访问权限是设计缺陷。
+
+chaining: >
+  元数据 API → SA token → state bucket 读取 → CA 私钥 → 伪造 system:masters 证书
+  → 集群管理员 → master node Pod → 特权 SA token → GCP 项目资源接管。
+  (原文: "the master node service accounts have the 'Kubernetes Engine Service Agent' role,
+  which is highly permissive, and would likely allow the compromise of other resources
+  in the GCP project")
+
+approach: >
+  审计 K8s 集群管理工具（kOps / kubeadm / Rancher 等）的 state 存储架构：
+  (1) 集群状态/PKI 是否存储在云存储桶中？
+  (2) worker 节点的 SA 是否也有该桶的读权限？
+  (3) 桶内是否包含 CA 私钥（keyset.yaml / ca.key）？
+  如果三者皆是：任意 Pod → 元数据 API → SA token → 读 CA 私钥 →
+  伪造 system:masters 证书 → 集群管理员 → 横向移动到 master SA → 云项目接管。
+
+reasoning_chain:
+  - "问：K8s 集群的 state 存储在哪里？云存储桶？本地？etcd？"
+  - "问：worker 节点的 service account 是否与 master 节点共享对 state 存储的访问权限？"
+  - "问：state 存储中是否包含 PKI 材料（CA 私钥、etcd 证书等）？"
+  - "问：从任意 Pod 内能否通过元数据 API 获取节点 SA 的 access token？"
+  - "问：用该 token 能否读取 state 存储中的 CA 私钥？"
+  - "问：拿到 CA 私钥后能否伪造 system:masters 组的客户端证书？"
+  - "问：成为集群管理员后，能否调度 Pod 到 master 节点，获取 master 的 SA token？"
+  - "问：master SA 拥有什么云 IAM 角色？能否横向移动到项目其他资源？"
+
+vuln_root: >
+  集群管理工具为简化部署，给所有节点（含 worker）授予了对 state storage bucket 的读权限，
+  但 bucket 中包含 CA 私钥——开发者假设 Pod 内的用户无法访问节点的 SA token，
+  忽略了元数据 API 是从 Pod 内可达的。
+
+transferable_to:
+  - "使用 kOps + GCE/GCP 的所有 K8s 集群"
+  - "任何将 PKI 材料存储在云存储桶中的集群管理工具"
+  - "EKS/AKS 中如果 node SA 对 state bucket 有过宽权限"
+  - "etcd 备份存储在共享存储中的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/1842829"
+    platform: "Kubernetes (kOps)"
+    severity: "High (8.0)"
+    bounty: "$2,500"
+    note: >
+      kOps GCE provider：worker 节点 SA 可读 state bucket → CA 私钥 →
+      伪造 system:masters 证书 → 集群管理员 → master SA → GCP 项目接管。

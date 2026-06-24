@@ -1,0 +1,71 @@
+name: "多租户 API 返回跨店铺资源名称——接口未限定当前租户上下文导致枚举他人隐藏资源"
+id: "CROSS_TENANT_API_RESOURCE_NAME_ENUMERATION"
+applicable: "blackbox"
+phase: "authz"
+also_phases: []
+tags: ["idor", "multi-tenant", "cross-tenant", "shopify", "api", "information-disclosure", "resource-enumeration", "hidden-resource"]
+source: "https://hackerone.com/reports/93921"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）——报告正文不可见（no-content 公开），
+  仅有团队摘要："This bug allowed users from one store to read the name of
+  collections, products and pages from other stores."
+
+hypothesis: >
+  未叙述（仅结果）——推断：在某个 API 端点中，
+  传入资源 ID（collections/products/pages）后返回资源名称，
+  但后端未校验请求者所属店铺与资源所属店铺是否匹配，
+  导致 A 店铺用户可枚举 B 店铺的隐藏资源名称。
+
+action_result: >
+  未叙述（仅结果）——从团队摘要推断：
+  成功读取其他店铺的 collections、products、pages 的名称，
+  包括隐藏（hidden）的资源名称，但无法获取其他信息
+  也无法确定资源属于哪个店铺。
+  (原文团队摘要: "It would have allowed anyone to discover the name of
+  hidden collections, products and pages from other stores, but not
+  retrieve any other information about the collection, product or page,
+  and it would not have allowed the user to determine which store it
+  belongs to.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: "N/A — 单独为信息泄露，影响范围限于资源名称。"
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在多租户 SaaS 平台中，识别接受资源 ID 并返回资源元数据（名称/标题/描述）的
+  API 端点，使用 A 租户的认证凭据传入 B 租户的资源 ID，观察是否返回资源信息。
+  重点关注 autocomplete/search/lookup 类接口——它们为了性能常跳过租户隔离检查。
+
+reasoning_chain:
+  - "问：平台的 API 中哪些端点接受 resource_id 参数并返回资源元数据？"
+  - "问：这些端点在处理请求时是否校验 resource_id 对应的资源属于当前认证用户的租户？"
+  - "问：使用自己账号的认证 token + 其他租户的资源 ID 发起请求，返回了什么？"
+  - "问：是否能枚举资源 ID（自增整数？可预测 UUID？）来批量获取其他租户的资源名称？"
+  - "问：返回的信息中是否包含隐藏/未发布的资源（hidden collections、draft products）？"
+  - "问：是否能进一步通过其他端点利用泄露的资源名称/ID 进行写操作（升级影响）？"
+
+vuln_root: >
+  开发者在资源查询 API 中仅做了认证检查（用户是否登录），
+  但未做资源级鉴权（资源是否属于当前用户的租户），
+  假设"用户只会查询自己店铺的资源 ID"。
+
+transferable_to:
+  - "多租户电商平台（Shopify、BigCommerce、WooCommerce SaaS 版）"
+  - "SaaS 产品的 autocomplete/search/suggest API 端点"
+  - "任何接受 resource_id 并返回元数据的多租户 API"
+  - "内部工具的资源浏览/选择器组件（常为了易用性跳过租户检查）"
+
+cases:
+  - url: "https://hackerone.com/reports/93921"
+    title: "Unauthorized access to all collections, products, pages from other stores"
+    author: "pouya"
+    platform: "Shopify"
+    severity: "未评定"
+    note: >
+      no-content 公开。A 店铺用户可读取 B 店铺的 collections、products、pages 名称，
+      包括隐藏资源，但无法获取其他详细信息。团队确认并修复。

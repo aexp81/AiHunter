@@ -1,0 +1,91 @@
+name: "敏感操作的管理端点绕过——UI 要求密码确认但替代管理端点跳过再认证"
+id: "ADMIN_ENDPOINT_REAUTH_BYPASS_SENSITIVE_OP"
+applicable: "both"
+phase: "authz"
+also_phases: ["auth"]
+tags: ["re-authentication", "email-change", "admin-panel", "alternative-endpoint", "authorization-bypass", "revive-adserver", "sensitive-operation"]
+source: "https://hackerone.com/reports/3398283"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。修改邮箱的 UI（Preferences → Change E-mail）要求输入当前密码，
+  但 /admin/agency-user.php 端点接受 POST 请求直接更新用户邮箱（包括 admin），无需密码确认。
+  (原文: "The Change E-mail UI requires the current password, but the admin panel endpoint
+  /admin/agency-user.php accepts a POST that updates a user's email (including admin)
+  without requiring the account password.")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  通过 Inventory → User Access 选择 admin 用户，点击 Save changes 并拦截请求，
+  在请求中修改 email_address 参数为攻击者邮箱，admin 用户邮箱被成功更新，
+  无需密码确认。
+  (原文: "Navigate to Inventory → User Access, select the admin user, and click
+  Save changes while intercepting the request. Modify and send the following request:
+  submit=1&login=admin&token=...&userid=1&email_address=another-mail@example.com&agencyid=1
+  Observe that the admin user's email is successfully updated without password confirmation.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  替代管理端点修改 admin 邮箱 → 通过密码重置接管 admin 账户 → 完全控制广告服务器。
+  (原文: "An authenticated attacker (with access to the User Access page) can change
+  the administrator's email address without authorization, potentially leading to
+  account takeover or loss of access control integrity.")
+
+approach: >
+  当目标应用的用户设置 UI（如修改邮箱/密码/2FA）要求密码再确认时，搜索同一系统中
+  能操作同一字段的其他管理端点（如 admin panel 的用户管理页面、批量操作 API、
+  SCIM/provisioning 端点），检测这些替代路径是否跳过了密码再验证。
+  特别关注：admin panel 中直接编辑用户属性的 CRUD 端点通常由不同代码路径实现，
+  开发者可能只在用户自助修改页面加了 re-auth 检查。
+
+reasoning_chain:
+  - "问：目标系统中修改敏感信息（邮箱/密码/2FA/安全设置）的用户自助页面是否要求密码再确认？"
+  - "如果是 → 问：admin 管理面板中是否存在能修改同一字段的用户管理端点？"
+  - "问：这些管理端点在修改用户信息时是否也要求操作者的密码再确认？"
+  - "如果不要求 → 问：低权限管理角色是否能访问这些端点？"
+  - "如果可以 → 问：能否通过该端点修改比自己权限更高的用户（如 admin）的邮箱？"
+  - "如果成功 → 攻击链：修改 admin 邮箱 → 密码重置 → 账户接管"
+  - "扩展：SCIM、LDAP 同步、API provisioning 等自动化端点是否也能绕过 re-auth？"
+  - "扩展：批量导入/导出功能中的用户信息修改是否有同等保护？"
+
+vuln_root: >
+  开发者只在用户自助修改页面添加密码再认证检查，但管理面板中操作相同字段的端点
+  使用不同代码路径，未实施同等的再认证保护。
+
+transferable_to:
+  - "CMS / 广告管理系统的 admin panel 用户管理功能（WordPress/Joomla/Drupal）"
+  - "SaaS 平台中管理员可编辑用户属性的后台端点"
+  - "企业应用的 SCIM/LDAP provisioning 端点"
+  - "多角色系统中具有 user-management 权限但非 super-admin 的角色"
+  - "任何区分 self-service 和 admin-managed 用户修改路径的系统"
+
+cases:
+  - url: "https://hackerone.com/reports/3398283"
+    author: "yoyomiski"
+    platform: "Revive Adserver 6.0.0"
+    severity: "High (CVSS 8.8)"
+    bounty: "无赏金（开源项目）"
+    cve: "CVE-2025-48986"
+    note: >
+      Revive Adserver /admin/agency-user.php 端点修改用户邮箱无需密码确认，
+      绕过了 Preferences → Change E-mail 页面的密码验证保护。
+      认证攻击者（有 User Access 页面权限）可修改 admin 邮箱导致 ATO。
+      2025-10 报告，2025-11 公开。34 votes。
+  - url: "https://hackerone.com/reports/2120667"
+    title: "Bypass password confirmation via Context-dependent access control (Nextcloud)"
+    author: "st0nzy"
+    platform: "Nextcloud Server"
+    severity: "Medium (CVSS 5.4)"
+    bounty: "$100"
+    cve: "CVE-2023-49791"
+    note: >
+      Nextcloud workflow 删除操作的 UI 要求密码确认弹窗，但直接发送
+      DELETE /ocs/v2.php/apps/workflowengine/api/v1/workflows/user/{id}?format=json
+      请求即可绕过密码确认直接删除 workflow。
+      (原文: "A Broken Context-dependent access control happen when user can
+      bypass password confirmation by send the following request
+      DELETE /nextcloud/ocs/v2.php/apps/workflowengine/api/v1/workflows/user/3?format=json")
+      approach 相同：直接调用 API endpoint 绕过前端密码再确认检查。

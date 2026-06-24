@@ -1,0 +1,85 @@
+name: "Serverless 应用仓库样例应用的过宽 IAM 角色——部署后可横向提权"
+id: "SERVERLESS_APP_REPO_OVERBROAD_IAM_ROLE_PRIVESC"
+applicable: "both"
+phase: "authz"
+also_phases: ["recon"]
+tags: ["aws", "iam", "sts-assume-role", "serverless", "lambda", "privilege-escalation", "sar", "cloudformation", "wildcard-resource", "over-permissive"]
+source: "https://hackerone.com/reports/2808412"
+
+# ——— L3 核心 ———
+
+observation: >
+  AWS Serverless Application Repository 中的 experimental-programmatic-access-ccft
+  应用部署后，为 ExtractCarbonEmissionsFunction Lambda 函数创建的 IAM 角色
+  包含 sts:AssumeRole 权限且资源范围为 "*"，可以 assume 到 AWS Organization
+  中的任意账户角色。
+  (原文: "The experimental-programmatic-access-ccft application creates a function
+  named ExtractCarbonEmissionsFunction, and the associated role is assigned policies
+  with permissions such as 'sts:AssumeRole' for '*' resources.")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  未叙述（仅结果）。报告直接指出恶意用户可利用 sts:AssumeRole 权限横向提权，
+  建议使用细粒度授权策略替换通配符资源，并移除不必要的 STS 权限。
+  (原文: "A malicious user can leverage the 'sts:AssumeRole' permissions to assume
+  into any AWS Account in the AWS Organization, resulting in privilege escalation.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  部署包含过宽 IAM 角色的 SAR 应用 → Lambda 函数 sts:AssumeRole * →
+  assume 到组织内其他账户的高权限角色 → 横向访问其他账户资源。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  审计 AWS Serverless Application Repository / CloudFormation 模板 / Terraform 模块
+  等社区共享的基础设施即代码（IaC）资源，检查部署后创建的 IAM 角色是否包含
+  过宽权限（尤其是 sts:AssumeRole/iam:PassRole 对 "*" 资源），
+  或者是否缺少权限边界（permissions boundary）限制。
+
+reasoning_chain:
+  - "问：目标组织是否使用了 AWS Serverless Application Repository / 社区 CloudFormation 模板 / 公共 Terraform 模块？"
+  - "问：部署的应用/模板创建了哪些 IAM 角色？这些角色的策略是否包含通配符资源（Resource: '*'）？"
+  - "问：角色策略中是否有高危权限：sts:AssumeRole、iam:PassRole、iam:CreatePolicyVersion、lambda:InvokeFunction 对 '*' 资源？"
+  - "如果发现通配符 sts:AssumeRole → 问：该角色是否可被 Lambda/EC2/ECS 等计算资源的代码调用？"
+  - "问：目标 AWS Organization 中是否有可被 assume 的跨账户角色？（常见：OrganizationAccountAccessRole）"
+  - "问：是否设置了 permissions boundary 来限制角色的最大权限？"
+  - "扩展：检查所有通过 SAR / Quick Create / 模板部署的资源的 IAM 策略，而不仅是手动创建的。"
+
+vuln_root: >
+  社区/样例应用使用过宽的 IAM 权限（sts:AssumeRole 对 "*"），
+  开发者假设部署环境是隔离的或仅用于测试，但实际部署到生产组织后
+  该权限可被滥用于横向提权。
+
+transferable_to:
+  - "任何通过 AWS SAR / CloudFormation Quick Create 部署社区应用的组织"
+  - "使用公共 Terraform 模块（Terraform Registry）的组织——模块中的 IAM 策略可能过宽"
+  - "Kubernetes Helm Charts 中嵌入的 ServiceAccount/RBAC 配置"
+  - "GitHub Actions / CI 模板中配置的 AWS 凭证权限"
+  - "任何 IaC 模板审计场景——聚焦通配符资源和高危 Action 组合"
+
+cases:
+  - url: "https://hackerone.com/reports/2808412"
+    author: "zolaer9527"
+    platform: "AWS VDP (experimental-programmatic-access-ccft SAR app)"
+    severity: "High (CVSS 7.3)"
+    bounty: "无赏金（VDP）"
+    note: >
+      experimental-programmatic-access-ccft 的 ExtractCarbonEmissionsFunction
+      角色拥有 sts:AssumeRole 对 * 的权限，可 assume 到组织内任意账户。
+      (原文: "the associated role is assigned policies with permissions such as
+      'sts:AssumeRole' for '*' resources... resulting in privilege escalation")
+  - url: "https://hackerone.com/reports/2805173"
+    author: "zolaer9527"
+    platform: "AWS VDP (cloudFrontExtensionsConsole awslabs)"
+    severity: "Medium (CVSS 6.5)"
+    bounty: "无赏金（VDP）"
+    note: >
+      cloudFrontExtensionsConsole 部署后创建的多个 Lambda 函数共享同一 IAM 角色，
+      角色包含 iam:CreateRole、iam:GetRole、iam:CreatePolicy、iam:AttachRolePolicy
+      甚至 iam:* 对 * 资源的权限，可被恶意用户利用进行权限提升。
+      (原文: "The role has the 'iam:CreateRole', 'iam:GetRole', 'iam:CreatePolicy',
+      and 'iam:AttachRolePolicy' for '*' resources... The role has the 'iam:*' for
+      '*' resources.")

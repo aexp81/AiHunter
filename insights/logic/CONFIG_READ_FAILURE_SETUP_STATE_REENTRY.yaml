@@ -1,0 +1,94 @@
+name: "共享配置文件读取失败导致应用回退到安装状态——匿名用户获取管理员权限"
+id: "CONFIG_READ_FAILURE_SETUP_STATE_REENTRY"
+applicable: "both"
+phase: "logic"
+also_phases: ["auth"]
+tags: ["config-toctou", "docker", "container", "nfs", "setup-reentry", "admin-takeover", "nextcloud", "race-condition", "deployment"]
+source: "https://hackerone.com/reports/522876"
+
+# ——— L3 核心 ———
+
+observation: >
+  在 Nextcloud 的 Docker 化部署中，多个容器共享同一 NFS/SMB 挂载的 config.php 文件
+  和同一 MySQL 数据库。当其中一个容器因瞬态 NFS/SMB 故障无法读取 config.php 时，
+  Nextcloud 会假定自身尚未安装，重新启动安装向导。
+  (原文: "consider that one or both of the containers encounter an issue reading
+  /var/www/html/config/config.php. This could be caused by...Transient failure
+  connecting to the NFS/SMB server...One container attempting to read config.php
+  while the other container is writing to the file, causing an incomplete read")
+
+hypothesis: >
+  如果 config.php 读取失败时 Nextcloud 没有区分"文件不存在"和"临时读取失败"，
+  它会用环境变量重写 config.php 并将 installed 标志设为 FALSE。
+  一旦 NFS/SMB 恢复正常，所有容器都会读到这个新的 installed=FALSE 配置，
+  任何访问者都会看到安装向导——可以创建新的管理员账户接管已有数据库。
+  (原文: "Nextcloud will assume that it is NOT installed...causes that instance
+  to overwrite the config.php with a new file...flags Nextcloud as not yet being
+  installed (i.e. installed is set to FALSE)")
+
+action_result: >
+  未叙述具体 PoC 步骤（仅场景分析）。描述了攻击者可以编写脚本持续监控目标实例，
+  等待 config.php 读取失败事件发生后，在安装向导页面创建任意用户名密码
+  获取完整管理员权限。
+  (原文: "An attacker...could write a script to frequently monitor that
+  installation until such a time as that installation suffers a temporary issue
+  reading config.php and starts serving up the installer. At that point, the
+  attacker can...finish the setup process, and create a username and password
+  of their choice to gain full admin access.")
+
+why_here_first: >
+  从 Docker 化多容器部署的故障场景入手——NFS/SMB 瞬态故障在生产环境中是常见的
+  基础设施事件，研究者关注的是应用层对这种底层故障的响应行为是否安全。
+  (原文: "Consider this deployment:...There are two Nextcloud containers running...
+  Both containers share the same...config via NFS-mounted or SMB-mounted Docker volumes")
+
+chaining: >
+  NFS/SMB 瞬态读取失败 → config.php 被重写为 installed=FALSE →
+  所有容器暴露安装向导 → 匿名用户创建管理员 →
+  锁定现有用户 + 下载/删除所有文件。
+  (原文: "With admin access, the attacker can lock out all of the existing users,
+  change system settings, and download or erase all of the files.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对容器化/分布式部署的 Web 应用，审计其"已安装/已配置"状态判定逻辑——
+  当配置文件（config.php、.env、settings.py）因存储后端瞬态故障而不可读时，
+  应用是否错误地回退到初始安装/Setup 状态；
+  若回退则检查安装向导是否校验数据库中已有数据/用户，
+  还是允许匿名创建新管理员覆盖现有系统。
+
+reasoning_chain:
+  - "问：目标应用的'已安装'状态判定依赖什么？（配置文件存在性、数据库标志位、环境变量）"
+  - "问：配置文件是否存储在共享存储（NFS/SMB/EFS）上？多实例是否共享同一配置？"
+  - "问：当配置文件不可读/为空时，应用的行为是什么？（报错停机 vs 回退到安装向导）"
+  - "白盒：grep -rn 'installed\\|is_installed\\|INSTALLED\\|setup_required' 配置加载逻辑"
+  - "问：安装向导是否检查数据库中已有 admin 用户或已有表？"
+  - "如果不检查 → 匿名用户可通过安装向导创建新管理员并接管整个已有数据库"
+  - "问：config.php 写入时是否使用原子写（先写临时文件再 rename），避免读写竞争？"
+  - "扩展：监控目标实例的安装向导页面（如 /index.php/install），等待配置故障触发"
+
+vuln_root: >
+  应用将"配置文件不可读"等同于"未安装"，在配置加载失败时直接回退到安装状态，
+  而安装向导不校验数据库中是否已有数据/用户，
+  允许匿名创建管理员账户覆盖现有系统——缺少"已安装"状态的持久化锁定机制。
+
+transferable_to:
+  - "其他自托管 PHP 应用（WordPress、Moodle、Drupal）的安装状态判定逻辑"
+  - "Docker 化 CMS 部署中 config 文件存储在共享卷时的读写竞争"
+  - "Kubernetes 中多 Pod 共享 ConfigMap/PVC 的应用——PVC 断开时的行为"
+  - "任何通过配置文件存在性判定安装状态的应用——检查 file_exists vs 文件内容完整性"
+  - "自托管 Git 平台（Gitea、Gogs）的首次安装流程——install.lock 是否可被绕过"
+
+cases:
+  - url: "https://hackerone.com/reports/522876"
+    title: "In Dockerized Environments, Failing to Read config.php Grants Any Anonymous User Full Admin Access"
+    author: "theguynamedguy86"
+    platform: "Nextcloud (nextcloud/server)"
+    severity: "High (CVSS 8.7)"
+    bounty: "无"
+    note: >
+      Nextcloud Docker 多容器 + NFS/SMB 共享配置文件部署场景：
+      config.php 瞬态读取失败 → 应用重写 config 为 installed=FALSE →
+      所有容器暴露安装向导 → 匿名用户创建管理员 → 接管整个实例。
+      建议：安装向导应检查数据库中是否已有 admin 用户/表。

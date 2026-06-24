@@ -1,0 +1,74 @@
+name: "HTTP 请求走私（CL.TE desync）到 CDN 缓存毒化到 iframe 链式 CSP 绕过窃取登录凭据"
+id: "HTTP_DESYNC_SMUGGLING_TO_CACHE_POISON_STORED_XSS"
+applicable: "blackbox"
+phase: "chain"
+also_phases: ["input"]
+tags: ["http-request-smuggling", "CL-TE-desync", "cache-poisoning", "patch-bypass", "header-obfuscation", "line-folding", "csp-bypass", "credential-theft", "akamai", "paypal", "stored-xss"]
+source: "https://hackerone.com/reports/510152"
+
+observation: >
+  James Kettle 发现 PayPal 前端 Akamai CDN 与后端存在 CL.TE desync。
+  第一次修复让 Akamai 拒绝含 Transfer-Encoding: chunked 的请求。
+  (原文: 引用 PortSwigger 研究以 PayPal 为核心案例)
+
+hypothesis: >
+  HTTP 行折叠（Transfer-Encoding:\n chunked）可以绕过 Akamai 的字符串匹配过滤，
+  重新启用 desync。走私请求可毒化 CDN 缓存中的 JS 文件实现持久化 XSS。
+  (原文: 研究者使用 line-wrapped header 使 Akamai 无法识别该头部而透传到后端)
+
+action_result: >
+  完整攻击链成功：
+  1. 行折叠绕过 Akamai 过滤重启 desync
+  2. 走私前缀 Host 指向攻击者域名 → 302 被 CDN 缓存为 PayPal JS 文件响应
+  3. iframe→c.paypal.com（无CSP）→paypal.com/us/gifts（无CSP）三跳绕过 CSP
+  4. 同源执行 JS 跨 iframe 读取登录表单窃取密码（Safari/IE）
+  (原文: 引用完整 PoC payload 和攻击链步骤)
+
+why_here_first: >
+  James Kettle 系统研究了 HTTP 请求走私的现代攻击面（Black Hat USA 2019），
+  开发了基于超时的黑盒 desync 检测方法论。
+  (原文: PortSwigger 研究论文详述了检测方法论)
+
+chaining: >
+  四环链：行折叠绕过补丁 → Socket 毒化 + CDN 缓存毒化核心 JS
+  → iframe 链式 CSP 绕过 → 窃取 PayPal 登录凭据
+
+approach: >
+  检测多层代理架构中前后端对 HTTP 请求边界的解析差异（CL vs TE desync），
+  通过行折叠/大小写变体等协议等价表示绕过安全过滤，
+  利用走私请求毒化 CDN 缓存中的 JS 文件实现持久化 XSS，
+  再通过 iframe 链式跳转绕过不完整的 CSP。
+
+reasoning_chain:
+  - "问：目标是否使用多层代理架构（CDN + 后端服务器）？"
+  - "问：发送同时含 CL 和 TE 的歧义请求后，响应时间是否异常？（超时检测法）"
+  - "如果超时 → 确认 CL.TE 或 TE.CL desync 存在"
+  - "问：前端是否过滤了 TE 头？行折叠（\\n + 空格）能否绕过？"
+  - "问：走私请求修改 Host 头后，后端是否返回 302？CDN 是否缓存了该 302？"
+  - "如果缓存 → 问：目标页面的 CSP 是否完整覆盖所有 iframe 子页面？"
+  - "如果 CSP 不完整 → 通过 iframe 链式跳转到无 CSP 页面执行脚本"
+
+vuln_root: "前端 CDN 与后端对 HTTP 请求边界解析不一致，安全过滤基于字符串匹配而非协议规范化。"
+
+transferable_to:
+  - "任何使用 Akamai/Cloudflare/Fastly 等 CDN + 后端的多层架构"
+  - "安全过滤基于关键词匹配而非协议规范化的场景"
+  - "CDN 缓存静态资源的场景——缓存毒化影响指数级放大"
+  - "CSP 部署不完整的应用——主页面有 CSP 但 iframe 子页面缺失"
+
+cases:
+  - url: "https://hackerone.com/reports/510152"
+    note: "James Kettle → PayPal，$20,000，High (CVSS 8.7)。#488147 补丁绕过。"
+  - url: "https://portswigger.net/research/http-desync-attacks-request-smuggling-reborn"
+    note: "完整研究论文（Black Hat USA 2019）。"
+  - url: "https://hackerone.com/reports/740037"
+    title: "Request smuggling on admin-official.line.me could lead to account takeover"
+    platform: "LINE"
+    severity: "High"
+    note: >
+      no-content 公开。TE.CL 型走私（与 PayPal 的 CL.TE 方向相反），
+      影响 admin-official.line.me。负载均衡器转发行为导致，
+      厂商同步通知了负载均衡器供应商。
+      (原文团队摘要: "The reporter identified a request smuggling issue on
+      admin-official.line.me (TE.CL-type) ... This issue was the result of
+      how our load balancers were forwarding requests to the backend services.")

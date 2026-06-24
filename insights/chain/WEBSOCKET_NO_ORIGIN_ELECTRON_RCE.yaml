@@ -1,0 +1,53 @@
+name: "本地 WebSocket 服务未校验 Origin + Electron nodeIntegration 链式 RCE"
+id: "WEBSOCKET_NO_ORIGIN_ELECTRON_RCE"
+applicable: "blackbox"
+phase: "chain"
+also_phases: ["auth"]
+tags: ["websocket", "origin-validation", "electron", "nodeIntegration", "rce", "desktop-app", "localhost-service", "playstation"]
+source: "https://hackerone.com/reports/873614"
+
+observation: >
+  PlayStation Now 桌面应用在 localhost:1235 开放 WebSocket 服务且不校验 Origin header，
+  任何网页均可连接并发送命令。
+  (原文: "This is a vulnerable setup...A website sends requests to a local webserver to do something.
+  This setup is vulnerable if the local server does not check the Origin header.")
+
+hypothesis: >
+  如果 WebSocket 命令能让 Electron 子应用加载任意 URL，且该应用配置了 nodeIntegration:true，
+  就能通过 require('child_process').exec() 执行系统命令。
+  (原文: "nodeIntegration is set to true in AGL. Any JavaScript loaded by AGL will be able
+  to spawn processes on the machine.")
+
+action_result: >
+  从恶意网页通过 WebSocket 发送 setUrl 命令让 AGL 加载攻击者 URL，
+  页面中的 JS 直接调用 child_process 实现 RCE。
+  (原文: "A single websocket message is enough to make AGL load any URL. There are no restrictions here.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  恶意网页 → WebSocket 未验证 Origin → setUrl 加载任意 URL
+  → nodeIntegration:true 执行系统命令 → RCE
+
+approach: >
+  扫描桌面应用在 localhost 开放的 WebSocket/HTTP 端口，从外部网页测试 Origin 校验，
+  枚举可用命令寻找 setUrl/loadUrl 类指令，结合 Electron nodeIntegration:true 实现 RCE。
+
+reasoning_chain:
+  - "问：目标桌面应用在 localhost 监听了哪些端口？（netstat -anb 扫描）"
+  - "问：端口使用什么协议？（尝试 WebSocket 和 HTTP 连接）"
+  - "问：从外部网页（不同 origin）发起连接是否被拒绝？如果成功说明无 Origin 校验"
+  - "问：有哪些可用命令？是否有 setUrl/loadUrl 类指令接受 URL 参数？"
+  - "问：Electron app.asar 中 nodeIntegration 是否为 true？（npx asar extract 检查）"
+  - "如果 nodeIntegration:true → 构造含 require('child_process').exec 的 HTML payload"
+
+vuln_root: "WebSocket 服务不验证 Origin + Electron nodeIntegration:true + setUrl 无白名单。"
+
+transferable_to:
+  - "使用本地 WebSocket/HTTP 与桌面 Electron 应用通信的客户端软件"
+  - "游戏启动器、流媒体客户端、IDE 扩展等桌面应用"
+  - "任何在 0.0.0.0 而非 127.0.0.1 监听的本地服务"
+
+cases:
+  - url: "https://hackerone.com/reports/873614"
+    note: "PlayStation Now 桌面应用，WebSocket+Electron RCE，$15,000，CVSS 9.6。"

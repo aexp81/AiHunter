@@ -1,0 +1,54 @@
+name: "Wiki 非标准扩展名触发 Kramdown 内联选项链到 Rouge const_get 到 require 路径穿越 RCE"
+id: "KRAMDOWN_INLINE_OPTS_ROUGE_REQUIRE_RCE"
+applicable: "whitebox"
+phase: "chain"
+also_phases: ["input", "logic"]
+tags: ["kramdown", "rouge", "ruby", "wiki", "rce", "gitlab", "const_get", "require", "path-traversal"]
+source: "https://hackerone.com/reports/1125425"
+
+observation: >
+  Wiki 支持 git push 上传任意扩展名文件（如 .rmd），会走 github-markup gem 的
+  other_markup_unsafe 路径触发 Kramdown 渲染。
+  (原文: "render_wiki_content will call other_markup_unsafe which will end up calling
+  Kramdown::Document.new(content).to_html")
+
+hypothesis: >
+  Kramdown 支持内联选项扩展控制 Rouge formatter 参数，const_get 可实例化 Redis 类，
+  Redis 的 driver 参数触发 require 路径穿越加载攻击者上传的 .rb 文件。
+  (原文: "::Rouge::Formatters.const_get(opts[:formatter]).new(opts) will be called,
+  where opts is controllable via the inline options to kramdown")
+
+action_result: >
+  通过 snippet 附件上传 .rb payload 到已知路径，Wiki .rmd 文件触发 Kramdown→Rouge→Redis→require 链，
+  成功执行任意代码。
+  (原文: "Looking at /tmp you can see that the payload was executed: vakzz was here")
+
+why_here_first: >
+  研究者发现 wiki 通过 git push 可上传任意扩展名文件，从而进入非默认 markdown 的渲染路径。
+  (原文: "Files with any extension can be uploaded by checking out the wiki with git")
+
+chaining: >
+  git push .rmd → Kramdown 渲染 → inline options 注入 → Rouge const_get 实例化 Redis
+  → driver 参数 require 路径穿越 → 加载 snippet 附件 .rb payload → RCE
+
+approach: >
+  通过 Wiki 非标准文件扩展名触发 Kramdown 渲染，利用 inline options 控制 Rouge formatter
+  参数到 const_get 实例化任意类，再经 Redis driver 的 require 路径穿越加载攻击者上传的 rb 文件。
+
+reasoning_chain:
+  - "问：Wiki 除了 .md 还支持哪些格式？通过 git push 可上传任意扩展名吗？"
+  - "问：Kramdown 渲染有哪些用户可控的配置？是否支持 inline options？"
+  - "问：Rouge 的 formatter 选项是否调用 const_get 实例化类？正则校验能否绕过？"
+  - "问：可实例化的类（如 Redis）初始化时有没有 require/load 等危险操作？"
+  - "问：如何把恶意 .rb 文件放到服务器已知路径？（snippet 附件上传）"
+
+vuln_root: "Kramdown 允许文档内联设置渲染选项且未限制危险选项，const_get 实例化任意类，Redis require 加载任意文件。"
+
+transferable_to:
+  - "任何使用 Kramdown 渲染用户内容且未设置 forbidden_inline_options 的应用"
+  - "通过 const_get/constantize 从用户输入实例化类的 Ruby 应用"
+  - "允许用户上传文件到可预测路径 + 后端有 require/load 的组合场景"
+
+cases:
+  - url: "https://hackerone.com/reports/1125425"
+    note: "GitLab Wiki Kramdown→Rouge→Redis require traversal RCE，$20,000，by vakzz。"

@@ -78,3 +78,12 @@ cases:
       第一个变种：修改邮箱后，确认链接发到旧邮箱。
       第二个变种：在注册初始验证邮件发出前就修改邮箱，仍可触发同样效果。
       两个变种被 Shopify 分别修复并单独奖励 bounty。
+  - url: "https://hackerone.com/reports/796808"
+    title: "[Part II] Email Confirmation Bypass in myshop.myshopify.com that Leads to Full Privilege Escalation"
+    platform: "Shopify"
+    severity: "Critical"
+    note: >
+      #791775 修复后的第二个变种（独立报告）：在初始验证邮件发出前修改邮箱，
+      仍可触发确认链接发到旧邮箱的行为。Shopify 二次修复，单独奖励。
+      (原文: "I found user can change their email prior to receiving the
+      verification message on their original email. i.e. the same technique")

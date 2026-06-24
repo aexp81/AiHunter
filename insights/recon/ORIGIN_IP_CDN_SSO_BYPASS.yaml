@@ -1,0 +1,74 @@
+name: "通过 DNS/SSL 证书探测 CDN 背后源站 IP 直接访问绕过前置 SSO 认证"
+id: "ORIGIN_IP_CDN_SSO_BYPASS"
+applicable: "blackbox"
+phase: "recon"
+also_phases: ["auth"]
+tags: ["origin-ip", "cdn-bypass", "sso-bypass", "akamai", "dns-recon", "ssl-certificate", "direct-ip-access", "load-balancer"]
+source: "https://hackerone.com/reports/736391"
+
+# ——— L3 核心 ———
+
+observation: >
+  目标站点使用 Akamai CDN 做负载均衡并将流量路由到内部服务器，
+  访问时被重定向到 SSO 认证页面要求登录。
+  (原文: "The host at ████ uses Akamai as a load balancer and routes traffic back to
+  an internal server... When attempting to hit the website, you are redirected to
+  https://█████████/pool/sso/authenticate/ and requires the visitor to authenticate via SSO.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：如果 SSO 认证由 CDN/LB 层强制执行而非源站本身，
+  则直接访问源站 IP 可完全绕过 SSO 认证。
+
+action_result: >
+  成功：找到源站 IP 后直接访问，完全绕过 SSO 认证，
+  可作为已认证用户使用应用，查看和下载机密信息。
+  (原文: "I was able to find the Origin IP of this server. Hitting this Origin IP completely
+  circumvents the ████████ SSO and allows the visitor to use the application as an
+  authenticated user.")
+  验证方法：通过 openssl s_client 连接源站 IP 的 443 端口提取 SSL 证书中的 DNS 名称确认源站归属。
+  (原文: "true | openssl s_client -connect ██████:443 2>/dev/null | openssl x509 -noout -text |
+  perl -l -0777 -ne '@names=/\\bDNS:([^\\s,]+)/g; print join(\"\\n\", sort @names);'")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  源站 IP 暴露 → 绕过 CDN/LB 层的 SSO 认证 → 直接以已认证身份访问内部应用 →
+  搜索和下载机密文件（含飞机/导弹技术文档）。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  通过 DNS 解析链、SSL 证书透明度日志、历史 DNS 记录等方式探测 CDN/WAF/LB
+  背后的源站真实 IP，然后直接访问源站 IP 测试是否能绕过前置的认证/授权网关。
+
+reasoning_chain:
+  - "问：目标站点是否使用 CDN/WAF/反向代理/负载均衡器？（检查 DNS CNAME 链、响应头）"
+  - "问：认证/SSO 是在 CDN/LB 层还是在源站本身实现的？"
+  - "如果认证在 CDN 层 → 问：能否通过以下方式找到源站真实 IP？"
+  - "  - DNS 历史记录（SecurityTrails、ViewDNS.info）"
+  - "  - SSL 证书透明度日志（Censys、crt.sh）中搜索目标域名，反查 IP"
+  - "  - 子域名扫描寻找未经 CDN 保护的子域（同一 IP 段）"
+  - "  - 邮件头中的 Received 字段、SPF 记录中的 IP"
+  - "如果找到候选 IP → 用 openssl s_client 连接 443 端口确认 SSL 证书中是否包含目标域名"
+  - "如果证书匹配 → 直接通过 IP 访问（设置 Host 头为目标域名），观察是否跳过 SSO 重定向"
+  - "如果绕过成功 → 验证源站是否限制了来源 IP（应仅接受 CDN IP 段的连接）"
+
+vuln_root: >
+  认证/SSO 网关仅部署在 CDN/负载均衡层，源站本身不做任何认证检查，
+  且源站 IP 未限制为仅接受 CDN 网段的入站连接，导致发现源站 IP 即可绕过全部认证。
+
+transferable_to:
+  - "所有将认证/WAF/ACL 规则部署在 CDN/反向代理层而非源站的架构"
+  - "政府/军事/企业内部应用使用 Akamai/Cloudflare/AWS CloudFront 做 SSO 前置网关"
+  - "SaaS 应用的管理后台仅靠 WAF 规则限制访问的场景"
+  - "API 网关层做认证但后端微服务直接暴露的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/736391"
+    author: "cdl"
+    platform: "U.S. Dept Of Defense"
+    severity: "Critical (CVSS 9.1)"
+    note: >
+      目标站点使用 Akamai CDN 做 SSO 认证网关，通过 DNS 解析链找到源站 IP 后
+      直接访问完全绕过 SSO，可作为已认证用户浏览和下载机密军事信息（飞机/导弹文档）。
+      通过 openssl s_client 验证 SSL 证书确认源站归属。报告状态为 Duplicate（原始报告 #711510）。

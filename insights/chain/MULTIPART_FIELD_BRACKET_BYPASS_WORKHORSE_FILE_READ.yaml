@@ -1,0 +1,68 @@
+name: "multipart 字段方括号命名混淆绕过中间件签名校验——从 Rack 解析歧义到任意文件读取"
+id: "MULTIPART_FIELD_BRACKET_BYPASS_WORKHORSE_FILE_READ"
+applicable: "whitebox"
+phase: "chain"
+also_phases: ["input"]
+tags: ["gitlab", "workhorse", "multipart", "rack", "middleware-bypass", "signature-bypass", "file-read", "proc-fd", "inflight-file-theft"]
+source: "https://hackerone.com/reports/850447"
+
+observation: >
+  在测试 nuget 包上传 workhorse 绕过补丁时，发现 multipart 字段名
+  '[package]' 经过 Rack::Utils.parse_nested_query 解析后产生
+  {"package"=>nil}，与真实的 'package' 字段一致，通过了签名校验。
+  (原文: "Using `[package]` as the field name causes the `@rewritten_fields` to contain...
+  This is then used `parsed_field = Rack::Utils.parse_nested_query(field)`
+  which ends up creating the hash `{\"package\"=>nil}` (same as package would return)")
+
+hypothesis: >
+  如果签名校验通过但 Multipart::Handler 匹配的是攻击者通过 query param
+  传入的 file.path，那就能读 allowed_paths 内任意文件，甚至通过
+  /proc/PID/fd/XX 窃取其他用户的 inflight 临时文件。
+  (原文: "This passes the validation, but the `Multipart::Handler` will then
+  use the query params as they match instead of the payload that workhorse
+  sends through")
+
+action_result: >
+  通过 wiki attachments API 使用 file.path=/tmp/ggg 成功读取服务器上的任意
+  allowed_paths 文件（无需 git 用户归属限制），并演示了通过
+  /proc/PID/fd/44 循环竞争窃取其他用户上传中的临时文件。
+  (原文: "Using the wiki api removes the restriction that the file needs to be
+  owned by `git` due to `file_content: attrs[:file].read`" 和
+  "Upload a bunch of things, eventually a file will be stolen")
+
+why_here_first: >
+  研究者在测试另一个 nuget 包 workhorse 绕过补丁时偶然发现了这个更广泛的绕过。
+  (原文: "While testing and looking at the patch for the nuget package workhorse
+  bypass...I came across a more widespread bypass")
+
+chaining: >
+  方括号 multipart 命名混淆 → 绕过 workhorse 签名校验 → query param 注入
+  file.path → 读 allowed_paths 内已知文件 → 进一步通过 /proc/PID/fd
+  竞争窃取 inflight 临时文件（跨用户）
+
+approach: >
+  审计中间件/反向代理对 multipart 字段名的处理逻辑，寻找字段名在不同层
+  （如 workhorse 签名校验 vs Rack 路由分发）解析结果不一致的情况：
+  用方括号/嵌套语法使签名校验层认为字段合法，而后端匹配层使用攻击者注入的
+  query param 替代。结合 /proc/PID/fd 竞争技巧扩大文件读取范围。
+
+reasoning_chain:
+  - "问：文件上传经过哪些中间层？每层如何解析 multipart 字段名？"
+  - "白盒：对比签名校验层和路由分发层对同一字段名的解析——是否存在歧义？"
+  - "问：Rack::Utils.parse_nested_query 对 '[field]' 和 'field' 是否返回等价结果？"
+  - "如果等价 → 问：签名通过后，后端是否优先使用 query string 中同名参数？"
+  - "如果是 → 可通过 query param 注入 file.path 指向 allowed_paths 中文件"
+  - "问：wiki attachment API 是 read 语义还是 move 语义？read 不受文件归属限制"
+  - "问：能否通过 /proc/PID/fd/XX 竞争获取 inflight 临时文件？"
+
+vuln_root: "中间件签名校验层和后端参数匹配层对 multipart 字段名的解析存在歧义——方括号语法导致两层匹配到不同的参数源。"
+
+transferable_to:
+  - "任何使用 Rack 或类似 query string 解析器的 Ruby 中间件（Rails、Sinatra）"
+  - "有预处理层（如 workhorse、nginx upload module）签名后传递参数给后端的架构"
+  - "多层参数合并时前端 query param 可覆盖后端 signed payload 的场景"
+  - "文件上传后 /proc/PID/fd 竞争窃取（适用于 Linux 服务端有文件 I/O 的场景）"
+
+cases:
+  - url: "https://hackerone.com/reports/850447"
+    note: "GitLab workhorse multipart bypass via [bracket] field name, $10,000, critical, by vakzz。"

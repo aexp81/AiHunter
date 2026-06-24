@@ -1,0 +1,73 @@
+name: "软件包分发的 systemd/init 服务文件带有全局可写权限导致本地提权"
+id: "PKG_SERVICE_FILE_WORLD_WRITABLE_LPE"
+applicable: "both"
+phase: "authz"
+also_phases: ["recon"]
+tags: ["linux", "systemd", "init.d", "file-permissions", "lpe", "privilege-escalation",
+       "package-audit", "nordvpn", "deb", "service-unit", "world-writable"]
+source: "https://hackerone.com/reports/1218523"
+
+observation: >
+  NordVPN Linux 客户端的 deb 包中，init 脚本和 systemd unit 文件被设置为全局可写权限（0666/0777），
+  任何本地用户均可覆盖这些文件。
+  (原文: "Some of these files are created with unsafe permissions, this allow any user on the system to overwrite them:
+  -rwxrwxrwx 0/0  2442 2021-04-07 10:15 ./etc/init.d/nordvpn
+  -rw-rw-rw- 0/0   368 2021-04-07 10:15 ./usr/lib/systemd/system/nordvpnd.service
+  -rw-rw-rw- 0/0   229 2021-04-07 10:15 ./usr/lib/systemd/system/nordvpnd.socket")
+
+hypothesis: >
+  如果 systemd 服务文件可被非特权用户覆盖，则攻击者可修改 ExecStart 指向恶意命令，
+  在服务重启（如系统重启）时以 root 身份执行任意代码。
+  (原文: "By overwriting these files, an unprivileged user can trigger the init system
+  to execute arbitrary code as UID 0.")
+
+action_result: >
+  攻击者将 nordvpnd.service 的 ExecStart 替换为创建 SUID bash 的命令，
+  系统重启后 systemd 以 root 执行该命令，攻击者获得 euid=0 shell。
+  (原文: "ExecStart=/usr/bin/bash -c \"cp /usr/bin/bash /tmp/evilbash; chmod u+s /tmp/evilbash;\""
+  及 "evilbash-5.0# id  uid=1000(user) gid=1000(user) euid=0(root) groups=1000(user),998(nordvpn)")
+
+why_here_first: >
+  未叙述（仅结果）
+
+chaining: "N/A"
+
+approach: >
+  审计软件包（deb/rpm/snap）分发的文件权限，重点检查 systemd unit、init.d 脚本、
+  tmpfiles.d 配置等由 root/init 系统加载执行的文件是否具有非预期的全局可写权限（0666/0777）。
+
+reasoning_chain:
+  - "问：目标软件是否以系统包（deb/rpm/snap）形式分发？"
+  - "问：包内是否包含 systemd service/socket/timer unit 或 init.d 脚本？"
+  - "问：这些服务文件的权限是什么？——用 dpkg -c / rpm -qlp 检查文件元数据中的权限位"
+  - "如果权限为 0666/0777（全局可写），则任何本地用户可覆盖文件内容"
+  - "问：该服务是否以 root 或高权限身份运行？——检查 User= 字段或默认运行身份"
+  - "如果以 root 运行，则修改 ExecStart 可实现任意命令以 root 执行"
+  - "问：触发服务重新加载的条件是什么？——系统重启、systemctl daemon-reload + restart、logrotate 等"
+  - "问：攻击者是否有物理访问或其他方式触发重启？——即使没有，系统日常重启也会触发"
+
+vuln_root: "软件包构建流程未正确设置服务文件权限，将应仅 root 可写的 systemd unit/init 脚本打包为全局可写（0666/0777）。"
+
+transferable_to:
+  - "任何以 deb/rpm/snap/pkg 分发的 Linux 桌面客户端软件（VPN、安全工具、云客户端）"
+  - "自建 CI/CD 产出的内部 Linux 包——构建脚本常忽略 umask 设置"
+  - "Docker 镜像中安装的第三方包——容器内提权场景"
+  - "嵌入式 Linux 设备固件中的 init 脚本权限审计"
+  - "macOS LaunchDaemon/LaunchAgent plist 文件权限（类似攻击面）"
+
+cases:
+  - url: "https://hackerone.com/reports/1218523"
+    note: "NordVPN Linux Client 3.10.0，deb 包中 /etc/init.d/nordvpn (0777)、nordvpnd.service (0666)、nordvpnd.socket (0666) 全局可写，覆盖 ExecStart 后重启即获 root。Medium severity。"
+  - url: "https://hackerone.com/reports/908162"
+    title: "Acronis True Image Local Privilege Escalation via insecure folder permissions"
+    author: "theevilbit"
+    platform: "Acronis True Image (macOS)"
+    severity: "Medium (CVSS 6.7)"
+    bounty: "$300"
+    note: >
+      macOS 变体：Acronis True Image 以拖拽方式安装到 /Applications/ 目录，
+      所有 LaunchDaemon plist（com.acronis.*）的 ProgramArguments 指向
+      /Applications/Acronis True Image.app/Contents/MacOS/ 内的可执行文件。
+      由于拖拽安装不修改文件夹所有权，admin 用户可替换任意可执行文件，
+      LaunchDaemon 以 root 启动时执行恶意代码。
+      修复建议：使用 pkg 安装器确保文件权限为 root:wheel。

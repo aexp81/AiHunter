@@ -1,0 +1,43 @@
+name: "Markdown 渲染管线中 CSS 选择器与属性取值源不一致——属性注入到存储型 XSS"
+id: "MARKUP_SELECTOR_ATTRIBUTE_MISMATCH_XSS"
+applicable: "whitebox"
+phase: "input"
+also_phases: ["chain"]
+tags: ["xss", "stored-xss", "csp-bypass", "attribute-injection", "selector-mismatch", "kroki", "gitlab", "string-concatenation"]
+source: "https://hackerone.com/reports/1731349"
+
+observation: >
+  GitLab Kroki Filter 用 CSS 选择器 pre[lang] > code[lang] 匹配子节点，
+  但 diagram_type 优先从 node.parent['lang'] 取值，父节点 lang 未经白名单校验。
+  (原文: 选择器匹配 code 节点，但 diagram_type 优先取 node.parent['lang']，
+  字符串拼接生成 img 标签允许属性逃逸)
+
+hypothesis: "未叙述（仅结果）"
+action_result: >
+  在父节点 lang 注入含双引号的恶意值逃逸 href 属性，利用 data-diff-for-path + jQuery .html()
+  实现 CSP 绕过和存储型 XSS。
+  (原文: CSP bypass 通过 data-diff-for-path + single_file_diff.js 的 $(data.html) 实现)
+
+why_here_first: "未叙述（仅结果）"
+chaining: "正则缺陷 → 文件名注入 → 属性注入 → data-original/data-diff CSP 绕过 → Stored XSS"
+
+approach: >
+  审计 HTML 过滤器中 CSS 选择器（匹配子节点属性）与实际取值逻辑（优先从父节点取）的不一致，
+  通过在父节点属性中注入含双引号的值逃逸 img/a 标签属性边界。
+
+reasoning_chain:
+  - "问：渲染管线中的过滤器用什么选择器匹配节点？"
+  - "问：实际取值是否从同一节点取？还是优先从父节点/其他属性取？"
+  - "如果来源不一致 → 问：父节点属性是否经过白名单校验？"
+  - "问：输出标签是用字符串拼接还是 DOM API 构建？（拼接则双引号可逃逸）"
+  - "如果可逃逸 → 注入 data-* 属性链接页面自有 JS 的 innerHTML 行为绕过 CSP"
+
+vuln_root: "过滤器的选择逻辑和取值逻辑使用不同数据源，img 标签用字符串拼接构建。"
+
+transferable_to:
+  - "任何 Markdown/HTML 渲染管线中的过滤器（图表集成如 Kroki/Mermaid/PlantUML）"
+  - "用字符串拼接而非 DOM API 构建 HTML 标签的代码"
+
+cases:
+  - url: "https://hackerone.com/reports/1731349"
+    note: "GitLab Kroki Filter 属性注入 + CSP 绕过 XSS，$13,950。"

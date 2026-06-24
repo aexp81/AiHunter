@@ -1,0 +1,66 @@
+name: "SUID 二进制的同目录辅助程序未加锁校验——硬链接 + 竞态替换实现 root 代码执行"
+id: "SUID_COLOCATED_BINARY_UNLOCKED_VALIDATION_TOCTOU_LPE"
+applicable: "whitebox"
+phase: "logic"
+also_phases: ["authz"]
+tags: ["toctou", "race-condition", "suid", "hardlink", "privilege-escalation", "macos", "acronis", "binary-swap", "file-locking"]
+source: "https://hackerone.com/reports/1251464"
+
+# ——— L3 核心 ———
+
+observation: >
+  Acronis True Image 的 SUID 二进制 "Acronis True Image" 在启动时会检查同目录下的
+  "console" 二进制是否有效，但校验期间不对 "console" 加文件锁。
+  (原文: "The SUID binary does some checks on 'console' before it is run to make sure
+  the correct binary is being run" 以及 "the SUID binary does not lock 'console'
+  whilst it checks if it is valid")
+
+hypothesis: >
+  如果创建一个指向 SUID 二进制的硬链接到可控目录，SUID 二进制会在该目录中查找 "console"。
+  利用校验与执行之间的竞态窗口，在校验通过后、执行前替换 "console" 为恶意程序，
+  即可获得 root 代码执行。
+  (原文: "By using a hardlink to the SUID binary we can coerice it to try and load
+  'console' in a chosen directory we can write to. From this point we can exploit that
+  the SUID binary does not lock 'console' whilst it checks if it is valid, we setup
+  a environment where we can replace console at will and try to win a race where we
+  replace the 'console' binary after it has been checked but before it has been run.")
+
+action_result: >
+  成功：使用 Python 脚本循环执行硬链接的 SUID 二进制，每次递增延迟后替换 console 为恶意程序。
+  当竞态窗口命中时（通过检测 "pass" 文件创建确认），恶意代码以 root 身份执行，
+  开启 reverse shell。
+  (原文: "os.link('/Applications/Acronis True Image.app/Contents/MacOS/Acronis True Image', './run')"
+  以及 "os.popen('./run'); time.sleep(lag); os.unlink('./console'); os.link('./a.out', './console')"
+  以及 "If we win this race we gain code execution as root")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  管理员权限账户 → 硬链接 SUID 二进制到可写目录 → 竞态替换 console → root shell。
+  单步即完成提权，无需额外串链。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  审计 SUID/SGID 二进制是否在运行时加载同目录下的其他二进制/库文件，
+  检查加载前的校验是否持有文件锁——若未持锁则存在 TOCTOU 竞态窗口。
+  硬链接 SUID 到可写目录可控制同目录查找路径。
+
+reasoning_chain:
+  - "系统中有哪些 SUID/SGID 二进制？它们是否在运行时加载同目录下的其他程序或共享库？"
+  - "加载前的完整性校验是否持有文件锁（flock/fcntl），还是仅做校验后释放再加载？"
+  - "能否通过硬链接将 SUID 二进制移到攻击者可控的目录，使其在该目录中查找辅助二进制？"
+  - "校验与执行之间的时间窗口有多大？能否通过循环调整延迟来稳定命中竞态？"
+  - "macOS 的 SIP / 文件系统保护是否阻止对 /Applications 目录下二进制的硬链接？"
+
+vuln_root: "SUID 二进制校验辅助程序时未持有文件锁，且可通过硬链接改变查找目录"
+
+transferable_to:
+  - "macOS/Linux 上任何加载同目录辅助二进制的 SUID/SGID 程序"
+  - "桌面安全软件（AV/备份/加密）的特权启动器"
+  - "任何先校验后加载但不持锁的特权进程"
+
+cases:
+  - url: "https://hackerone.com/reports/1251464"
+    title: "Acronis True Image Local Privilege Escalation Due To Race Condition In Application Verification"
+    bounty: "有赏金（金额未公开）"

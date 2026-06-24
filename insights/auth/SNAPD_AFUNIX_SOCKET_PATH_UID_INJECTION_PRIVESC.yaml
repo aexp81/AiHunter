@@ -1,0 +1,94 @@
+name: "AF_UNIX socket 文件名注入 ;uid=0; 覆写 peer credential 字符串解析——本地提权 root"
+id: "SNAPD_AFUNIX_SOCKET_PATH_UID_INJECTION_PRIVESC"
+applicable: "whitebox"
+phase: "auth"
+also_phases: ["chain"]
+tags: ["privilege-escalation", "linux", "snapd", "socket", "string-parsing", "uid-injection", "local", "af-unix", "dirty-sock"]
+source: "https://hackerone.com/reports/496285"
+
+# ——— L3 核心 ———
+
+observation: >
+  snapd 服务以 root 运行，绑定 AF_UNIX socket /run/snapd.socket（权限 0666，任意用户可连接），
+  背后是 REST API。socket 使用 SO_PEERCRED 获取连接方的 UID 做访问控制。
+  (原文: "snapd serves up a REST API attached to a local AF_UNIX socket.
+  Access control to restricted API functions is accomplished by querying the UID
+  associated with any connections made to that socket.")
+
+hypothesis: >
+  SO_PEERCRED 本身可靠返回真实 UID，但后续代码将 pid/uid/socket/remoteAddr
+  拼成一个分号分隔字符串再解析——如果 remoteAddr（即客户端 socket 文件名）包含 ";uid=0;"，
+  for-loop 解析会用后者覆写前者，从而欺骗鉴权。
+  (原文: "some additional processing happens... all values are concatenated into a single string variable...
+  that combined string is broken up again into individual parts...
+  As it is iterating through all of the splits, a second occurrence of 'uid='
+  would overwrite the first.")
+
+action_result: >
+  验证成功：用 Python 创建一个名为 /tmp/sock;uid=0; 的文件并 bind 为 AF_UNIX socket，
+  connect 到 /run/snapd.socket；delve 调试确认 remoteAddr 变为
+  "pid=5275;uid=1000;socket=/run/snapd.socket;/tmp/sock;uid=0;"，
+  解析后 uid=0 覆写真实 uid=1000。
+  v1 利用：调用 POST /v2/create-user 从 Ubuntu SSO 创建本地 sudo 用户。
+  v2 利用：调用 POST /v2/snaps sideload devmode snap（install hook 运行 useradd+sudo），
+  无需网络/SSH 即可提权。
+  (原文: "we have injected a false uid of 0, the root user...
+  This will give us access to the protected functions of the API...
+  dirty_sockv1 leverages the 'POST /v2/create-user' API function...
+  dirty_sockv2 instead uses the 'POST /v2/snaps' API to sideload a Snap
+  containing a bash script that will add a local user.")
+
+why_here_first: >
+  攻击者做本地提权时先找 root 运行的 HTTP/REST 服务——snapd socket 权限 0666
+  意味着任何用户可连接，但常规自动化提权工具不检测 AF_UNIX socket 上的 HTTP 服务，
+  属于"隐藏的攻击面"。
+  (原文: "One of the first things an attacker will do when compromising a machine
+  is to look for hidden services that are running in the context of root.
+  HTTP servers are prime candidates... a hidden HTTP service that is likely not
+  widely tested as it is not readily apparent using most automated privilege
+  escalation checks.")
+
+chaining: >
+  socket 文件名注入 → UID 覆写 → 调用 create-user API（v1：需要 SSO 账号+SSH）
+  或 sideload devmode snap 的 install hook（v2：离线可用）→ 创建 sudo 用户 → root。
+  两条利用路径都从同一个 UID 注入原语出发，适用条件不同。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  审计 AF_UNIX socket 服务的 peer credential 获取和权限判断流程：
+  如果 SO_PEERCRED 结果经过字符串拼接→拆分→再解析，
+  攻击者可通过控制客户端 socket 文件名注入分隔符和伪造字段覆写权限标识。
+
+reasoning_chain:
+  - "问：目标系统是否有以 root 运行且绑定 AF_UNIX socket 的服务？（ls /run/*.socket, netstat -xlnp）"
+  - "问：socket 文件权限是否允许普通用户连接？（检查 SocketMode 或 ls -l）"
+  - "问：socket 上是否暴露 HTTP/REST API？（用 nc -U /run/xxx.socket 发 HTTP 请求测试）"
+  - "问：API 中哪些端点需要 root/admin 权限？（阅读文档或源码中的 access control 注解）"
+  - "白盒：peer credential 获取后是否经过字符串序列化（拼接到一个 string）再反序列化（split+parse）？"
+  - "如果是 → 问：拼接中的分隔符（; 或 , 或 :）是否可以被 remoteAddr/socket 文件名注入？"
+  - "构造 PoC：创建文件名包含 ';uid=0;' 的 socket 文件，bind 后 connect 到目标 socket，测试是否获得 root API 访问"
+  - "问：获得 API 访问后，有哪些可利用的端点？（create-user、install snap、执行命令等）"
+  - "扩展：其他 IPC 认证机制是否存在类似的 serialize→deserialize 身份混淆？（D-Bus polkit、X11 auth cookie 等）"
+
+vuln_root: >
+  开发者假设 AF_UNIX 客户端的 remoteAddr（socket 文件名）不含特殊字符，
+  但将 pid/uid/socket/remoteAddr 拼成分号分隔字符串后再 split 解析，
+  导致攻击者可通过控制文件名注入伪造的 uid= 字段覆写真实 UID。
+
+transferable_to:
+  - "任何通过 AF_UNIX socket 暴露 API 并用 SO_PEERCRED 做访问控制的 Linux 守护进程"
+  - "将多个身份属性序列化为单一字符串再反解析的认证/鉴权逻辑（不限于 socket）"
+  - "D-Bus 服务、containerd、Docker Engine、systemd 等通过 Unix socket 通信的基础设施服务"
+  - "类似的 serialize→parse 模式：HTTP header 中的 X-Forwarded-For 拼接后再 split 取最后一个值"
+
+cases:
+  - url: "https://hackerone.com/reports/496285"
+    author: "initstring"
+    platform: "Internet Bug Bounty (snapd/Ubuntu)"
+    severity: "High (CVSS 7.8)"
+    bounty: "有赏金"
+    note: >
+      dirty_sock exploit：snapd 2.28–2.37.1，CVE-2019-7304，影响所有安装 snapd 的 Linux 发行版。
+      两种利用路径：v1 通过 SSO create-user，v2 通过 sideload devmode snap。
+      Canonical 快速修复。完整 writeup: https://initblog.com/2019/dirty-sock/

@@ -1,0 +1,68 @@
+name: "组/群移除成员后已有会话仍保留旧权限——被踢用户可继续执行受限操作"
+id: "GROUP_KICK_SESSION_PERMISSION_SURVIVES"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["session-invalidation", "group-membership", "crew", "kick", "revocation-lag", "stale-permission", "rockstar-games"]
+source: "https://hackerone.com/reports/197153"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。报告者发现被踢出 Crew（群组）后，使用已有 session 仍可向 Crew Wall 发表评论。
+  (原文研究者摘要: "Members who got kicked out of the crew, their sessions weren't being
+  invalidated and they still had the old perms")
+
+hypothesis: >
+  未叙述（仅结果）。推断：系统在 kick 操作时仅从成员列表中移除用户，
+  但未使该用户的现有 session 失效或在 session 中更新其组权限状态，
+  导致被踢用户的 session 仍携带旧的成员权限。
+
+action_result: >
+  成功：被踢出 Crew 的成员在不刷新会话的情况下仍可执行 Crew 成员操作（如发表 Crew Wall 评论）。
+  (原文团队摘要: "under certain conditions, Crew members were still able to perform
+  particular actions, such as posting on the Crew wall, even after being kicked from the Crew.")
+  修复方式：增加额外验证检查以阻止此行为。
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: "N/A"
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在有群组/团队/Crew 功能的系统中，让用户 A 在群组中处于活跃 session 状态，
+  然后由管理员将 A 踢出/移除，不刷新 A 的 session，
+  用 A 的旧 session 尝试执行群组内操作（发帖、评论、修改设置等），
+  验证成员移除是否即时使现有会话的群组权限失效。
+
+reasoning_chain:
+  - "问：目标系统是否有群组/团队/Crew/Channel 等可移除成员的功能？"
+  - "问：移除/踢出成员时，系统是否仅更新成员列表，还是同时使该用户的所有活跃 session 失效？"
+  - "验证：用户 A 登录并保持 session → 管理员将 A 从群组踢出 → A 不刷新页面/不重新登录 → A 尝试在群组内执行操作（发帖、评论、邀请等）"
+  - "问：如果操作成功 → 会话级权限未随成员关系同步更新，存在撤销滞后"
+  - "问：被踢用户能执行多少种操作？（仅读取 vs 读写 vs 管理操作）"
+  - "问：session 过期/刷新后权限是否才会更新？（确认是 session 缓存问题而非永久绕过）"
+
+vuln_root: >
+  开发者在移除群组成员时未使该用户的活跃 session 失效或重新校验其群组权限，
+  假设"成员列表更新后权限自动生效"但 session 层仍缓存了旧的成员身份。
+
+transferable_to:
+  - "游戏社交平台的 Crew/公会/战队管理——踢出成员后 session 是否立即失效"
+  - "企业协作工具（Slack/Discord/Teams）的频道/群组移除——被移除用户的活跃 WebSocket 连接是否断开"
+  - "SaaS 平台的团队/组织管理——移除团队成员后 API Token 和 Session 是否同步失效"
+  - "论坛/社区平台的版主移除用户——被移除用户的发帖/回复权限是否即时撤销"
+
+cases:
+  - url: "https://hackerone.com/reports/197153"
+    title: "Ability to post comments to a crew even after getting kicked out"
+    author: "anshuman_bh"
+    platform: "Rockstar Games (socialclub.rockstargames.com)"
+    severity: "Medium"
+    bounty: "$500"
+    note: >
+      Rockstar Social Club 的 Crew 功能：被踢出 Crew 的成员由于 session 未被失效化，
+      仍可向 Crew Wall 发帖。2017 年报告，visibility=no-content。
+      (原文: "Members who got kicked out of the crew, their sessions weren't being
+      invalidated and they still had the old perms")

@@ -1,0 +1,66 @@
+name: "DoubleClickjacking 绕过 X-Frame-Options 强制 OAuth 授权——弹窗关闭后第二次点击命中底层按钮"
+id: "OAUTH_DOUBLECLICKJACKING_CONSENT_BYPASS"
+applicable: "blackbox"
+phase: "auth"
+also_phases: []
+tags: ["oauth", "clickjacking", "double-click", "ui-redress", "consent", "x-frame-options-bypass", "popup"]
+source: "https://hackerone.com/reports/3287060"
+
+# ——— L3 核心 ———
+
+observation: >
+  OAuth 授权页面已设置 X-Frame-Options 无法 iframe 嵌入，
+  但攻击者可通过新窗口覆盖+双击手法绕过——第一次点击关闭覆盖层弹窗，
+  第二次点击自动落在底层的 "Connect my WakaTime account" 按钮上。
+  (原文: "traditional protections like X-Frame-Options do not prevent it")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  攻击者注册恶意 OAuth App，构造钓鱼页面通过 window.open 打开攻击页面覆盖底层 OAuth 授权 URL，
+  受害者双击"Double Click"按钮时，第一击关闭攻击页面，第二击直接点中底层
+  "Connect my WakaTime account" 授权按钮，authorization code 被重定向到攻击者服务器，
+  攻击者兑换为 access_token 获得受害者 API 全权限。
+  (原文: "The first click will close the /attack tab, then the second click
+  will click the 'Authorize' button... the URL gets redirected to
+  https://webhook.site/...?code=CODE. At this point, it's up to the attacker
+  to store the code and exchange it for access token.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  DoubleClickjacking 绕过 UI 保护 → 静默授权恶意 OAuth App
+  → 获取 authorization code → 兑换 access_token → 全权限 API 访问
+  (原文: "The maximum permission attacker can get is all scopes
+  as explained at https://wakatime.com/developers")
+
+approach: >
+  对有 X-Frame-Options 保护的 OAuth 授权/敏感操作页面，检查是否可通过
+  DoubleClickjacking（跨窗口双击 UI 劫持）绕过：攻击者打开新窗口覆盖
+  目标页面，诱导双击，第一击关闭覆盖窗口，第二击命中底层敏感按钮。
+  核心检查项：(1) 敏感按钮是否默认可点击而非需要先交互/手势验证；
+  (2) 页面是否在加载后延迟启用按钮。
+
+reasoning_chain:
+  - "问：目标 OAuth 授权页面（/authorize、/consent）是否设置了 X-Frame-Options 或 CSP frame-ancestors？"
+  - "如果是 → 传统 clickjacking 被阻止，但 DoubleClickjacking 仍可能有效"
+  - "问：授权页面的确认按钮在页面加载后是否立即可点击？还是需要用户先与页面交互（如移动鼠标/按键后才启用）？"
+  - "如果立即可点击 → 问：攻击者能否通过 window.open 将攻击页面覆盖在授权页面之上？"
+  - "如果可以 → 构造双击 PoC：第一击关闭覆盖窗口，第二击落在底层授权按钮上"
+  - "问：成功授权后，authorization code / access_token 可访问哪些 scope？能否造成 ATO 级影响？"
+
+vuln_root: "敏感操作按钮在页面加载后立即可点击，未要求用户先与当前页面交互（gesture detection），使得跨窗口双击 UI 劫持可绕过 X-Frame-Options 保护。"
+
+transferable_to:
+  - "任何 OAuth 授权 consent 页面（GitHub、Google、Slack 等）"
+  - "银行/支付确认页面的敏感操作按钮"
+  - "账户删除、权限变更等不可逆操作的确认对话框"
+  - "任何依赖 X-Frame-Options 作为唯一 clickjacking 防御的高价值操作"
+  - "SSO 登录 consent 页面"
+
+cases:
+  - url: "https://hackerone.com/reports/3287060"
+    note: >
+      WakaTime OAuth 授权流程，Medium。攻击者注册恶意 OAuth App，
+      通过 DoubleClickjacking 绕过 X-Frame-Options，静默获取受害者
+      authorization code，可获得定义的所有权限 scope。无赏金。

@@ -1,0 +1,52 @@
+name: "项目导入 JSON 外键注入窃取跨项目私有对象（含补丁绕过）"
+id: "PROJECT_IMPORT_FOREIGN_KEY_INJECTION"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["input"]
+tags: ["gitlab", "project-import", "idor", "mass-assignment", "foreign-key-injection", "patch-bypass", "nested-attributes"]
+source: "https://hackerone.com/reports/743953"
+
+observation: >
+  GitLab 项目导入的 project.json 中 issue_ids/merge_request_ids 等外键字段未被排除，
+  assign_attributes 直接赋值到 Project model。
+  (原文: "Many attributes (foreign key) like issue_ids and merge_request_ids are not excluded during import")
+
+hypothesis: >
+  通过在 project.json 中注入外键 ID 可将其他项目的 issue/MR 关联到攻击者项目。
+  (原文: "The exploit is in project.json, I added one line to assign issue_ids")
+
+action_result: >
+  成功窃取其他项目的私有 issue。修复后又通过 attributes 嵌套字段绕过。
+  (原文 #743953: "You will see a private issue created by another user")
+  (原文 #767770: "However an attacker could still set attributes like issue_ids
+  by indirectly settings the field within the attributes field itself")
+
+why_here_first: >
+  研究者审计了 project_tree_restorer.rb 的 assign_attributes 逻辑。
+  (原文: "The root cause of this issue lies in project_tree_restorer.rb...@project.assign_attributes(project_params)")
+
+chaining: "N/A — 单步 IDOR，补丁绕过通过嵌套 attributes 实现"
+
+approach: >
+  在项目导入的 export tarball 的 project.json 中注入 _ids 类外键字段，
+  利用 assign_attributes 未过滤这些属性将其他项目的私有对象关联到攻击者项目。
+  补丁仅过滤顶层时，通过嵌套 attributes 字段中的 _ids 绕过。
+
+reasoning_chain:
+  - "问：项目导入接受什么格式数据？project.json 中的字段如何处理？"
+  - "问：assign_attributes 排除了哪些字段？_ids 类外键是否在排除列表中？"
+  - "如果未排除 → Rails _ids= setter 是否校验对象归属？（不校验）"
+  - "问：修复后是否只过滤了顶层？嵌套 attributes 字段是否也被覆盖？"
+
+vuln_root: "assign_attributes 未将 _ids 外键加入排除列表，Rails _ids= setter 不校验对象归属。"
+
+transferable_to:
+  - "任何使用 Rails assign_attributes 处理用户 JSON 且未严格白名单的导入功能"
+  - "使用 has_many 关系 _ids= setter 而未做归属校验的 API"
+  - "补丁只处理单层但框架支持嵌套赋值的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/743953"
+    note: "GitLab project import 外键注入 IDOR，$20,000，by saltyyolk。"
+  - url: "https://hackerone.com/reports/767770"
+    note: "补丁绕过——嵌套 attributes 字段中的 _ids 未过滤，$20,000。"

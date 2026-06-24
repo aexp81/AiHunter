@@ -1,0 +1,98 @@
+name: "API响应动态属性映射覆盖内建方法导致Redis RESP协议注入并链至反序列化RCE（CVE-2022-2884补丁绕过）"
+id: "SAWYER_ATTR_OVERRIDE_REDIS_RESP_INJECTION_TO_DESER_RCE"
+applicable: "whitebox"
+phase: "chain"
+also_phases: ["input", "logic"]
+tags: ["ruby", "redis", "deserialization", "protocol-injection", "method-override", "patch-bypass", "github-import", "gitlab", "sawyer", "CVE-2022-2884"]
+source: "https://hackerone.com/reports/1679624"
+
+# ——— L3 核心 ———
+
+observation: >
+  GitLab GitHub 导入功能的 API 客户端使用 Sawyer 库处理响应，该库将 JSON hash
+  递归转为 Ruby 对象，可覆盖任意方法包括内建方法 to_s。
+  (原文: "When importing a GitHub repo the api client uses Sawyer for handling the responses.
+  This takes a json hash and converts it into a ruby class that has methods matching all of the keys")
+  (原文: "This happens recursively, and allows for any method to be overridden including
+  built-in methods such as to_s")
+
+hypothesis: >
+  Redis gem 使用 to_s 和 bytesize 构造 RESP 协议命令，如果 Sawyer::Resource
+  的 to_s 返回值与 bytesize 声明长度不一致，就能在 RESP 流中注入额外命令。
+  CVE-2022-2884 的补丁仅覆盖了 Gitlab::Cache::Import::Caching 路径，
+  但 default_branch 通过 change_head → branch_names_include? 也会传入 Redis。
+  (原文: "The redis gem uses to_s and bytesize to generate the RESP command,
+  so if a Sawyer::Resource is ever passed in that has a controllable hash
+  it can allow arbitrary redis commands to be injected")
+  (原文: "The patch for CVE-2022-2884 added validation to Gitlab::Cache::Import::Caching
+  but there is another spot where the Sawyer::Resource is passed to redis")
+
+action_result: >
+  成功通过伪造 GitHub API 返回嵌套 default_branch 对象覆盖 to_s 和 bytesize，
+  注入 Redis SET 命令将恶意 Marshal payload 写入 _gitlab_session 键，
+  访问该 session 触发 Marshal.load 执行任意命令。
+  (原文: "So by returning an api response with a default_branch that overrides
+  to_s and bytesize you can call arbitrary redis commands")
+  (原文: "This can be combined with a call to Marshal.load when loading
+  a _gitlab_session to execute a deserialisation gadget [...] and gain RCE")
+
+why_here_first: >
+  研究者在 CVE-2022-2884 修补后，系统搜索其他将 Sawyer::Resource 传入 Redis 的路径，
+  找到了补丁未覆盖的 repository_importer.rb 中 default_branch 的路径。
+  (原文: "This is very similar to https://about.gitlab.com/releases/2022/08/22/
+  critical-security-release-gitlab-15-3-1-released/")
+  (原文: "The patch for CVE-2022-2884 added validation to Gitlab::Cache::Import::Caching
+  but there is another spot where the Sawyer::Resource is passed to redis")
+
+chaining: >
+  三环链：
+  1. Sawyer::Resource 动态属性覆盖 → 攻击者通过伪造 GitHub API 响应控制
+     default_branch 对象的 to_s 和 bytesize 方法返回值
+  2. Redis RESP 协议注入 → 利用 to_s 返回值与 bytesize 声明长度不一致，
+     在 RESP 流中注入额外的 SET 命令，将恶意 Marshal payload 写入 _gitlab_session 键
+  3. 反序列化 RCE → Rails 调用 Marshal.load 触发 Universal Deserialisation Gadget
+     执行任意系统命令
+
+# ——— 落地检查清单 ———
+
+approach: >
+  发现 API 客户端库（Sawyer/Hashie::Mash/OpenStruct）将外部 JSON 递归转为
+  Ruby 对象可覆盖 to_s/bytesize 等内建方法，当该对象被传入 Redis 客户端时
+  利用 RESP 协议长度差异注入任意 Redis 命令，再通过写入恶意 session 触发
+  Marshal.load 反序列化链实现 RCE。补丁绕过思维：审计已修补漏洞的补丁范围，
+  系统搜索未覆盖的等效代码路径。
+
+reasoning_chain:
+  - "问：目标应用是否使用 Sawyer、Hashie::Mash、OpenStruct 等动态属性映射库处理外部 API 响应？"
+  - "白盒：grep -rn 'Sawyer\\|Hashie::Mash\\|OpenStruct' --include='*.rb'"
+  - "问：这些动态对象（而非纯字符串）是否被传入 Redis 客户端操作（set/get/sismember 等）？"
+  - "白盒：grep -rn 'redis.*set\\|redis.*get\\|sismember' --include='*.rb'，追踪参数来源"
+  - "问：Redis gem 是否使用 to_s 和 bytesize 构造 RESP 协议？如果两者返回值不一致会怎样？"
+  - "如果 to_s 返回的实际内容比 bytesize 声明的更长 → 多余部分被 Redis 解析为新命令 → RESP 注入成立"
+  - "问：注入 Redis 命令后如何升级为 RCE？Rails 是否使用 Marshal.load 加载 session？"
+  - "白盒：grep -rn 'Marshal.load\\|session_store.*redis' --include='*.rb' config/"
+  - "问：已知漏洞（如 CVE-2022-2884）的补丁是否覆盖了所有等效路径？"
+  - "白盒：diff 补丁 commit，列出所有修改的文件，然后搜索同一库在其他位置的调用"
+
+vuln_root: >
+  Sawyer 库将不可信外部 JSON 递归映射为 Ruby 对象方法，使攻击者能覆盖
+  to_s/bytesize 等内建方法，而 Redis gem 在构造 RESP 协议时信任
+  这些方法的返回值一致性。
+
+transferable_to:
+  - "任何使用 Sawyer 或类似动态属性映射库（Hashie::Mash、OpenStruct）处理外部输入并将结果传入协议序列化层的 Ruby 应用"
+  - "使用 Redis gem 且将用户可控对象（非纯字符串）传入 Redis 操作的应用"
+  - "任何先进行补丁修复但未全面审计所有数据流路径的场景（补丁绕过思维）"
+  - "使用 Marshal.load 加载 Redis 中 session 数据的 Rails 应用（反序列化链终点）"
+  - "其他语言中类似的'魔术方法/协议方法覆盖'场景，如 Python 的 __str__、__len__ 被不可信数据覆盖"
+
+cases:
+  - url: "https://hackerone.com/reports/1679624"
+    note: >
+      GitLab 15.3.1 GitHub 导入 RCE，CVE-2022-2884 补丁绕过。
+      通过伪造 GitHub API 返回嵌套 default_branch 对象覆盖 to_s/bytesize
+      → Redis RESP 注入 → Marshal 反序列化 RCE。赏金 $33,510。
+  - url: "https://about.gitlab.com/releases/2022/08/22/critical-security-release-gitlab-15-3-1-released/"
+    note: >
+      原始 CVE-2022-2884，同一研究者(vakzz)发现的第一条 Sawyer→Redis 注入路径，
+      补丁仅覆盖 Gitlab::Cache::Import::Caching，遗漏了 default_branch 路径。

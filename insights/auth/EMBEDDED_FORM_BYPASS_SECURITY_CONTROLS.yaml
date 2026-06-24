@@ -1,0 +1,138 @@
+name: "嵌入式/备用提交入口绕过主流程安全检查——2FA/黑名单/频率限制全部失效"
+id: "EMBEDDED_FORM_BYPASS_SECURITY_CONTROLS"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["authz"]
+tags: ["2fa-bypass", "embedded-form", "alternative-entry-point", "submission-bypass", "blacklist-bypass", "rate-limit-bypass", "hackerone"]
+source: "https://hackerone.com/reports/418767"
+
+# ——— L3 核心 ———
+
+observation: >
+  HackerOne 程序可强制要求报告者启用 2FA 才能提交报告，主流程（Submit Report 按钮）
+  正确拦截了未启用 2FA 的用户。但程序还有一个"嵌入式提交表单"(Embedded Submission Form)
+  的备用入口，URL 格式为 /UUID/embedded_submissions/new。
+  (原文: "A program owner can enforce the hackers to setup the two-factor authentication
+  before submitting new reports to their program...
+  I removed my 2FA to test and it is good that i was block from submitting new reports")
+
+hypothesis: >
+  未叙述（仅结果）。推断：如果嵌入式提交表单是独立实现的入口，
+  可能没有同步执行主流程的安全检查（2FA 要求、黑名单、频率限制），
+  导致攻击者可通过备用入口绕过所有限制。
+
+action_result: >
+  成功绕过：
+  1. 移除账户的 2FA 设置
+  2. 确认主流程（/parrot_sec → Submit Report）正确拦截
+  3. 获取程序的 Embedded Submission URL（在 policy page 可找到）
+  4. 通过 Embedded Submission Form 成功提交报告，未被要求设置 2FA
+  (原文: "BYPASS: Get the Embedded Submission URL on their policy page...
+  Now submit report using that embedded submission form and you can submit reports
+  without setting-up your 2FA, despite the program enforce the user to setup the 2FA
+  before submitting new reports. 2FA requirements successfully bypassed!")
+
+  团队深入调查发现更严重的问题：嵌入式提交还绕过了 reporter blacklist 和 report rate limit，
+  且 root cause 导致另一个漏洞——用户可访问其他同时在写报告的用户的附件。
+  (原文团队摘要: "allowed any user to bypass multiple program restrictions,
+  such as the 2FA requirement, report rate limit, and internal abuse limits...
+  we stumbled upon another vulnerability... allowed an attacker to gain access
+  to other users' attachments who were writing a report at the same time")
+
+why_here_first: >
+  未叙述（仅结果）。推断：报告者知道程序有 Embedded Submission Form 功能
+  （在 policy page 公开展示），在确认主流程正确执行 2FA 检查后，
+  自然想到测试备用入口是否同步执行了相同检查。
+
+chaining: >
+  单独的嵌入式表单绕过即可完成 2FA 要求规避、黑名单绕过、频率限制绕过。
+  团队发现的深层 root cause 还导致跨用户附件泄露（CVSS 7.1），
+  说明备用入口的独立实现可能引发更多共享状态安全问题。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对有安全控制（2FA 要求、黑名单、频率限制等）的功能，
+  寻找是否存在备用入口/嵌入式表单/Widget/API 版本/移动端 API 执行相同操作，
+  测试备用入口是否同步执行了相同的安全检查。
+
+reasoning_chain:
+  - "问：目标功能是否有安全控制（2FA 要求、IP 黑名单、频率限制、权限检查）？"
+  - "问：该功能是否有备用入口——嵌入式表单/Widget、API 端点、移动端 API、批量导入、第三方集成？"
+  - "寻找备用入口方法：检查 policy/settings 页面是否暴露嵌入式 URL；搜索文档中的 embed/widget/integration 关键词；检查 JS 中的 API 路由。"
+  - "黑盒测试：在主流程触发安全控制（确认拦截生效），然后通过备用入口执行相同操作。"
+  - "问：备用入口是否同步执行了 2FA 检查？如果跳过，即为绕过。"
+  - "问：备用入口是否同步执行了频率限制/黑名单？如果跳过，可无限提交。"
+  - "问：备用入口是否共享主流程的状态管理（session、临时文件、附件）？如果共享但缺少隔离，可能导致跨用户数据泄露。"
+  - "白盒审计：对比主流程 controller 和备用入口 controller——主流程有 before_action :check_2fa / :check_blacklist，备用入口是否缺少？"
+  - "扩展：OAuth 授权页面（/authorize）vs 嵌入式 OAuth 弹窗——是否执行相同的 redirect_uri 验证？"
+  - "扩展：管理后台的批量导入/CSV 上传是否绕过逐条提交的权限检查？"
+
+vuln_root: >
+  开发者假设所有入口都会经过相同的安全检查中间件，
+  但备用入口（嵌入式表单、Widget、独立 API）是独立实现的，
+  没有复用主流程的安全检查逻辑（2FA、黑名单、频率限制），导致全部被绕过。
+
+transferable_to:
+  - "任何有多入口提交的平台（Bug Bounty 平台、客服系统、工单系统）"
+  - "SaaS 平台提供嵌入式 Widget（如嵌入式聊天、嵌入式表单、嵌入式支付）"
+  - "有 API + Web UI 双入口的应用——API 可能绕过 Web UI 的安全限制"
+  - "移动端 API vs Web 端——移动端可能绕过 Web 的 2FA/CAPTCHA 要求"
+  - "第三方集成（Slack bot、Zapier、webhook）可能绕过主界面的权限/频率检查"
+  - "管理后台的批量操作（CSV 导入、批量更新）可能绕过逐条记录的验证逻辑"
+
+cases:
+  - source: "https://hackerone.com/reports/418767"
+    author: "japz (& mga_bobo collaborator)"
+    platform: "HackerOne"
+    bounty: "$10,000"
+    note: >
+      HackerOne 程序可要求报告者启用 2FA 才能提交报告。
+      主流程（Submit Report 按钮）正确拦截，但 Embedded Submission Form
+      (/UUID/embedded_submissions/new) 绕过了 2FA 要求、reporter blacklist 和 rate limit。
+      团队深入调查 root cause 还发现跨用户附件访问漏洞（CVSS 7.1），额外奖励 $7,500。
+      总赏金 $10,000。2018-10 报告并修复。
+  - url: "https://hackerone.com/reports/2483666"
+    author: "japz (& collaborators)"
+    platform: "HackerOne"
+    severity: "Low (CVSS 3.7)"
+    bounty: "$2,500"
+    note: >
+      同一功能的另一面：嵌入式提交表单的 UUID 可通过 waybackurls 等历史 URL 归档工具发现，
+      即使表单已设为私有/停用，仍可通过 GraphQL 请求用 UUID 查询到私有程序信息
+      （response efficiency、intro text、structured scopes）。
+      HackerOne 团队确认：不可预测的 UUID 可通过多种方式获得，属于有效低危漏洞。
+      2024-04 报告，2024-06 公开，修复已部署。
+  - url: "https://hackerone.com/reports/2388183"
+    title: "Easy way to create a new Deck board without permission"
+    author: "hakuna"
+    platform: "Nextcloud (Deck app)"
+    severity: "Low"
+    bounty: "$100"
+    note: >
+      Nextcloud Deck 应用管理员通过"Limit board creation to some groups"限制了
+      未授权用户组创建 Board，主操作路径（"+ Add board"按钮）正确隐藏且 API 返回 403。
+      但"Clone board"操作（POST /apps/deck/boards/{id}/clone）未同步执行相同的
+      组权限检查，攻击者可通过克隆已有 Board 再重命名，绕过创建限制。
+      (原文: "Sending the request directly will also fail with a 403 error and
+      a message 'Creating boards has been disabled for your account.'...
+      Now click on the 'Personal' board options, and choose 'Clone board'.
+      A copy of the board will be created.")
+      approach 相同：主操作路径有权限检查，但备用/等效操作路径（clone/copy/duplicate）
+      未同步执行相同检查，可绕过限制。2024-02 报告，2026-01 公开。
+  - url: "https://hackerone.com/reports/1279322"
+    title: "Ability to add address without being an admin or staff in the store via wholesale store"
+    author: "urfavenemy01"
+    platform: "Shopify (Wholesale Channel)"
+    severity: "Low (CVSS 2.4)"
+    bounty: "$500"
+    note: >
+      Shopify 主商店的客户管理仅允许 admin/staff 修改客户地址，
+      但 Wholesale Channel（批发渠道）启用"Customers must provide an address"后，
+      其注册流程接受已有客户的邮箱并直接写入新地址到该客户记录中——
+      这是一个绕过主流程权限控制的备用入口（wholesale 注册 vs admin 客户管理）。
+      纯结果文，无导航叙事。
+      (原文: "Register and add business address at wholesale store and using another
+      customers email then click sign up... check on the customer whose email we
+      used to register at wholesale, there will be an address that we just added
+      via wholesale registration.")

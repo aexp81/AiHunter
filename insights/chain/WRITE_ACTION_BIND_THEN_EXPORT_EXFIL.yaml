@@ -1,0 +1,71 @@
+name: "对受限内容执行无鉴权写操作绑定到自己账户，再通过数据导出通道泄露全文"
+id: "WRITE_ACTION_BIND_THEN_EXPORT_EXFIL"
+applicable: "blackbox"
+phase: "chain"
+also_phases: ["authz"]
+tags: ["access-control", "data-export", "twitter-circle", "favorite", "write-action", "exfiltration", "side-channel", "graphql"]
+source: "https://hackerone.com/reports/1694304"
+
+observation: >
+  Twitter Circle 是限制推文可见范围到特定圈子的功能。研究者发现对 FavoriteTweet
+  GraphQL 端点发送点赞请求时，将 tweet_id 改为 Circle 推文 ID，返回 200 OK 成功。
+  (原文: "If you change the tweet ID to a Twitter Circle tweet, you're able to like it.
+  That's a bug, but it doesn't have a considerable impact because we cannot see the tweet.")
+
+hypothesis: >
+  点赞成功意味着受限推文已绑定到攻击者账户。研究者猜测可能有其他渠道能读取
+  已绑定的推文内容——先在 UI 中尝试（个人主页 Likes tab）未果，
+  然后想到社交媒体平台通常提供数据导出功能，导出的数据可能包含推文全文。
+  (原文: "I went to my profile's 'Likes' tab but I also couldn't see the tweet on that page.
+  I checked other endpoints but couldn't find anything. Then I remembered something,
+  on all social media platforms, we can request our data from the company.")
+
+action_result: >
+  扑空的路：在个人主页 Likes 页面和其他 API 端点尝试读取该 Circle 推文内容均失败。
+  转向：使用 Twitter 的 "Download Your Data" 功能请求账户数据存档，
+  等待 24 小时后下载数据包。在 data/like.js 中发现了 Circle 推文的完整内容。
+  (原文: "I could see the liked Tweets, and it also contains the Twitter Circle tweet
+  that I liked!")
+
+why_here_first: >
+  研究者先注意到新功能（Twitter Circle）的写操作端点缺乏访问控制，
+  虽然写操作本身影响低，但其"绑定"语义触发了对读取路径的系统性搜索。
+  UI 和 API 端点失败后，利用对平台数据导出功能的既有知识找到了泄露通道。
+  (原文: "Then I remembered something, on all social media platforms,
+  we can request our data from the company. That data includes everything about our account")
+
+chaining: >
+  无鉴权写操作（FavoriteTweet 点赞受限推文）单独影响低 →
+  结合数据导出功能（Download Your Data）→ 受限推文全文泄露 →
+  信息泄露（Twitter Circle 私密推文）。
+
+approach: >
+  当发现对受限内容的写操作（点赞、收藏、评论、关注、加入列表等）缺乏访问控制但
+  无法直接读取内容时，尝试通过平台的数据导出/备份/存档功能泄露被绑定的受限内容——
+  写操作把受限内容"拉"到攻击者账户数据中，导出功能再"推"出全文。
+
+reasoning_chain:
+  - "问：目标平台是否有限制可见范围的内容（如 Circle、Close Friends、仅组内可见）？"
+  - "问：对这类受限内容的交互操作（like/favorite/bookmark/comment/retweet）是否有独立的访问控制？"
+  - "如果写操作成功但内容不可见 → 问：该写操作是否在后端将受限内容关联到了攻击者账户？"
+  - "问：在 UI 的相关页面（如 Likes tab、Bookmarks、Activity Log）能否看到受限内容？"
+  - "如果 UI 不显示 → 问：平台是否提供数据导出/备份/Download Your Data 功能？（GDPR 要求几乎所有大平台都有）"
+  - "问：导出的数据中是否包含被交互的受限内容的全文/正文/附件？"
+  - "如果包含 → 确认写操作绑定 + 数据导出构成完整的受限内容泄露链"
+  - "扩展：是否还有其他数据导出渠道——API v2、RSS、第三方应用授权数据？"
+
+vuln_root: >
+  写操作端点（FavoriteTweet）未检查调用者是否有权查看目标内容——
+  仅检查了推文是否存在，未检查 Circle 可见性限制；
+  同时数据导出功能按"用户操作过的内容"全量导出，未在导出时重新校验可见性。
+
+transferable_to:
+  - "任何社交平台的 Close Friends / Circle / 仅限群组可见内容 + 数据导出"
+  - "企业协作工具中受限频道/文档的交互操作（如 reactions）+ GDPR 数据导出"
+  - "电商平台的私密商品/限时商品 + 收藏/购物车 + 订单数据导出"
+  - "内容平台的付费/会员专属内容 + 点赞/书签 + 数据备份"
+  - "有 Download Your Data / GDPR export 的任何 SaaS 平台"
+
+cases:
+  - url: "https://hackerone.com/reports/1694304"
+    note: "Twitter Circle 推文通过 FavoriteTweet 点赞后，在 Download Your Data 存档中泄露全文内容。Medium。$5,040。"

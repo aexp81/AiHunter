@@ -1,0 +1,72 @@
+name: "订阅到期前触发审核队列——审核完成后重新授予已过期权益"
+id: "SUBSCRIPTION_REVIEW_QUEUE_OUTLIVES_ENTITLEMENT"
+applicable: "blackbox"
+phase: "logic"
+also_phases: ["auth"]
+tags: ["subscription", "state-machine", "timing", "review-queue", "entitlement", "twitter", "verification-badge", "async-process"]
+source: "https://hackerone.com/reports/1841064"
+
+observation: >
+  更改 Twitter Blue 订阅用户的头像/昵称会触发人工审核，期间蓝色认证徽章暂时移除；
+  如果在订阅到期前一天触发此审核，取消订阅后审核队列仍会继续处理。
+  (原文: "Change the profile photo of your Twitter account 1 day before your Twitter Blue
+  subscription expires... Check your Twitter profile and ensure your verified badge is gone
+  for review by the Twitter team.")
+
+hypothesis: >
+  审核队列的"审核完成→恢复徽章"逻辑不会重新检查订阅是否仍然有效；
+  系统假设进入审核队列时的订阅状态在审核完成时仍然成立。
+  (原文: "the Twitter team will give back your verified badge even your Twitter Blue
+  subscription is expired")
+
+action_result: >
+  成功：购买 Twitter Blue → 到期前一天改头像触发审核 → 取消订阅 → 订阅过期 →
+  等待 2-3 天 → 审核完成后蓝色徽章恢复，但已不再是付费订阅者。
+  期间尝试编辑推文等 Blue 独有功能确认订阅已失效，但徽章仍在。
+  (原文: "I recorded this video on PC, and showed that I can't edit any new tweet
+  and I'm no longer a Twitter Blue subscriber")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  单步逻辑漏洞即造成影响：永久保留验证徽章而无需持续付费。
+  延伸影响：恶意行为者可冒充已验证身份而无法通过订阅记录追踪。
+
+approach: >
+  在含"付费订阅 + 人工/异步审核"的平台上，在订阅即将到期时触发需要审核的操作
+  （如修改个人资料、提交内容审查），然后取消订阅；测试审核流程完成时
+  是否重新校验订阅/权益的有效性，还是直接恢复审核前的权益状态。
+
+reasoning_chain:
+  - "问：目标平台是否有付费订阅带来的特殊权益/标识（徽章、认证、高级功能）？"
+  - "问：这些权益是否存在需要人工/异步审核的触发条件（如修改资料、申诉、内容审查）？"
+  - "问：审核期间权益是否会暂时移除/暂停？"
+  - "如果是 → 问：审核完成后恢复权益时，系统是否重新校验订阅状态？"
+  - "测试：在订阅到期前触发审核 → 取消订阅 → 等待审核完成 → 检查权益是否被恢复"
+  - "问：恢复的权益是永久的还是会在下一次状态检查时失效？"
+  - "扩展：是否可反复触发审核→取消→恢复循环来无限延长权益？"
+
+vuln_root: >
+  审核队列的"恢复权益"逻辑使用入队时的快照状态，
+  不在出队/完成时重新校验订阅有效性——
+  开发者假设审核期间用户的订阅状态不会改变。
+
+transferable_to:
+  - "任何有'付费认证/徽章'且支持个人资料变更审核的社交平台"
+  - "SaaS 平台的高级功能试用/审核流程"
+  - "内容平台的创作者认证/合作伙伴审核流程"
+  - "游戏平台的赛季通行证/高级会员权益 + 内容审核"
+  - "企业 SaaS 的 license 审核/合规检查流程"
+
+cases:
+  - url: "https://hackerone.com/reports/1841064"
+    title: "Ability to getting Twitter Blue verified badge without purchase it"
+    author: "alp"
+    platform: "Twitter/X"
+    severity: "Medium"
+    status: "Duplicate (已被其他人先报)"
+    note: >
+      到期前一天改头像触发人工审核 → 取消 Twitter Blue 订阅 → 订阅过期后
+      审核完成恢复蓝色徽章。团队确认 root cause: "The subscription expiration
+      timestamp was not properly validated when verifying users."
+      报告被标为 Duplicate 说明此模式被多人独立发现。

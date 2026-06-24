@@ -1,0 +1,106 @@
+name: "权限模型基于路径检查但 fd-based 操作绕过——用只读 fd 执行写操作"
+id: "PERMISSION_MODEL_FD_VS_PATH_OPERATION_BYPASS"
+applicable: "both"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["permission-model", "file-descriptor", "fd-based", "path-based", "node.js", "sandbox-bypass", "fchown", "fchmod", "futimes", "CVE-2024-36137", "CVE-2025-55132"]
+source: "https://hackerone.com/reports/2590608"
+
+# ——— L3 核心 ———
+
+observation: >
+  Node.js 权限模型（--permission + --allow-fs-write）在 path-based API（如 fs.utimes、
+  fs.chown、fs.chmod）上正确执行写权限检查，但 fd-based API（如 fs.fchown、fs.fchmod、
+  fs.futimes）不经过路径权限检查——攻击者可用只读 fd 修改文件 owner/permissions/timestamp。
+  (原文 #2590608: "Node.js Permission Model do not operate on file descriptors, however,
+  operations such as fs.fchown or fs.fchmod can use a 'read-only' file descriptor to change
+  the owner and permissions of a file.")
+  (原文 #3390084 团队摘要: "Unlike utimes(), futimes() does not apply the expected
+  write-permission checks, which means file metadata can be modified in read-only directories.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：权限模型仅在 path→fd 转换阶段（即 open() 调用时）进行路径权限检查，
+  但一旦获得 fd 后的操作（fchown/fchmod/futimes）不再验证该 fd 对应路径的写权限，
+  因为开发者假设"只有写模式打开的 fd 才能执行修改操作"，
+  忽略了这些 fd-based 系统调用可以使用任何有效 fd（包括只读 fd）。
+
+action_result: >
+  成功：在 --allow-fs-read=* 但无 --allow-fs-write 的情况下，
+  通过 fs.openSync(path, 'r') 获取只读 fd，然后调用 fs.fchmodSync(fd, mode)
+  或 fs.futimesSync(fd, atime, mtime) 成功修改文件权限或时间戳。
+  (原文 #2590608: CVE-2024-36137, 影响 Node.js 20 和 21)
+  (原文 #3390084 团队摘要: CVE-2025-55132, 影响 Node.js v20, v22, v24, v25)
+
+why_here_first: >
+  未叙述（仅结果）。推断：研究者系统性审计 Node.js 权限模型对 fs 模块各 API 的覆盖，
+  发现 path-based 和 fd-based 两类 API 的权限检查逻辑不一致。
+
+chaining: >
+  fchmod 可将只读文件改为可写 → 后续可通过正常写操作修改文件内容；
+  futimes 可修改文件时间戳 → 掩盖审计痕迹，降低日志可靠性。
+  (原文 #3390084 团队摘要: "This behavior could be used to alter timestamps in ways
+  that obscure activity, reducing the reliability of logs.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  当目标运行时/沙箱的权限模型基于路径（path）进行文件系统权限检查时，
+  枚举所有 fd-based 操作（fchown、fchmod、futimes、ftruncate、fsync 等），
+  测试是否可以用只读 fd 执行修改操作——
+  关键在于发现"权限检查只在 open() 时做，后续 fd 操作不再验证"的设计缺口。
+
+reasoning_chain:
+  - "问：目标运行时/沙箱是否实现了文件系统权限控制（如 --allow-fs-read、--allow-fs-write）？"
+  - "问：权限检查的拦截点在哪一层？（open/read/write 系统调用级？还是 fs 模块 API 级？）"
+  - "问：权限模型是否区分 path-based API（如 fs.chmod(path)）和 fd-based API（如 fs.fchmod(fd)）？"
+  - "对每个 fd-based 修改操作 → 用只读模式 open() 获取 fd，然后调用 fd-based 修改操作，观察是否被拦截"
+  - "问：fchown(fd) 是否检查 fd 对应路径的写权限？还是仅检查 fd 是否有效？"
+  - "问：fchmod(fd) 能否将只读文件改为可写，从而绕过后续的写权限限制？"
+  - "问：futimes(fd) 能否修改时间戳，用于掩盖审计痕迹？"
+  - "扩展：同一权限模型中 ftruncate、fdatasync 等其他 fd-based 操作是否也遗漏了检查？"
+
+vuln_root: >
+  权限模型仅在 open() 阶段基于路径进行权限检查，
+  但 fd-based 操作（fchown/fchmod/futimes）不再验证 fd 对应路径的写权限，
+  开发者假设"只读 fd 不能执行修改操作"但实际操作系统允许。
+
+transferable_to:
+  - "Node.js --permission 权限模型的其他版本——检查所有 fd-based fs API"
+  - "Deno 的 --allow-read/--allow-write 权限模型——fd-based 操作是否受限？"
+  - "Bun 的文件系统权限——是否区分 path-based 和 fd-based？"
+  - "容器/沙箱的 seccomp 规则——是否对 fchmod/fchown 系统调用做独立限制？"
+  - "任何实现了文件系统权限分离（read/write）的运行时——fd-based 操作覆盖完整性"
+
+cases:
+  - url: "https://hackerone.com/reports/2590608"
+    author: "4xpl0r3r"
+    platform: "Node.js (IBB)"
+    severity: "Low (CVSS 3.3)"
+    cve: "CVE-2024-36137"
+    bounty: "$249"
+    note: >
+      Node.js 20/21 权限模型中，fchown/fchmod 可用只读 fd 修改文件 owner 和权限，
+      绕过 --allow-fs-write 限制。影响实验性权限模型用户。
+
+  - url: "https://hackerone.com/reports/2472071"
+    author: "4xpl0r3r"
+    platform: "Node.js"
+    severity: "Low (CVSS 3.3)"
+    cve: "CVE-2024-36137"
+    bounty: "无赏金"
+    note: >
+      同一 CVE-2024-36137 的原始报告。Node.js 20/21 权限模型中，
+      fs.fchown/fs.fchmod 可用只读 fd 修改文件 owner 和权限，
+      绕过 --allow-fs-write 限制。报告 visibility 为 no-content，
+      仅团队摘要可见。
+
+  - url: "https://hackerone.com/reports/3390084"
+    author: "oriotie"
+    platform: "Node.js"
+    severity: "Low (CVSS 2.8)"
+    cve: "CVE-2025-55132"
+    bounty: "无赏金"
+    note: >
+      Node.js v20/v22/v24/v25 权限模型中，futimes() 可用只读 fd 修改文件时间戳，
+      绕过 --allow-fs-write 限制。可用于掩盖审计痕迹。
+      为 fchown/fchmod 修复后的同类遗漏。

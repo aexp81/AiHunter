@@ -18,10 +18,15 @@ security/                              # ★ 新架构（三层分离）
 │   │   │                              #     INDIRECT_OBJECT_REF
 │   │   ├── input/                     #     PATH_TRAVERSAL, SSRF, STORED_XSS
 │   │   │                              #     FILE_EXTENSION_XSS
+│   │   ├── local/                     #  ★新增：本地/桌面/二进制提权（5个模式）
+│   │   │                              #     WRITABLE_LOAD_PATH_HIJACK, PRIVILEGED_FILE_OP_TOCTOU
+│   │   │                              #     LOCAL_IPC_PEER_TRUST, SANDBOX_POLICY_COVERAGE_GAP
+│   │   │                              #     CLIENT_SIDE_POLICY_LOCAL_BYPASS
 │   │   └── universal/                 #     UNAUTH_ENDPOINT
-│   └── whitebox/                      #   Layer 1：白盒执行清单（20个模式，含grep命令）
+│   └── whitebox/                      #   Layer 1：白盒执行清单（含grep命令）
 │       ├── auth/ authz/ input/
 │       ├── logic/ universal/
+│       └── local/                     #  ★新增：本地/二进制提权白盒审计（含MEMORY_CORRUPTION_PRIMITIVE_AUDIT）
 ├── cases/                             #   Layer 2：CVE案例库（不加载进上下文，按需查询）
 │   └── blackbox-cases.yaml
 ├── anchor-traps/                      #   ★ 新增：AI实测失败记录（强制检查）

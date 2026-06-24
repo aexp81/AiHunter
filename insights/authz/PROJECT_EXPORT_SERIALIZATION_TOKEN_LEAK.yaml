@@ -1,0 +1,90 @@
+name: "项目导出序列化过度暴露——用户模型的 authentication_token 出现在导出 JSON 中"
+id: "PROJECT_EXPORT_SERIALIZATION_TOKEN_LEAK"
+applicable: "both"
+phase: "authz"
+also_phases: ["recon"]
+tags: ["export", "serialization", "authentication-token", "over-exposure", "project-export", "gitlab", "data-leak", "privilege-escalation", "rce"]
+source: "https://hackerone.com/reports/158330"
+
+# ——— L3 核心 ———
+
+observation: >
+  项目导出功能将团队成员的完整用户对象序列化到 project.json 中，
+  其中包含了 authentication_token 字段。
+  (原文: "The project export feature serializes the user objects of team members
+  and stores it in the project.json file. This object contains the authentication_token
+  for every user")
+
+hypothesis: >
+  如果能邀请管理员加入自己的项目，然后导出该项目，就能获取管理员的 authentication_token，
+  进而以管理员身份访问整个实例。
+  (原文: "an attacker can simply go ahead and create a project on GitLab.com,
+  add one of the admins of GitLab.com, create an export, and obtain the
+  authentication token for that user")
+
+action_result: >
+  成功：创建项目 → 邀请管理员 rspeicher 为团队成员 → 导出项目 → 解压后在
+  project.json 的 project_members 中找到 authentication_token。
+  用该 token 可访问 https://gitlab.com/admin/users?authentication_token=<token> 进入管理面板。
+  (原文: "Here's the first few bytes of rspeicher (sorry Robert) his authentication
+  token on GitLab.com: ZyhqJr4XJZ... Someone could get access to GitLab's admin
+  panel by extracting the token of an admin")
+
+why_here_first: >
+  未叙述（仅结果）——研究者 Jobert 未详述为何首先审计导出功能的序列化内容，
+  但行为体现了"审计数据导出接口时检查序列化深度"的导航模式。
+
+chaining: >
+  邀请管理员加入项目（社工/合法操作）→ 导出项目获取 token → 用 token 进入管理面板 →
+  管理面板通常可导致 RCE + 全仓库代码访问。
+  (原文: "this leads to RCE and gives me access to all code in private repositories")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对目标平台的数据导出/备份/归档功能，下载导出文件后检查序列化输出（JSON/XML/YAML）中
+  是否包含不应暴露的模型内部字段：认证令牌（authentication_token）、密码哈希、
+  API key、session secret 等。重点关注"关联对象"的序列化——
+  当导出实体 A 时，关联的实体 B（如团队成员 User 对象）是否被完整序列化
+  而非仅包含公开字段。
+
+reasoning_chain:
+  - "问：目标平台是否有数据导出/备份/归档功能（项目导出、工作区备份、团队数据下载、GDPR export）？"
+  - "问：导出文件格式是什么？是否可以解压/解析检查内容（JSON、XML、YAML、CSV、SQL dump）？"
+  - "问：导出内容中是否包含关联对象（如团队成员的用户对象、评论者信息、审核者记录）？"
+  - "问：关联对象是否被完整序列化？是否包含 authentication_token、password_digest、api_key、secret 等内部字段？"
+  - "如果包含敏感字段 → 问：能否通过邀请高权限用户（管理员/owner）加入后再导出来窃取其凭证？"
+  - "问：获取到的 token/key 能做什么？能否访问管理面板、执行代码、读取私有仓库？"
+  - "扩展：同一平台的其他导出路径（API、备份、webhook payload）是否有同样的序列化过度暴露？"
+
+vuln_root: >
+  序列化层使用了完整的模型对象（如 .to_json 或 as_json 不带 :only/:except 过滤），
+  将包括认证令牌在内的所有属性暴露在导出文件中。开发者假设导出文件只有项目成员能看到，
+  忽略了任何有权创建项目并邀请他人的用户都能触发导出。
+
+transferable_to:
+  - "任何有项目/工作区导出功能的代码托管平台（GitLab、Gitea、Gogs、Bitbucket Server）"
+  - "SaaS 平台的团队/组织数据导出（Slack workspace export、Jira project export）"
+  - "有 GDPR 数据导出功能的平台——导出中可能包含关联用户的内部字段"
+  - "备份/快照功能——数据库 dump 是否包含 token/secret 列"
+  - "API 响应中关联对象的序列化（如 /api/v4/projects/:id/members 是否返回过多字段）"
+
+cases:
+  - url: "https://hackerone.com/reports/158330"
+    author: "jobert"
+    platform: "GitLab.com"
+    bounty: "未公开"
+    note: >
+      GitLab 项目导出将团队成员 User 对象完整序列化到 project.json，
+      含 authentication_token。攻击者创建项目 → 邀请管理员 → 导出 →
+      获取管理员 token → 管理面板访问 → RCE。CVSS 9.9 Critical。
+  - url: "https://hackerone.com/reports/1489892"
+    author: "dark_haxor"
+    platform: "UPchieve (hackers.upchieve.org)"
+    severity: "Medium (CVSS 6.7)"
+    bounty: "无赏金"
+    note: >
+      管理面板用户搜索 API /api/users?page=1&firstName=test 在 JSON 响应中
+      直接返回所有匹配用户的密码哈希值。服务端序列化用户对象时未过滤
+      password/hash 字段。纯结果文，无导航叙事。
+      approach 相同：API/导出响应中对用户模型的过度序列化暴露认证凭据。

@@ -1,0 +1,64 @@
+name: "游戏资源文件（NAV/BSP 等）解析时的缓冲区溢出——畸形文件控制 EIP"
+id: "GAME_ASSET_FILE_FORMAT_PARSING_OVERFLOW"
+applicable: "whitebox"
+phase: "input"
+also_phases: ["chain"]
+tags: ["buffer-overflow", "game-hacking", "file-parsing", "rce", "source-engine", "valve", "nav-file", "rop"]
+source: "https://hackerone.com/reports/542180"
+
+observation: >
+  游戏引擎在加载 NAV 文件（AI 导航网格）时对文件内容执行解析，缺乏边界检查，
+  导致缓冲区溢出并可控制 EIP 寄存器。
+  (原文: "In the parsing routines of NAV files ... a buffer overflow exists which can
+  be used to control the EIP register and takeover code execution.")
+
+hypothesis: >
+  未叙述（仅结果）。报告直接展示了畸形 NAV 文件触发溢出的 PoC，
+  未叙述为什么选择 NAV 文件作为攻击面。
+
+action_result: >
+  构造畸形 c1m1_hotel.nav 文件，加载后 EIP 变为 0x41414102，确认溢出可控。
+  利用游戏附带的非 ASLR 模块（binkw32.dll）可直接使用 ROP 实现代码执行。
+  (原文: "Observe that EIP becomes 0x41414102, indicating that a buffer overflow
+  has occurred and code execution is possible")
+  (原文: "Because Left4Dead 2 ships on Windows with a non-ASLR enabled module
+  (binkw32.dll), it is much easier to write up a working exploit")
+
+why_here_first: >
+  未叙述（仅结果）。推测：游戏的自定义二进制文件格式（NAV/BSP/VTF 等）
+  解析逻辑复杂且缺乏现代安全加固，是攻击面热点。
+
+chaining: >
+  Source 引擎支持服务器向连接的客户端发送任意文件 → 攻击者搭建恶意服务器
+  → 客户端连接时接收畸形 NAV → 远程代码执行。
+  或通过 Steam Workshop 上传恶意 campaign map 诱骗下载。
+  (原文: "it is possible that you could create a fake dedicated server that does
+  nothing but send the malformed NAV file to clients who are connecting,
+  creating a remote code execution scenario.")
+
+approach: >
+  对游戏引擎的自定义二进制资源文件格式（NAV、BSP、MDL、VTF 等）解析逻辑
+  进行 fuzzing 或人工审计，寻找缺乏边界检查的解析路径。结合游戏自带的
+  非 ASLR 模块（如 binkw32.dll）降低利用难度，并利用游戏的文件分发机制
+  （服务器→客户端 / Workshop）实现远程攻击。
+
+reasoning_chain:
+  - "问：目标游戏引擎加载了哪些自定义二进制文件格式（NAV/BSP/MDL/VTF）？"
+  - "问：这些文件格式的解析代码中是否有手写的边界检查还是盲目 memcpy？"
+  - "如果 fuzzing 某格式崩溃 → 崩溃点是否可控制 EIP/RIP？"
+  - "问：游戏进程是否启用了 ASLR/DEP/CFI？有无附带非 ASLR 模块可做 ROP gadget 来源？"
+  - "问：这些文件是否可通过服务器→客户端传输或 Workshop 分发（远程攻击面）？"
+
+vuln_root: >
+  游戏引擎信任本地/网络加载的二进制资源文件内容，解析时缺乏长度校验，
+  假设文件格式是合法的。
+
+transferable_to:
+  - "Source 引擎系列游戏（CS:GO、TF2、Half-Life 等）的各类资源文件解析"
+  - "其他游戏引擎的自定义二进制文件格式解析（Unreal、Unity asset bundles）"
+  - "支持 mod/自定义地图/Workshop 内容的游戏——攻击面通过用户内容分发"
+  - "任何使用 C/C++ 手写二进制文件解析器的本地应用"
+
+cases:
+  - url: "https://hackerone.com/reports/542180"
+    note: "Valve Left4Dead2 NAV 文件缓冲区溢出 → 控制 EIP → RCE，$10,000，by hunterstanton。"

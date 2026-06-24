@@ -1,0 +1,164 @@
+name: "HTTP 客户端跨域重定向时未清除全部敏感请求头——残留的 Proxy-Authorization 泄露"
+id: "HTTP_CLIENT_REDIRECT_SENSITIVE_HEADER_RESIDUAL_LEAK"
+applicable: "whitebox"
+phase: "auth"
+also_phases: []
+tags: ["http-client", "redirect", "proxy-authorization", "header-leak", "cross-origin", "undici", "node.js", "CVE-2024-30260", "CVE-2024-24758", "credential-leak", "incomplete-fix"]
+source: "https://hackerone.com/reports/2451113"
+
+# ——— L3 核心 ———
+
+observation: >
+  undici（Node.js HTTP 客户端）在 v5.28.3/v6.6.1 中修复了跨域重定向时清除
+  Authorization 和 Cookie 头的问题（GHSA-3787-6prv-h9w3），但在 v6.7.0 中
+  Proxy-Authorization 和 x-auth-token 头仍未被清除。
+  fetch() 接口已正确清除，但 undici.request() 接口遗漏了。
+  (原文: "Undici already cleared Authorization and Cookie headers on cross-origin
+  redirects, but did not clear Proxy-Authorization and x-auth-token headers."
+  团队摘要: "Undici cleared Authorization and Proxy-Authorization headers for
+  fetch(), but did not clear them for undici.request().")
+
+hypothesis: >
+  未叙述（仅结果）。但从技术上下文可推断：研究者验证了已知修复（GHSA-3787-6prv-h9w3）
+  是否覆盖了所有敏感头和所有接口，发现 Proxy-Authorization 和 x-auth-token 被遗漏，
+  且 request/stream/pipeline 接口与 fetch 接口的清除逻辑不一致。
+
+action_result: >
+  PoC 验证成功：
+  1. 用 undici.request() 发送请求到 127.0.0.1，附带 Proxy-Authorization 头
+  2. 服务端返回 302 重定向到不同域名（a.com:2333）
+  3. 在目标端口监听，发现 Proxy-Authorization 头被完整传递到跨域目标
+  补丁在 commit 6805746 中修复，发布为 v5.28.4 和 v6.11.1。
+  (原文: PoC 代码展示 headers 包含 'Proxy-Authorization': 'secret Proxy-Authorization'，
+  "Listening on port 2333 and discovering that Proxy-Authorization headers has been passed.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  N/A。单独是 Low 级别信息泄露。但在代理环境中可被利用：
+  攻击者控制重定向目标 → 窃取 Proxy-Authorization 凭证 → 冒充用户访问代理后资源。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对 HTTP 客户端库的跨域重定向处理逻辑进行差分审计：对比已修复的敏感头清除列表
+  与实际应清除的完整集合（Authorization、Cookie、Proxy-Authorization、
+  x-auth-token 等），以及不同接口（fetch vs request/stream/pipeline）之间
+  的行为一致性，寻找遗漏的头或遗漏的代码路径。
+
+reasoning_chain:
+  - "问：目标应用使用了哪些 HTTP 客户端库？（undici、axios、got、node-fetch、requests、httpx 等）"
+  - "问：该库在跨域重定向时是否清除敏感请求头？具体清除了哪些头？"
+  - "问：敏感头的完整集合是什么？是否有遗漏？（Authorization、Cookie、Proxy-Authorization、x-auth-token、X-API-Key、Bearer token 等）"
+  - "问：不同接口/方法（fetch vs request vs stream vs pipeline）之间的头清除逻辑是否一致？"
+  - "问：该库是否有过相关的安全修复？修复是否完整覆盖了所有敏感头和所有接口？"
+  - "如果发现遗漏 → 构造 PoC：设置重定向到攻击者控制的域名，检查哪些敏感头被转发。"
+  - "问：应用的使用场景中是否涉及代理认证（Proxy-Authorization）？该头泄露的实际影响是什么？"
+
+vuln_root: >
+  HTTP 客户端库在修复跨域重定向头清除问题时，仅处理了最常见的 Authorization 和 Cookie，
+  遗漏了 Proxy-Authorization 等其他敏感头；且不同接口的实现路径不同，
+  fetch() 已修复但 request() 未同步修复——典型的不完整修复（incomplete fix）模式。
+
+transferable_to:
+  - "所有 HTTP 客户端库的重定向处理逻辑（undici、axios、got、httpx、requests 等）"
+  - "任何执行过「清除敏感头」修复的库——检查修复的完整性"
+  - "代理环境（corporate proxy、API gateway proxy）中使用 HTTP 客户端的应用——Proxy-Authorization 泄露影响更大"
+  - "微服务间调用中携带内部认证头的 HTTP 客户端——跨域重定向可能导致内部凭证泄露到外部"
+
+cases:
+  - url: "https://hackerone.com/reports/2451113"
+    author: "iylz (Linzi Shang)"
+    platform: "Node.js undici (Internet Bug Bounty)"
+    severity: "Low"
+    bounty: "$420"
+    cve: "CVE-2024-30260"
+    note: >
+      undici v6.7.0 的 request/stream/pipeline 接口在跨域重定向时未清除
+      Proxy-Authorization 头（fetch 接口已修复）。GHSA-m4v8-wqvr-p9f7。
+      修复版本 v5.28.4 / v6.11.1。
+      (原文: "Undici already cleared Authorization and Cookie headers on cross-origin
+      redirects, but did not clear Proxy-Authorization headers.")
+  - url: "https://hackerone.com/reports/3642600"
+    title: "Authorization header leak in ssrf_filter via cross-host redirect leads to credential theft and unauthorized access"
+    author: "argareksapatii"
+    platform: "arkadiyt-projects (ssrf_filter Ruby gem)"
+    severity: "未标注"
+    bounty: "无"
+    note: >
+      ssrf_filter（Ruby SSRF 保护库）跨域重定向时未清除 Authorization 头：
+      redirect 循环复用原始 request options（headers/body/request_proc），
+      未区分 same-host 与 cross-host 重定向，导致 Bearer token 被转发到攻击者控制的域名。
+      PoC 演示了完整链路：窃取 token → 重放到受保护 API → 获取私有数据。
+      纯结果文，无 why_here_first/扑空叙事。
+      (原文: "When a redirect crosses to a different host, it still reapplies
+      caller-supplied sensitive state such as the Authorization header."
+      "redirect loop reuses the original request options"
+      "redirected requests reapply headers/body/request_proc"
+      "redirects are not differentiated between same-host and cross-host targets")
+  - url: "https://hackerone.com/reports/2390009"
+    title: "Proxy-Authorization header is not cleared in cross-domain redirect in undici"
+    author: "timon8"
+    platform: "Node.js undici (Internet Bug Bounty)"
+    severity: "Low"
+    bounty: "$405"
+    cve: "CVE-2024-24758"
+    note: >
+      undici v5.28.2/v6.6.0 跨域重定向时仅清除了 Authorization 和 Cookie 头，
+      遗漏了 Proxy-Authorization 头。研究者在阅读 GHSA-wqq4-5wpv-mx2g 安全公告后
+      发现该遗漏。修复版本 v5.28.3 / v6.6.1。GHSA-3787-6prv-h9w3。
+      这是同一 insight 中 CVE-2024-30260 的前序漏洞——同一代码库的同一类遗漏，
+      只是后续修复又遗漏了 request/stream/pipeline 接口。
+      (原文: "I read this security advisory https://github.com/nodejs/undici/security/advisories/GHSA-wqq4-5wpv-mx2g.
+      It only clears authorization and cookie header during cross-domain redirect."
+      "As such this may lead to accidental leakage of 'Proxy-Authorization' to a 3rd-party site.")
+  - url: "https://hackerone.com/reports/3480713"
+    author: "yupiy"
+    platform: "curl"
+    severity: "High (作者评级，团队关闭为 N/A)"
+    note: >
+      curl 8.17.0 在通过代理发送请求后收到 302 重定向到直连目标（如 --noproxy 指定的地址）时，
+      未清除 Proxy-Authorization 头，导致该头被转发到非代理的源站服务器。
+      复现步骤：nc 监听代理和源站端口，代理返回 302 到 127.0.0.1:8080，
+      curl 带 --noproxy 127.0.0.1 跟随重定向后，源站收到了 Proxy-Authorization 头。
+      curl 团队关闭为 N/A（认为 -H 手动设置的头不属于 curl 责任范围）。
+      与 undici 案例（CVE-2024-24758/CVE-2024-30260）属同一模式但不同库。
+      (原文: "curl leaks the Proxy-Authorization header to the origin server after following
+      an HTTP redirect that transitions from a proxied connection to a direct connection"
+      "The Proxy-Authorization header must never be forwarded to origin servers and should
+      be stripped when the request is sent directly instead of via a proxy.")
+      2025-12 报告，2025-12 公开。关闭为 N/A。
+  - url: "https://hackerone.com/reports/3180396"
+    title: "Failure to strip Proxy-Authorization header on change in origin"
+    author: "grahamcampbell"
+    platform: "curl (curl.se)"
+    severity: "Medium（作者评级，团队关闭为 N/A）"
+    note: >
+      curl 8.14.1 在跨域重定向时清除了 Authorization 和 Cookie 头，
+      但未清除 Proxy-Authorization 头。研究者维护 PHP Guzzle HTTP 包（使用 curl），
+      注意到 Go 刚修补了类似问题（CVE-2025-4673），随即检查 curl 发现同一遗漏。
+      curl 团队关闭为 N/A。
+      (原文: "I maintain the PHP Guzzle HTTP package which uses curl, and noticed
+      we have the same issue as curl in this regard. I was made aware of this issue
+      when golang patched something similar a few hours ago: CVE-2025–4673.")
+      与 #3480713 同属 curl Proxy-Authorization 泄露系列，但本报告触发点是
+      cross-language CVE 移植（Go→curl→PHP Guzzle），体现了跨语言修复对照审计的价值。
+  - url: "https://hackerone.com/reports/2408074"
+    title: "Proxy-Authorization header not cleared on cross-origin redirect in undici.request"
+    author: "iylz"
+    platform: "Node.js undici"
+    severity: "Low"
+    bounty: "无"
+    cve: "CVE-2024-30260"
+    note: >
+      与 #2451113 同一研究者的同一发现（CVE-2024-30260）的早期报告。
+      undici v6.7.0 中 GHSA-3787-6prv-h9w3 修复不完整：Authorization 和 Cookie
+      已在跨域重定向时清除，但 Proxy-Authorization 和 x-auth-token 头仍被转发。
+      PoC: undici.request() 附带 Proxy-Authorization 头 → 服务端 302 到不同域名
+      → 监听目标端口发现 Proxy-Authorization 被完整传递。
+      纯结果文，无导航叙事。
+      (原文: "Undici already cleared Authorization and Cookie headers on cross-origin
+      redirects, but did not clear Proxy-Authorization and x-auth-token headers."
+      "Like https://github.com/nodejs/undici/security/advisories/GHSA-3787-6prv-h9w3,
+      this is a fixed security issue in v5.28.3, v6.6.1, but I have tested the
+      new version(v6.7.0) and it has not been fixed yet.")

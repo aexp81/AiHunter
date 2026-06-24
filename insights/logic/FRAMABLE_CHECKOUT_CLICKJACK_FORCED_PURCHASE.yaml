@@ -1,0 +1,75 @@
+name: "可嵌套结账页面点击劫持——iframe 覆盖迫使受害者用已保存信用卡完成购买"
+id: "FRAMABLE_CHECKOUT_CLICKJACK_FORCED_PURCHASE"
+applicable: "blackbox"
+phase: "logic"
+also_phases: []
+tags: ["clickjacking", "checkout", "iframe", "x-frame-options", "csp", "payment", "credit-card"]
+source: "https://hackerone.com/reports/391385"
+
+# ——— L3 核心 ———
+
+observation: >
+  Yelp 的结账/交易页面 /checkout/deal/ 缺少 X-Frame-Options 和 CSP frame-ancestors 头，
+  可以被嵌入到外部页面的隐藏 iframe 中。
+  (原文: "The endpoint yelp.com/checkout/deal/****?biz_id={}&fsid={} is Framable,
+  which means a sample deal page like this...Could be embedded as an hidden iframe
+  on some HTML page.")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  成功：攻击者将结账页面嵌入外部 HTML 页面的隐藏 iframe 中，
+  受害者登录 Yelp 后访问该恶意页面，点击一个看似无害的按钮，
+  实际触发了 iframe 中 $450 交易的 Purchase 按钮，
+  用受害者已保存的信用卡完成了购买。
+  (原文: "Click on the slightly visible Purchase button...
+  The vulnerability's exploitation impact is high as it causes
+  unauthorized credit card use of the victim!")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  单步攻击：iframe 嵌套 + 社工诱导点击。攻击者可自己创建 deal 来窃取金钱，
+  或纯粹造成受害者经济损失。
+  (原文: "1.) Attacker creates a deal himself and uses this vulnerability
+  to steal money from the victim. 2.) Attacker just goes on causing
+  monetary loss for the victim, with no personal monetary gain.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  找到涉及支付/结账/交易确认的页面，检查是否缺少 X-Frame-Options 或
+  CSP frame-ancestors 限制。如果可嵌套，构造隐藏 iframe 覆盖攻击，
+  验证是否能诱导已登录用户完成意外购买/交易。
+
+reasoning_chain:
+  - "问：目标平台有在线支付/结账/deal 购买功能吗？"
+  - "问：结账页面是否设置了 X-Frame-Options 或 CSP frame-ancestors 头？"
+  - "问：如果没有，页面能否被嵌入到外部 HTML 的 iframe 中？"
+  - "问：已登录用户访问被嵌套的结账页面时，是否自动填充已保存的支付信息？"
+  - "问：购买操作是否需要额外的 CSRF token 或二次确认（如密码/验证码）？"
+  - "如果不需要 → 构造隐藏 iframe 覆盖 PoC，验证一键购买可行性。"
+  - "扩展：其他敏感操作页面（订阅/捐赠/转账）是否也缺少 frame 保护？"
+
+vuln_root: >
+  开发者认为结账页面不需要点击劫持保护，因为"用户需要主动点击购买按钮"，
+  忽略了 iframe 覆盖攻击可以让用户在不知情的情况下点击。
+
+transferable_to:
+  - "电商平台的一键购买/快速结账页面"
+  - "外卖/打车/服务预约的确认支付页面"
+  - "订阅/会员升级的支付确认页面"
+  - "P2P 转账/打赏/捐赠确认页面"
+  - "任何保存了用户支付信息且缺少 frame 保护的交易页面"
+
+cases:
+  - url: "https://hackerone.com/reports/391385"
+    author: "hk755a"
+    platform: "Yelp"
+    severity: "Low (CVSS 3.5)"
+    bounty: "有赏金"
+    note: >
+      Yelp /checkout/deal/ 结账页缺少 X-Frame-Options，
+      可嵌入隐藏 iframe 诱导受害者用已保存信用卡购买 $450 交易。
+      修复：部署 X-Frame-Options + 全站 CSP 策略。
+      2018-08 报告，2020-08 公开。6 votes。

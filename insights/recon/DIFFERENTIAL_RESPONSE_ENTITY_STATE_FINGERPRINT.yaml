@@ -1,0 +1,103 @@
+name: "差异化 HTTP 响应指纹识别隐藏实体类型/状态——辅助端点返回差异泄露私有/沙箱分类"
+id: "DIFFERENTIAL_RESPONSE_ENTITY_STATE_FINGERPRINT"
+applicable: "blackbox"
+phase: "recon"
+also_phases: ["authz"]
+tags: ["differential-response", "enumeration", "program-type", "private-vs-sandbox", "csv-export", "fingerprint", "hackerone"]
+source: "https://hackerone.com/reports/2381253"
+
+# ——— L3 核心 ———
+
+observation: >
+  研究者在测试自己沙箱程序的设置时发现，advanced_vetting 页面对无权限用户也能加载
+  （虽然 GraphQL 正确限制了数据），且该页面包含一个 CSV 下载链接。
+  (原文: "when we go to any program's advanced vetting page hackerone.com/$handle/advanced_vetting,
+  it loads up regardless of permission, granted no other confidential info is displayed since the
+  GraphQL request appropriately restricts unauthorized users")
+
+hypothesis: >
+  CSV 下载端点可能也未做权限校验；如果 sandbox 和 private 程序对此端点的响应不同，
+  就可以用来区分程序类型。
+  (原文: "I decided to experiment with this link and sure enough, I found some risky behavior")
+
+action_result: >
+  成功：对 sandbox 程序访问 /$handle/terms_acceptance_data.csv 返回 200 并下载文件；
+  对真正的 private 程序访问同一路径则请求不通过（不同的响应/重定向）；
+  对不存在的 handle 返回 404 页面。三种差异化响应组合可完整指纹任意 handle 的程序类型。
+  (原文: "when any HackerOne user goes to /$SANDBOXED_PROGRAM/terms_acceptance_data.csv the request
+  goes through... now let's take for example [private program] we can see that the request doesn't
+  go through... when we try with a handle that doesn't exist it shows the Hackerone default 404 page")
+
+why_here_first: >
+  研究者正在浏览自己沙箱程序的 advanced_vetting 设置页面，注意到该页面对无权限用户也能加载，
+  由此发现了 CSV 下载链接。
+  (原文: "I was looking through the settings of one of my sandboxed programs I use for testing
+  and I noticed some weird behavior")
+
+chaining: >
+  差异化响应枚举 → 确认哪些公司在 HackerOne 有私有程序 → 社会工程/定向攻击。
+  与 handle 字典（常见公司名）结合可批量扫描。
+  (原文: "we can build a script or just try manually using company names that we might believe
+  have a private program in Hackerone and check if they actually have one")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对平台上不同类型/状态的实体（如 private vs sandbox vs 不存在），
+  测试辅助端点（CSV 导出、settings 页、管理 API）的 HTTP 响应差异
+  （200 vs 302 vs 404 vs 403），利用差异指纹识别实体的隐藏属性。
+
+reasoning_chain:
+  - "问：目标平台是否存在基于 handle/slug 的辅助端点（CSV 导出、设置页、高级配置页）？"
+  - "问：这些端点对已知的 public 实体、private 实体、不存在的 slug 返回的 HTTP 状态码/响应体是否不同？"
+  - "如果不同 → 构建差异化指纹矩阵：200=sandbox/test, 302/403=private, 404=不存在"
+  - "问：能否用字典/枚举脚本批量探测，识别出平台上所有私有实体？"
+  - "问：辅助端点本身是否还返回了额外的敏感信息（如 CSV 内容、元数据）？"
+
+vuln_root: >
+  平台对核心 API 做了权限校验，但辅助端点（导出、设置页面加载）未统一执行相同的访问控制，
+  导致 HTTP 响应差异泄露了实体的类型或存在性。
+
+transferable_to:
+  - "多租户 SaaS 平台中通过 slug/handle 可访问的辅助端点"
+  - "任何区分 public/private/sandbox/archived 实体类型的平台"
+  - "导出功能（CSV/PDF/报表）的端点通常权限检查比主 API 松"
+  - "CMS/Bug Bounty/项目管理平台中基于 slug 的资源路由"
+
+cases:
+  - url: "https://hackerone.com/reports/2381253"
+    title: "Ability to identify actual private from sandboxed programs using terms_acceptance_data.csv"
+    platform: "HackerOne"
+    severity: "Medium (CVSS 6.1)"
+    bounty: "$500"
+    note: >
+      通过 /$handle/terms_acceptance_data.csv 端点的差异化响应
+      （sandbox→200, private→拒绝, 不存在→404）指纹识别 HackerOne 私有程序。
+  - url: "https://hackerone.com/reports/167828"
+    title: "Ability to enumerate private programs using SAML"
+    author: "ayoubfathi_"
+    platform: "HackerOne"
+    severity: "N/A（无赏金）"
+    bounty: "无赏金"
+    note: >
+      通过 SAML 端点的差异化响应探测 HackerOne 私有程序的存在性。
+      具体方法未公开（"we're not disclosing the method involved"），
+      团队摘要称"very clever"。利用 SAML SSO 配置的辅助端点
+      对已配置 SAML 的私有程序返回不同响应来枚举。
+      no-content 公开，2016-09 报告。
+  - url: "https://hackerone.com/reports/159890"
+    title: "Ability to monitor reports' submission in real time"
+    author: "saeedhashem"
+    platform: "HackerOne"
+    severity: "N/A（关闭为 N/A）"
+    bounty: "无赏金"
+    note: >
+      通过 /reports/<id>.json 端点的差异化响应指纹报告提交状态：
+      已提交但无权限的报告返回空白页（0 长度），
+      未提交的报告 ID 返回 {"status":"404","error":"Not Found"}（36 字节）。
+      研究者编写 Python 脚本轮询递增 ID，通过响应长度差异实时监控平台报告提交活动。
+      (原文: "If the report is already submitted and the logged in user has no access to it
+      the JSON response will return a blank page, zero length. And if the report id
+      passed to the endpoint hasn't been submitted yet, the JSON response will return
+      {\"status\":\"404\",\"error\":\"Not Found\"}")
+      2016-08 报告，同日公开。结果为 N/A（非安全漏洞）。

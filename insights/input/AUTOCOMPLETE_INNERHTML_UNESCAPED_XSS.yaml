@@ -1,0 +1,41 @@
+name: "新功能的快捷命令自动补全列表 innerHTML 未转义外部数据源——存储型 XSS"
+id: "AUTOCOMPLETE_INNERHTML_UNESCAPED_XSS"
+applicable: "blackbox"
+phase: "input"
+also_phases: []
+tags: ["xss", "stored-xss", "autocomplete", "quick-action", "new-feature", "innerHTML", "crm", "gitlab", "CVE-2022-1948"]
+source: "https://hackerone.com/reports/1578400"
+
+observation: >
+  GitLab 15.0 新增 CRM 功能的 /add_contacts 快捷命令的自动补全下拉列表
+  直接将 Contact 的 firstname/lastname 以 innerHTML 渲染而未转义。
+  (原文: /add_contacts 和 /remove_contacts 快捷命令的下拉列表未转义 Contact 姓名)
+
+hypothesis: "未叙述（仅结果）"
+action_result: >
+  在 Contact firstname 中填入 <script>alert(document.domain)</script>，
+  其他用户输入快捷命令触发自动补全时脚本执行。
+  (原文: CVE-2022-1948)
+
+why_here_first: "未叙述（仅结果）"
+chaining: "N/A — 单步 XSS"
+
+approach: >
+  对新增功能的快捷命令/自动补全 UI，检查候选项文本是否用 innerHTML 渲染，
+  数据源（如 CRM 联系人姓名）是否为外部可控输入。
+
+reasoning_chain:
+  - "问：目标平台最近新增了什么功能模块？这些功能有关联的快捷命令/自动补全吗？"
+  - "问：自动补全的候选数据是用 textContent 还是 innerHTML 渲染？"
+  - "如果 innerHTML → 问：数据源（姓名/标题/描述）是否为用户可控外部输入？"
+  - "如果可控 → 在数据源中填入 XSS payload，触发自动补全验证"
+
+vuln_root: "新功能复用已有 autocomplete 组件但忽略了新数据源的可信度，innerHTML 直接渲染外部输入。"
+
+transferable_to:
+  - "任何自动补全/命令面板/搜索建议 UI 的候选项来源于用户可控字段"
+  - "新功能上线时前端组件复用但数据源信任级别变化的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/1578400"
+    note: "GitLab CRM /add_contacts XSS，CVE-2022-1948，$13,950。"

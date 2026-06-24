@@ -1,0 +1,79 @@
+name: "OAuth 撤销访问后未废弃的 authorization code 可重新换取 access_token 恢复访问"
+id: "OAUTH_AUTHZ_CODE_SURVIVES_REVOCATION"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["authz"]
+tags: ["oauth", "authorization-code", "revocation", "access-token", "vimeo", "persistent-access"]
+source: "https://hackerone.com/reports/57603"
+
+# ——— L3 核心 ———
+
+observation: >
+  用户撤销某 OAuth 应用的访问后，access_token 被正确失效（返回 401），
+  但之前获取的 authorization code 未被废弃。
+  (原文: "not only access_tokens should be revoked, authorization codes must be
+  revoked too. Vimeo OAuth2 API implementation does not revoke authorization code
+  during access revocation.")
+
+hypothesis: >
+  未叙述（仅结果）。报告者直接理解 OAuth2 Authorization Code Flow 的规范：
+  撤销应包括所有中间态凭证。测试假设：如果 code 未被撤销，可用已保存的 code
+  换取新的 access_token，恢复对受害者账户的访问。
+
+action_result: >
+  成功：(1) 正常授权获取 code1 并换取 token1 → 有效。
+  (2) 再次授权获取 code2，不立即使用。
+  (3) 用户撤销应用访问 → token1 失效（401）。
+  (4) 用 code2 换取 token2 → 成功（200），恢复对用户账户的访问。
+  (原文: "Use code value from step 8 and exchange it for access_token ...
+  access_token 9eabdc746910ea39c07395ee1b69a2b9 ... HTTP/1.1 200 OK")
+
+why_here_first: >
+  未叙述（仅结果）。但报告者展示了对 OAuth2 规范的系统性理解：
+  authorization code 是 access_token 的前置凭证，任何凭证吊销必须涵盖所有衍生物。
+  这是 OAuth 安全审计的标准检查项。
+
+chaining: >
+  恶意应用可在用户不知情的情况下定期收集 authorization code（每次用户访问时
+  通过 img/iframe 静默触发授权），在被撤销后用储备的 code 恢复访问。
+  如果目标支持 approval_prompt=auto，恶意应用甚至无需用户交互即可持续获取新 code。
+  (原文: "it is not hard to imagine an application requiring user to pass
+  authentication one more time ... such code will 'silently' produce new
+  access_token value to callback each time")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在 OAuth2 Authorization Code Flow 中，先正常授权获取 authorization code 并保留不使用，
+  然后通过用户设置撤销该应用的访问权限，最后用保留的 authorization code 尝试换取
+  access_token，验证撤销操作是否覆盖了中间态凭证（authorization code）。
+
+reasoning_chain:
+  - "问：目标 OAuth2 实现支持 Authorization Code Flow 吗？"
+  - "问：在正常授权后，能否在不换取 token 的情况下保留 authorization code？"
+  - "问：用户通过设置页撤销应用访问后，已有的 access_token 是否失效？（确认撤销功能生效）"
+  - "问：撤销后，用之前保留的未使用 authorization code 尝试换取 token，是否仍返回有效 token？"
+  - "如果仍返回有效 token → 确认漏洞：authorization code 未被撤销覆盖"
+  - "延伸问：目标是否支持 approval_prompt=auto 或 prompt=none？如果支持，恶意应用可在被撤销后静默获取新 code"
+  - "延伸问：authorization code 是否有有效期？如果无有效期，风险进一步升级"
+
+vuln_root: >
+  开发者假设"撤销 access_token 等于撤销所有访问"，但忽略了 authorization code 是独立凭证，
+  也需要在撤销时被废弃。OAuth2 规范（RFC 6749）要求 code 一次性使用且与用户-应用绑定，
+  撤销时应清除所有关联凭证。
+
+transferable_to:
+  - "任何自建 OAuth2 Authorization Code Flow 的平台"
+  - "视频/社交/内容平台的第三方应用授权管理"
+  - "OAuth refresh_token 同理：撤销后 refresh_token 是否也被废弃"
+  - "API Gateway 的 OAuth token 生命周期管理"
+
+cases:
+  - url: "https://hackerone.com/reports/57603"
+    title: "API: missing invalidation of OAuth2 Authorization Code during access revocation causes authorization bypass"
+    author: "dor1s"
+    platform: "Vimeo"
+    severity: "Medium"
+    note: >
+      Vimeo OAuth2 API 撤销应用访问时仅废弃 access_token，未废弃 authorization code。
+      恶意应用可保留 code 在被撤销后换取新 token 恢复访问。2015 年报告。

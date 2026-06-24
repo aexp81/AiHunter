@@ -1,0 +1,94 @@
+name: "第三方集成插件配置页面未校验用户角色——低权限用户可窃取 JWT 并劫持集成实例"
+id: "INTEGRATION_PLUGIN_ROLE_BYPASS_JWT_LEAK"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["auth"]
+tags: ["jira", "integration", "jwt", "role-bypass", "privilege-escalation", "atlassian", "plugin", "claim-token", "third-party-app"]
+source: "https://hackerone.com/reports/1103582"
+
+# ——— L3 核心 ———
+
+observation: >
+  HackerOne for Jira 插件安装后，管理员可通过
+  /plugins/servlet/ac/com.hackerone/get-started-with-hackerone-on-jira 页面获取含 JWT 的
+  claim-app 链接完成集成。Jira Cloud 有 Basic / Trusted / Site administrator 三级角色，
+  Basic 用户不应能访问应用配置。但测试发现 Basic 用户也能访问该页面并获取 JWT。
+  (原文: "After testing if the HackerOne for Jira app. checks the permissions of Jira users
+  before providing the user with the JWT, it is found that the [HackerOne for Jira]
+  application does not verify the user's permissions and generates the JWT code
+  for a user with basic privileges.")
+
+hypothesis: >
+  未叙述（仅结果）。报告直接描述测试行为和结果，未叙述为何先猜测此处存在角色校验缺失。
+
+action_result: >
+  攻击成功：
+  1. Basic 用户访问 {BaseUrl}/plugins/servlet/ac/com.hackerone/get-started-with-hackerone-on-jira
+  2. 页面生成含 JWT 的链接 https://hackerone.com/apps/atlassian/claim-app?jwt=<TOKEN>
+  3. Basic 用户将该 JWT 用于将 Jira 实例绑定到自己的 HackerOne 账户
+  4. 结果：攻击者可泄露私有 Jira 项目名称、在私有项目中创建 issue、
+     向私有 issue 注入评论、将私有 Jira issue 关联到攻击者的 H1 报告
+  5. 管理员再尝试绑定时会失败，因为实例已被攻击者占用
+  (原文: "User steals a hackerone generated configuration link
+  https://hackerone.com/apps/atlassian/claim-app?jwt=<TOKEN> and uses it to link
+  a Jira instance to their hackerone account")
+
+why_here_first: >
+  未叙述（仅结果）。报告未叙述选择审计集成插件配置页面的动机或优先级逻辑。
+
+chaining: >
+  1. 低权限用户获取集成 JWT（角色校验缺失）→ 绑定 Jira 实例到攻击者 H1 账号
+  2. 绑定成功后 → 泄露私有项目名称 + 向私有 issue 注入内容
+  3. 管理员无法再正常绑定 → 拒绝服务效果
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对 SaaS 平台安装的第三方集成插件，以低权限用户访问插件的配置/初始化页面，
+  检查是否能获取用于完成集成绑定的敏感 token（如 JWT、OAuth code），
+  从而以低权限用户身份劫持集成实例的控制权。
+
+reasoning_chain:
+  - "问：目标 SaaS 平台是否支持安装第三方集成插件（如 Jira App、Slack App、GitHub App）？"
+  - "问：插件安装后是否有配置/claim/初始化页面，该页面的 URL 是否可被猜测或枚举？"
+  - "问：以低权限用户（如 Jira Basic、Slack Member）访问该配置页面时，是否返回 403/401？还是正常返回内容？"
+  - "如果正常返回 → 问：页面或接口是否生成了敏感 token（JWT、API key、OAuth authorization code）？"
+  - "问：该 token 是否可用于完成集成绑定操作（如 claim-app、link-account）？"
+  - "问：绑定成功后，攻击者是否获得了超出其角色权限的能力（访问私有项目、创建 issue、读取数据）？"
+  - "问：合法管理员在攻击者抢先绑定后是否无法再正常完成集成？（唯一性约束导致的 DoS）"
+  - "扩展：检查其他集成插件的 setup/config 端点是否有类似角色校验缺失"
+
+vuln_root: >
+  第三方集成插件假设只有管理员会访问配置页面 URL，未在服务端校验请求用户的角色；
+  Jira Cloud 的角色体系（Basic/Trusted/Admin）未被插件的配置端点正确执行，
+  导致低权限用户可获取用于绑定集成的 JWT。
+
+transferable_to:
+  - "Jira Cloud 上安装的其他第三方集成应用（Slack、PagerDuty、ServiceNow 等）"
+  - "Confluence、Bitbucket 等 Atlassian 生态内的插件配置页面"
+  - "Slack App 安装后的 setup/configure 端点——检查是否需要 workspace admin 权限"
+  - "GitHub App installation 的 callback/claim 流程——低权限 org member 能否劫持"
+  - "任何 SaaS 平台的第三方集成 setup/claim 端点（Salesforce AppExchange、ServiceNow Store）"
+
+cases:
+  - url: "https://hackerone.com/reports/1103582"
+    author: "updatelap"
+    platform: "HackerOne (Jira integration)"
+    bounty: "$3,000"
+    note: >
+      HackerOne for Jira 插件未校验用户角色，Basic 用户可获取 claim-app JWT
+      并将 Jira 实例绑定到自己的 H1 账户，泄露私有项目名称、注入评论。
+      Medium severity (CVSS 4.8)。
+  - url: "https://hackerone.com/reports/848625"
+    title: "None permission staff member can identify installed application and products attached to it"
+    author: "sreeju_kc"
+    platform: "Shopify (Digital Downloads app)"
+    bounty: "$500"
+    severity: "Low"
+    note: >
+      full-content 公开。零权限 staff 通过访问第三方 app 的产品端点
+      (delivery.shopifyapps.com/products/{product_id}) 可识别商店是否安装了
+      Digital Downloads 应用以及哪些产品配置了该应用。
+      产品 ID 可从商店前端页面源码中获取。
+      approach 同源：第三方集成 app 未继承宿主平台的用户权限模型，
+      低权限用户可直接调用 app 端点获取敏感信息。

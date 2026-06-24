@@ -1,0 +1,71 @@
+name: "OAuth redirect_uri 主机名前缀匹配绕过——恶意子域通过 hostname.startsWith 验证"
+id: "OAUTH_REDIRECT_URI_HOSTNAME_PREFIX_BYPASS"
+applicable: "blackbox"
+phase: "auth"
+also_phases: []
+tags: ["oauth", "redirect-uri", "hostname-validation", "prefix-match", "openid-connect", "account-takeover"]
+source: "https://hackerone.com/reports/384289"
+
+# ——— L3 核心 ———
+
+observation: >
+  Login.gov 在 /openid_connect/authorize 端点验证 redirect_uri 时，
+  对 hostname 使用了前缀匹配而非精确匹配。
+  (原文: "a redirect_uri with a hostname of agency.gov.example.com would validate
+  a URL as if it were presented as agency.gov")
+
+hypothesis: >
+  未叙述（仅结果）。推断：若 redirect_uri 的 hostname 验证逻辑是
+  "请求的 hostname 以已注册的 hostname 开头"，则攻击者可注册
+  形如 legit-domain.attacker.com 的域名，通过验证，窃取 authorization code/token。
+
+action_result: >
+  构造 redirect_uri 的 hostname 为 agency.gov.example.com（以合法注册的 agency.gov 开头），
+  Login.gov 将其视为 agency.gov 的合法重定向，将用户 token 发送到攻击者控制的域。
+  无需用户交互（仅需被重定向到恶意 URL）。
+  (原文: "specially crafted subdomains to be incorrectly validated when they
+  began with a valid hostname")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  单漏洞即可实现完整账户接管——redirect_uri 绕过后，authorization code/token
+  直接发送到攻击者域名，无需额外漏洞。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对 OAuth/OIDC 授权端点，测试 redirect_uri 的 hostname 验证是否为前缀匹配
+  （而非精确匹配或完整域名+端口校验）：构造 legit-host.attacker.com 或
+  legit-hostevil.com 形式的域名，观察是否通过验证。
+
+reasoning_chain:
+  - "问：目标 OAuth/OIDC 的 redirect_uri 验证策略是什么？精确匹配、前缀匹配、还是正则？"
+  - "黑盒测试：将 redirect_uri 的 hostname 设为 legit-domain.attacker.com（在合法域名后追加攻击者域），提交授权请求，观察是否被接受（302 重定向而非报错）。"
+  - "黑盒测试：尝试 legit-domainevil.com（无点号，直接拼接），测试是否为 startsWith 而非 endsWith 检查。"
+  - "如果被接受 → 问：token/code 是否真的被发送到攻击者域？（DNS + HTTP 日志确认）"
+  - "问：修复后是否改为精确匹配整个 URL（包括 path）？部分修复可能只修正 hostname 但仍允许 path 变体。"
+  - "扩展：测试 redirect_uri 的 scheme（http vs https）、端口（:443 vs :8443）、path（子目录 vs 路径穿越）是否也存在宽松匹配。"
+
+vuln_root: >
+  开发者使用 hostname 前缀匹配（startsWith）验证 redirect_uri，
+  假设"以合法域名开头的 hostname 必定属于合法服务提供商"，
+  未考虑攻击者可注册 legit-domain.attacker.com 形式的域名。
+
+transferable_to:
+  - "自建 OAuth/OIDC 服务器——任何使用字符串前缀匹配 redirect_uri hostname 的实现"
+  - "政府/企业 SSO 系统——redirect_uri 白名单使用宽松匹配以降低 SP 注册门槛"
+  - "SaaS 平台 OAuth 集成——redirect_uri 验证逻辑由内部开发，未使用标准库"
+  - "移动 App 的 custom scheme redirect——scheme 前缀匹配同样可被劫持"
+
+cases:
+  - url: "https://hackerone.com/reports/384289"
+    author: "cablej_dds (Jack Cable)"
+    platform: "GSA / Login.gov"
+    severity: "Critical"
+    bounty: "无赏金（政府雇员）"
+    note: >
+      Login.gov OpenID Connect authorize 端点：redirect_uri hostname 前缀匹配，
+      agency.gov.example.com 通过 agency.gov 的验证。
+      补丁：先改为 hostname 精确匹配，随后升级为完整 redirect_uri（含 path）精确匹配。
+      2018-07 报告，2018-11 公开。

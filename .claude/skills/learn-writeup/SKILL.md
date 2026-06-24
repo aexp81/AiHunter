@@ -1,6 +1,7 @@
 ---
 name: learn-writeup
-description: 从任意来源的漏洞挖掘文章（HackerOne / 博客 / Medium / 公众号 / PDF 等）提炼可迁移的"挖洞思路"（L3 导航过程），按决策三元组锚定原文，去重后沉淀进 hunting-insights.yaml。用户给出文章 URL 或粘贴正文时触发。
+# [原始] description: 从任意来源的漏洞挖掘文章（HackerOne / 博客 / Medium / 公众号 / PDF 等）提炼可迁移的"挖洞思路"（L3 导航过程），按决策三元组锚定原文，去重后沉淀进 hunting-insights.yaml。用户给出文章 URL 或粘贴正文时触发。
+description: 从任意来源的漏洞挖掘文章（HackerOne / 博客 / Medium / 公众号 / PDF 等）提炼可迁移的"挖洞思路"（L3 导航过程），按决策三元组锚定原文，去重后沉淀进 insights/<phase>/ 目录。用户给出文章 URL 或粘贴正文时触发。
 ---
 
 # learn-writeup：漏洞文章思路提炼
@@ -22,16 +23,22 @@ GitHub writeup。不局限于某个平台。
 3. **质量分流**：没有"扑空的路 / 为什么先看这里 / 串链"的纯结果文，**不强塞三元组**，
    降级为 case 挂到已有模式下。
 4. **按思路命名，禁止用漏洞类做 name**（不要叫 "IDOR"，要叫"只读共享资源的状态按钮"）。
-5. **必做结构化分类**：每条 insight 必填 `phase`（取自 hunting-insights.yaml 的
+<!-- [原始] 5. **必做结构化分类**：每条 insight 必填 `phase`（取自 hunting-insights.yaml 的
    taxonomy.phase：recon/auth/authz/input/logic/chain）+ `tags`（自由标签）。
-   学每篇前先读该文件的 taxonomy 与 articles 索引（防重复学习、保持分类一致）。
+   学每篇前先读该文件的 taxonomy 与 articles 索引（防重复学习、保持分类一致）。 -->
+5. **必做结构化分类**：每条 insight 必填 `phase`（合法值见 `insights/README.md`：
+   recon/auth/authz/input/logic/chain/supply-chain）+ `tags`（自由标签）。
+   学每篇前先读 `insights/README.md` 的分类与去重规则，以及 `insights/articles.yaml` 索引（防重复学习、保持分类一致）。
 
 ## 执行流程
 
 ### 步骤 1 抓取
-- 优先 `WebFetch` 取正文。要求返回**原文文本**（后续锚定要用），不要只要摘要。
-- WebFetch 失败 / JS 渲染页 / 登录墙：用 playwright MCP 渲染后取文本；仍不行则请用户
-  直接粘贴正文。
+- **必须优先使用 playwright MCP**（`browser_navigate` → `browser_snapshot` 取文本），
+  不要用 WebFetch。WebFetch 对公众号、JS 渲染页、有安全策略拦截的域名会直接失败，
+  浪费一次工具调用。
+- WebFetch **仅用于**确定是纯静态 HTML 的场景（如 GitHub raw 文件、纯文本 API）。
+- playwright 也失败时，请用户直接粘贴正文。
+- 要求返回**原文文本**（后续锚定要用），不要只要摘要。
 - 抓不到原文就**停止**，不要凭标题或记忆提炼。
 
 ### 步骤 2 质量分流

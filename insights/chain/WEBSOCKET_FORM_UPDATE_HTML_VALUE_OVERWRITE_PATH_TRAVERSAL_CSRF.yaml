@@ -1,0 +1,91 @@
+name: "WebSocket 协作事件覆写 HTML 元素值 + 客户端 URL 拼接 path traversal 实现任意 POST CSRF"
+id: "WEBSOCKET_FORM_UPDATE_HTML_VALUE_OVERWRITE_PATH_TRAVERSAL_CSRF"
+applicable: "blackbox"
+phase: "chain"
+also_phases: ["logic", "input"]
+tags: ["websocket", "collaboration", "form-update", "html-element-overwrite", "path-traversal", "csrf", "client-side-url-composition", "quantopian"]
+source: "https://hackerone.com/reports/837328"
+
+# ——— L3 核心 ———
+
+observation: >
+  研究者注意到 Quantopian 算法 IDE 中两个独立特性：（1）"Build algorithm" 按钮会从
+  页面 HTML 元素 #algo-id 的 value 取值拼接到 POST 请求 URL 中
+  （/algorithms/ALGO-ID/validate）；（2）WebSocket 协作库有一个 form-update 事件，
+  本意是同步协作者的表单输入变更。
+  (原文: "When you press this button, you issue POST request to
+  https://quantopian.com/algorithms/ALGO-ID/validate ... Important thing is,
+  it takes user-supplied parameter into URL."
+  "Second feature is collaboration websockets library's event called form-update.")
+
+hypothesis: >
+  通过 fuzzing form-update WebSocket 事件，发现该事件可以设置任意 HTML 元素的 value
+  属性值。如果用 path traversal 覆写 #algo-id 的值为 /../../../../../target_endpoint?params，
+  那么当受害者点击 "Build algorithm" 时，会自动发出一个指向攻击者控制的 endpoint 的 POST 请求。
+  (原文: "By fuzzing with this form-update event i found out that with this websocket
+  command we can set our own value to any html element that has value attribute."
+  "We can chain these 2 features to achieve some results here.")
+
+action_result: >
+  成功构造 WebSocket 请求覆写 #algo-id 为
+  "/../../../../../users/update_preferences?prefs[send_login_detected_email]=false"，
+  当受害者点击 "Build algorithm" 时，自动发出 POST 请求关闭了受害者的登录邮件通知。
+  还验证了修改用户资料、删除论坛帖子、代发评论等多种攻击。服务器优先解析 URL 参数，
+  忽略 POST body 中的无效内容。
+  (原文: "when we or our victim will press on 'Build algorithm', he will issue this
+  request... We don't care about request's body since the url and supplied parameters
+  are working properly. This will result in our victim himself turning off email
+  notifications of new logins."
+  "By using /../../../ and putting request parameters from body in URL we can do all
+  sorts of stuff. Basically, we can do ANY POST request on https://quantopian.com")
+
+why_here_first: >
+  研究者之前已经在同一程序的 WebSocket 功能中发现过漏洞（"Hello again my favorite VDP!
+  WebSockets again."），对协作 WebSocket 事件的安全边界有经验。这次重点 fuzz
+  form-update 事件的 element 和 value 参数，寻找超出预期范围的 DOM 操纵能力。
+  (原文: "Hello again my favorite VDP! WebSockets again."
+  "By fuzzing with this form-update event i found out that with this websocket
+  command we can set our own value to any html element that has value attribute.")
+
+chaining: >
+  WebSocket form-update DOM 覆写 + 客户端 URL 拼接 + path traversal + POST 参数
+  URL 优先解析 = 以受害协作者身份发出任意 POST 请求（关闭安全通知、修改资料、
+  删除帖子、代发评论）。攻击行为由受害者自己的浏览器发出，难以追溯。
+  (原文: "since victim issued those requests himself, it will be hard to trace
+  the real attacker here.")
+
+approach: >
+  Fuzz WebSocket 协作/实时同步事件的 element selector 和 value 参数，发现对任意
+  HTML 元素 value 的覆写能力后，定位页面中 value 被用于拼接请求 URL 的元素，
+  通过 path traversal 劫持 POST 请求目标，实现跨用户 CSRF。
+
+reasoning_chain:
+  - "问：目标是否有 WebSocket 驱动的实时协作功能（协同编辑、共享 IDE、在线文档）？"
+  - "问：WebSocket 事件中是否有 form-update / state-sync 类型的消息可以操控另一端的 DOM？"
+  - "问：通过 fuzz event 的 element 参数（CSS selector），能否超出预期范围控制其他 HTML 元素的 value？"
+  - "问：页面中是否有 JS 逻辑从某个 HTML 元素的 value 提取数据拼入请求 URL 或 body？"
+  - "如果能控制 URL 拼接源 → 尝试 path traversal（../../）重写请求路径到其他 endpoint"
+  - "问：目标服务端是否在 POST 请求中优先解析 URL query 参数而非 body？（可绕过 body 格式限制）"
+  - "如果 CSRF 成立 → 枚举所有可通过 POST 调用的敏感 endpoint（安全设置、资料修改、内容删除、帖子发布）"
+
+vuln_root: "WebSocket form-update 事件的 element selector 未限制作用范围，可覆写任意 HTML 元素的 value；客户端代码从 DOM 元素直接取值拼接请求 URL 且无校验，导致协作者可劫持另一方的请求目标。"
+
+transferable_to:
+  - "任何基于 WebSocket 的实时协作 IDE（Replit / CodeSandbox / Jupyter Hub 等）"
+  - "在线文档协作平台的 WebSocket state-sync 机制（Google Docs / Notion / Etherpad）"
+  - "使用 WebSocket 同步 UI 状态的 SPA 应用"
+  - "任何从 DOM 元素 value 提取数据拼入 API 请求 URL 的前端架构"
+  - "iframe 内嵌的协作组件通过 postMessage 同步状态的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/837328"
+    title: "Ability to perform various POST requests on quantopian.com as a different user"
+    platform: "Quantopian"
+    severity: "Low (vendor rating) / Medium (actual impact)"
+    bounty: "$1,050"
+    note: >
+      Quantopian 算法协作 IDE 中 WebSocket form-update 事件可覆写任意 HTML 元素值。
+      #algo-id 元素值被拼入 POST URL，攻击者通过 path traversal 覆写为
+      /../../../../../users/update_preferences?params 后，受害者点击 Build 按钮
+      会自动发出恶意 POST 请求。可关闭安全通知、修改资料、删除帖子、代发评论。
+      受害者自身浏览器发出请求，难以追溯。

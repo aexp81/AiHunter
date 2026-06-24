@@ -1,0 +1,2882 @@
+completed_urls:
+- added_cases_to:
+  - GRAPHQL_MUTATION_IDOR_CONTENT_DELETION
+  produced_insights: []
+  url: https://hackerone.com/reports/2122671
+- produced_insights:
+  - DISCLOSED_FIX_INCOMPLETE_RETEST
+  url: https://hackerone.com/reports/186230
+- produced_insights:
+  - SPRING_ACTUATOR_HEAPDUMP_CREDENTIAL_LEAK
+  url: https://hackerone.com/reports/838635
+- produced_insights:
+  - SUPPORT_SYSTEM_WORKFLOW_INTERNAL_ACCESS
+  url: https://hackerone.com/reports/3113398
+- produced_insights:
+  - KNOWN_CVE_VENDORED_PROTOCOL_STACK
+  url: https://hackerone.com/reports/2177925
+- produced_insights:
+  - GRAPHQL_MUTATION_ALIAS_RESOURCE_EXHAUSTION_DOS
+  url: https://hackerone.com/reports/3287208
+- produced_insights:
+  - GIT_FLAG_INJECTION_UNSANITIZED_REF_TO_FILE_OVERWRITE_RCE
+  url: https://hackerone.com/reports/658013
+- produced_insights:
+  - GIT_ARCHIVE_PATH_FLAG_INJECTION_FILE_OVERWRITE_RCE
+  url: https://hackerone.com/reports/587854
+- produced_insights:
+  - PROJECT_TEMPLATE_NAMESPACE_AUTHZ_BYPASS_DATA_COPY
+  url: https://hackerone.com/reports/689314
+- produced_insights:
+  - QUICK_ACTION_CROSS_PROJECT_MODEL_SERIALIZATION_LEAK
+  url: https://hackerone.com/reports/509924
+- produced_insights:
+  - CICD_MIRROR_TRIGGER_OWNERSHIP_HIJACK
+  url: https://hackerone.com/reports/894569
+- produced_insights: []
+  url: https://hackerone.com/reports/2443228
+- produced_insights:
+  - PKG_REGISTRY_PATH_TRAVERSAL_CHAIN
+  url: https://hackerone.com/reports/733072
+- produced_insights:
+  - PKG_REGISTRY_PATH_TRAVERSAL_CHAIN
+  url: https://hackerone.com/reports/822262
+- added_cases_to:
+  - DEPENDENCY_CONFUSION_INTERNAL_PKG_HIJACK
+  produced_insights: []
+  url: https://hackerone.com/reports/1043385
+- produced_insights:
+  - PROJECT_IMPORT_TEMPLATE_INJECTION_GLOBAL_BACKDOOR
+  url: https://hackerone.com/reports/446585
+- produced_insights: []
+  url: https://hackerone.com/reports/415081
+- produced_insights:
+  - SAML_ENTITYID_TRAILING_SPACE_ORG_HIJACK
+  url: https://hackerone.com/reports/976603
+- produced_insights:
+  - KERNEL_SOCKET_OPTION_RACE_UAF_ARBITRARY_RW
+  url: https://hackerone.com/reports/826026
+- produced_insights: []
+  url: https://hackerone.com/reports/663628
+- produced_insights: []
+  url: https://hackerone.com/reports/513236
+- produced_insights:
+  - MULTIPART_FIELD_BRACKET_BYPASS_WORKHORSE_FILE_READ
+  url: https://hackerone.com/reports/850447
+- produced_insights: []
+  url: https://hackerone.com/reports/881901
+- produced_insights: []
+  url: https://hackerone.com/reports/518637
+- produced_insights:
+  - PROJECT_IMPORT_CARRIERWAVE_REMOTE_URL_SSRF
+  url: https://hackerone.com/reports/826361
+- produced_insights:
+  - NEW_FEATURE_EXPORT_BOUNDARY_BYPASS
+  url: https://hackerone.com/reports/182358
+- produced_insights:
+  - PAYMENT_GATEWAY_STATE_MACHINE_DOUBLE_SPEND
+  url: https://hackerone.com/reports/307239
+- produced_insights: []
+  url: https://hackerone.com/reports/943231
+- produced_insights:
+  - NEW_FEATURE_API_CROSS_USER_DATA_LEAK
+  url: https://hackerone.com/reports/188719
+- produced_insights: []
+  url: https://hackerone.com/reports/1340942
+- produced_insights: []
+  url: https://hackerone.com/reports/1312641
+- produced_insights:
+  - GAME_ASSET_FILE_FORMAT_PARSING_OVERFLOW
+  url: https://hackerone.com/reports/542180
+- produced_insights:
+  - CROSS_REPO_DIFF_COMPARE_PRIVATE_CONTENT_LEAK
+  url: https://hackerone.com/reports/3124517
+- produced_insights:
+  - KERNEL_SYSCALL_RACE_STACK_POINTER_FREE_UAF
+  url: https://hackerone.com/reports/2900606
+- produced_insights:
+  - KERNEL_FD_IDENTITY_CONFUSION_DOUBLE_FREE
+  url: https://hackerone.com/reports/3320669
+- produced_insights: []
+  url: https://hackerone.com/reports/72243
+- produced_insights:
+  - EMBEDDED_FORM_BYPASS_SECURITY_CONTROLS
+  url: https://hackerone.com/reports/418767
+- produced_insights: []
+  url: https://hackerone.com/reports/977212
+- produced_insights:
+  - SSH_CERT_AUTHORITY_SERVICE_BOUNDARY_BYPASS
+  url: https://hackerone.com/reports/1901040
+- produced_insights:
+  - PATH_TRAVERSAL_CSRF_TOKEN_BYPASS
+  url: https://hackerone.com/reports/1497169
+- added_cases_to:
+  - KERNEL_SOCKET_OPTION_RACE_UAF_ARBITRARY_RW
+  produced_insights: []
+  url: https://hackerone.com/reports/1441103
+- produced_insights:
+  - SSTI_USER_INPUT_IN_EMAIL_TEMPLATE_RCE
+  url: https://hackerone.com/reports/125980
+- produced_insights: []
+  url: https://hackerone.com/reports/1058879
+- produced_insights:
+  - PASSWORD_RESET_TOKEN_RESPONSE_LEAK_ATO
+  url: https://hackerone.com/reports/173551
+- produced_insights:
+  - SAML_MISSING_SIGNATURE_TAG_AUTH_BYPASS
+  url: https://hackerone.com/reports/136169
+- produced_insights:
+  - HEADLESS_BROWSER_NO_SANDBOX_RCE_CHAIN
+  url: https://hackerone.com/reports/1168765
+- produced_insights: []
+  url: https://hackerone.com/reports/187305
+- produced_insights: []
+  url: https://hackerone.com/reports/186723
+- produced_insights: []
+  url: https://hackerone.com/reports/183356
+- produced_insights: []
+  url: https://hackerone.com/reports/188326
+- produced_insights: []
+  url: https://hackerone.com/reports/189633
+- produced_insights: []
+  url: https://hackerone.com/reports/185775
+- produced_insights: []
+  url: https://hackerone.com/reports/182484
+- produced_insights: []
+  url: https://hackerone.com/reports/181685
+- produced_insights: []
+  url: https://hackerone.com/reports/187536
+- produced_insights: []
+  url: https://hackerone.com/reports/791775
+- added_cases_to:
+  - DISCLOSED_FIX_INCOMPLETE_RETEST
+  - EMAIL_CONFIRM_SENT_TO_WRONG_INBOX
+  produced_insights: []
+  url: https://hackerone.com/reports/796808
+- produced_insights:
+  - PASSWORD_RESET_EMAIL_ARRAY_TYPE_CONFUSION
+  url: https://hackerone.com/reports/322985
+- added_cases_to:
+  - HTTP_DESYNC_SMUGGLING_TO_CACHE_POISON_STORED_XSS
+  produced_insights: []
+  url: https://hackerone.com/reports/740037
+- added_cases_to:
+  - DISCLOSED_FIX_INCOMPLETE_RETEST
+  produced_insights:
+  - EMAIL_VERIFY_REQUEST_REWRITE_STATE_DESYNC
+  url: https://hackerone.com/reports/910300
+- produced_insights: []
+  url: https://hackerone.com/reports/544928
+- produced_insights: []
+  url: https://hackerone.com/reports/698579
+- produced_insights:
+  - WEBSOCKET_CRYPTO_KEY_OVERRIDE_MITM_SESSION_TAKEOVER
+  url: https://hackerone.com/reports/423467
+- produced_insights: []
+  url: https://hackerone.com/reports/502593
+- produced_insights: []
+  url: https://hackerone.com/reports/757095
+- produced_insights: []
+  url: https://hackerone.com/reports/270981
+- produced_insights: []
+  url: https://hackerone.com/reports/300305
+- produced_insights:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  url: https://hackerone.com/reports/605720
+- produced_insights: []
+  url: https://hackerone.com/reports/170532
+- produced_insights:
+  - OAUTH_AUTHORIZE_DIRECT_POST_EMAIL_VERIFY_BYPASS
+  url: https://hackerone.com/reports/922456
+- produced_insights:
+  - IMPERSONATE_SESSION_LEAK_VIA_ACTIVE_SESSIONS
+  url: https://hackerone.com/reports/493324
+- added_cases_to:
+  - OAUTH_REDIRECT_URI_PATH_TRAVERSAL
+  produced_insights: []
+  url: https://hackerone.com/reports/1861974
+- produced_insights:
+  - SCIM_PROVISION_EMAIL_PREVERIFIED_IDP_BYPASS
+  url: https://hackerone.com/reports/565883
+- produced_insights: []
+  url: https://hackerone.com/reports/426944
+- added_cases_to:
+  - EMAIL_PREVERIFY_CROSS_ENDPOINT_ACCOUNT_TAKEOVER
+  produced_insights: []
+  url: https://hackerone.com/reports/2885269
+- produced_insights:
+  - RAILS_URL_HELPER_HOST_HEADER_SSRF
+  url: https://hackerone.com/reports/398799
+- produced_insights:
+  - SIGNUP_EMAIL_CONTROL_CHAR_DOMAIN_ENFORCEMENT_BYPASS
+  url: https://hackerone.com/reports/2101076
+- produced_insights: []
+  url: https://hackerone.com/reports/724889
+- produced_insights:
+  - GDPR_EMAIL_SPOOF_ACCOUNT_DELETION
+  url: https://hackerone.com/reports/928255
+- produced_insights: []
+  url: https://hackerone.com/reports/1328546
+- produced_insights:
+  - INTEGRATION_PLUGIN_ROLE_BYPASS_JWT_LEAK
+  url: https://hackerone.com/reports/1103582
+- produced_insights: []
+  url: https://hackerone.com/reports/530441
+- produced_insights:
+  - CLIENT_SUPPLIED_IDENTIFIER_XSS
+  url: https://hackerone.com/reports/249131
+- produced_insights:
+  - CICD_BUILD_STEP_LOCAL_PACKAGE_PRIVESC
+  url: https://hackerone.com/reports/692603
+- produced_insights: []
+  url: https://hackerone.com/reports/699030
+- added_cases_to:
+  - GRAPHQL_MUTATION_OVERFETCH_EMAIL_LEAK
+  produced_insights: []
+  url: https://hackerone.com/reports/871749
+- produced_insights:
+  - API_STATE_FIELD_DIRECT_WRITE_APPROVAL_BYPASS
+  url: https://hackerone.com/reports/1543159
+- produced_insights:
+  - MULTI_ROLE_INVITE_HIDDEN_PERSISTENT_ACCESS
+  url: https://hackerone.com/reports/1596663
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/1457471
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/898528
+- produced_insights: []
+  url: https://hackerone.com/reports/240821
+- produced_insights:
+  - CMS_OPTION_PATH_TRAVERSAL_CHMOD_TO_RCE
+  url: https://hackerone.com/reports/436928
+- produced_insights: []
+  url: https://hackerone.com/reports/2868084
+- added_cases_to:
+  - SPRING_ACTUATOR_HEAPDUMP_CREDENTIAL_LEAK
+  produced_insights: []
+  url: https://hackerone.com/reports/783360
+- added_cases_to:
+  - API_STATE_FIELD_DIRECT_WRITE_APPROVAL_BYPASS
+  produced_insights: []
+  url: https://hackerone.com/reports/1861487
+- produced_insights:
+  - OTP_LOGIN_TOKEN_NO_EXPIRY_BRUTEFORCE
+  url: https://hackerone.com/reports/766578
+- added_cases_to:
+  - GRAPHQL_MUTATION_OVERFETCH_EMAIL_LEAK
+  produced_insights: []
+  url: https://hackerone.com/reports/770209
+- produced_insights: []
+  url: https://hackerone.com/reports/747825
+- produced_insights: []
+  url: https://hackerone.com/reports/3459285
+- produced_insights:
+  - OAUTH_FAILED_AUTH_VALID_SESSION_BYPASS
+  url: https://hackerone.com/reports/294911
+- produced_insights: []
+  url: https://hackerone.com/reports/2848610
+- produced_insights:
+  - API_KEY_IGNORES_ORG_PROGRAM_GROUP_AUTHZ
+  url: https://hackerone.com/reports/2965723
+- produced_insights: []
+  url: https://hackerone.com/reports/824307
+- produced_insights:
+  - APACHE_SHM_SCOREBOARD_OOB_INDEX_ROOT_PRIVESC
+  url: https://hackerone.com/reports/520903
+- added_cases_to:
+  - NEW_FEATURE_API_CROSS_USER_DATA_LEAK
+  produced_insights: []
+  url: https://hackerone.com/reports/1716300
+- produced_insights:
+  - FILE_UPLOAD_CONTENT_TYPE_MISMATCH_STORED_XSS
+  url: https://hackerone.com/reports/3115705
+- produced_insights: []
+  url: https://hackerone.com/reports/397478
+- added_cases_to:
+  - PARTNER_PORTAL_CROSS_TENANT_RESOURCE_ID_IDOR
+  produced_insights: []
+  url: https://hackerone.com/reports/1777095
+- added_cases_to:
+  - SPRING_ACTUATOR_HEAPDUMP_CREDENTIAL_LEAK
+  produced_insights: []
+  url: https://hackerone.com/reports/2891449
+- added_cases_to:
+  - PASSWORD_RESET_TOKEN_RESPONSE_LEAK_ATO
+  produced_insights: []
+  url: https://hackerone.com/reports/746186
+- produced_insights: []
+  url: https://hackerone.com/reports/3151001
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/1417288
+- produced_insights:
+  - DIFFERENTIAL_RESPONSE_ENTITY_STATE_FINGERPRINT
+  url: https://hackerone.com/reports/2381253
+- added_cases_to:
+  - PASSWORD_RESET_TOKEN_ACCOUNT_BINDING_MISMATCH
+  produced_insights: []
+  url: https://hackerone.com/reports/1716016
+- produced_insights:
+  - SMS_SENDER_SPOOF_UNAUTHENTICATED_ACTION
+  url: https://hackerone.com/reports/470749
+- produced_insights: []
+  url: https://hackerone.com/reports/3080597
+- produced_insights: []
+  url: https://hackerone.com/reports/1474536
+- added_cases_to:
+  - EMBEDDED_FORM_BYPASS_SECURITY_CONTROLS
+  produced_insights: []
+  url: https://hackerone.com/reports/2483666
+- produced_insights:
+  - SNAPD_AFUNIX_SOCKET_PATH_UID_INJECTION_PRIVESC
+  url: https://hackerone.com/reports/496285
+- produced_insights:
+  - CLIENT_RESPONSE_STATUS_FLIP_AUTH_BYPASS
+  url: https://hackerone.com/reports/1490470
+- produced_insights:
+  - ACL_VISIBILITY_SCOPE_CROSS_ORG_ACTION
+  url: https://hackerone.com/reports/2516250
+- produced_insights: []
+  url: https://hackerone.com/reports/461272
+- added_cases_to:
+  - PARTNER_PORTAL_CROSS_TENANT_RESOURCE_ID_IDOR
+  produced_insights: []
+  url: https://hackerone.com/reports/2374730
+- produced_insights: []
+  url: https://hackerone.com/reports/1732595
+- produced_insights:
+  - CHAT_COMMAND_BYPASS_CLIENT_SIDE_ACL
+  url: https://hackerone.com/reports/1987011
+- produced_insights:
+  - PREMIUM_PAYWALL_API_PAGINATION_BYPASS
+  url: https://hackerone.com/reports/3235855
+- produced_insights:
+  - X_FORWARDED_HOST_AT_SIGN_SSRF
+  url: https://hackerone.com/reports/727330
+- produced_insights:
+  - NOSQL_OPERATOR_INJECTION_AUTH_BYPASS
+  url: https://hackerone.com/reports/3564655
+- produced_insights:
+  - CROSS_ENTITY_BODY_VS_URL_AUTHZ_MISMATCH
+  url: https://hackerone.com/reports/3560256
+- added_cases_to:
+  - CLIENT_RESPONSE_STATUS_FLIP_AUTH_BYPASS
+  produced_insights: []
+  url: https://hackerone.com/reports/2762462
+- produced_insights: []
+  url: https://hackerone.com/reports/738615
+- added_cases_to:
+  - NEW_FEATURE_API_CROSS_USER_DATA_LEAK
+  produced_insights: []
+  url: https://hackerone.com/reports/3279508
+- produced_insights: []
+  url: https://hackerone.com/reports/1107282
+- produced_insights: []
+  url: https://hackerone.com/reports/3395221
+- produced_insights:
+  - ASYNC_PROVISION_STATE_WINDOW_BYPASS
+  url: https://hackerone.com/reports/953083
+- produced_insights: []
+  url: https://hackerone.com/reports/1883806
+- produced_insights:
+  - RESOURCE_ID_OVERWRITE_CLONE_RESTRICTED_AGENT
+  url: https://hackerone.com/reports/3114554
+- produced_insights:
+  - WRITE_ACTION_BIND_THEN_EXPORT_EXFIL
+  url: https://hackerone.com/reports/1694304
+- produced_insights:
+  - TOKEN_ENDPOINT_COARSE_PERMISSION_GATE
+  url: https://hackerone.com/reports/1167453
+- produced_insights: []
+  url: https://hackerone.com/reports/2325023
+- produced_insights: []
+  url: https://hackerone.com/reports/874387
+- produced_insights: []
+  url: https://hackerone.com/reports/688567
+- produced_insights: []
+  url: https://hackerone.com/reports/822547
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/836081
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/2190808
+- produced_insights: []
+  url: https://hackerone.com/reports/2342461
+- added_cases_to:
+  - PARTNER_PORTAL_CROSS_TENANT_RESOURCE_ID_IDOR
+  produced_insights: []
+  url: https://hackerone.com/reports/3506183
+- added_cases_to:
+  - EMAIL_PREVERIFY_CROSS_ENDPOINT_ACCOUNT_TAKEOVER
+  produced_insights: []
+  url: https://hackerone.com/reports/892904
+- added_cases_to:
+  - ACL_VISIBILITY_SCOPE_CROSS_ORG_ACTION
+  produced_insights: []
+  url: https://hackerone.com/reports/3012526
+- produced_insights:
+  - SUBSCRIPTION_REVIEW_QUEUE_OUTLIVES_ENTITLEMENT
+  url: https://hackerone.com/reports/1841064
+- produced_insights:
+  - ROLE_MISSING_ENDPOINT_ACL_SECRET_OVERWRITE
+  url: https://hackerone.com/reports/3103755
+- produced_insights:
+  - SNAP_RPC_CALLER_CONTROLLED_AUTHORIZE_BYPASS
+  url: https://hackerone.com/reports/3507241
+- produced_insights: []
+  url: https://hackerone.com/reports/511025
+- produced_insights: []
+  url: https://hackerone.com/reports/2450685
+- produced_insights: []
+  url: https://hackerone.com/reports/2140960
+- produced_insights: []
+  url: https://hackerone.com/reports/434763
+- produced_insights: []
+  url: https://hackerone.com/reports/1758174
+- produced_insights: []
+  url: https://hackerone.com/reports/2332623
+- produced_insights: []
+  url: https://hackerone.com/reports/2801787
+- produced_insights: []
+  url: https://hackerone.com/reports/1903322
+- produced_insights: []
+  url: https://hackerone.com/reports/3452696
+- produced_insights: []
+  url: https://hackerone.com/reports/724944
+- produced_insights: []
+  url: https://hackerone.com/reports/2524939
+- produced_insights: []
+  url: https://hackerone.com/reports/2649615
+- produced_insights: []
+  url: https://hackerone.com/reports/3371448
+- produced_insights: []
+  url: https://hackerone.com/reports/1314162
+- produced_insights: []
+  url: https://hackerone.com/reports/2921830
+- produced_insights: []
+  url: https://hackerone.com/reports/2976481
+- produced_insights: []
+  url: https://hackerone.com/reports/2867022
+- produced_insights: []
+  url: https://hackerone.com/reports/3447021
+- produced_insights: []
+  url: https://hackerone.com/reports/440749
+- produced_insights: []
+  url: https://hackerone.com/reports/229619
+- produced_insights: []
+  url: https://hackerone.com/reports/2396549
+- produced_insights: []
+  url: https://hackerone.com/reports/2944357
+- produced_insights: []
+  url: https://hackerone.com/reports/2746709
+- produced_insights: []
+  url: https://hackerone.com/reports/3022516
+- produced_insights: []
+  url: https://hackerone.com/reports/1392630
+- produced_insights: []
+  url: https://hackerone.com/reports/826394
+- produced_insights: []
+  url: https://hackerone.com/reports/215381
+- produced_insights: []
+  url: https://hackerone.com/reports/310946
+- produced_insights: []
+  url: https://hackerone.com/reports/2336236
+- produced_insights: []
+  url: https://hackerone.com/reports/2861888
+- produced_insights: []
+  url: https://hackerone.com/reports/1424291
+- produced_insights: []
+  url: https://hackerone.com/reports/1556950
+- produced_insights: []
+  url: https://hackerone.com/reports/2894222
+- produced_insights: []
+  url: https://hackerone.com/reports/2319586
+- produced_insights: []
+  url: https://hackerone.com/reports/2231019
+- produced_insights: []
+  url: https://hackerone.com/reports/205000
+- produced_insights: []
+  url: https://hackerone.com/reports/1245736
+- produced_insights: []
+  url: https://hackerone.com/reports/3514490
+- produced_insights: []
+  url: https://hackerone.com/reports/490782
+- produced_insights: []
+  url: https://hackerone.com/reports/3371414
+- produced_insights: []
+  url: https://hackerone.com/reports/1406495
+- produced_insights: []
+  url: https://hackerone.com/reports/1193062
+- produced_insights: []
+  url: https://hackerone.com/reports/3378635
+- produced_insights: []
+  url: https://hackerone.com/reports/1096560
+- produced_insights: []
+  url: https://hackerone.com/reports/2962056
+- produced_insights: []
+  url: https://hackerone.com/reports/3112106
+- produced_insights: []
+  url: https://hackerone.com/reports/213418
+- produced_insights: []
+  url: https://hackerone.com/reports/275518
+- produced_insights: []
+  url: https://hackerone.com/reports/363971
+- produced_insights: []
+  url: https://hackerone.com/reports/191196
+- produced_insights: []
+  url: https://hackerone.com/reports/2610467
+- produced_insights: []
+  url: https://hackerone.com/reports/158330
+- produced_insights: []
+  url: https://hackerone.com/reports/419731
+- produced_insights: []
+  url: https://hackerone.com/reports/1505567
+- produced_insights: []
+  url: https://hackerone.com/reports/411364
+- produced_insights: []
+  url: https://hackerone.com/reports/2329466
+- produced_insights: []
+  url: https://hackerone.com/reports/2332551
+- produced_insights: []
+  url: https://hackerone.com/reports/3103849
+- produced_insights: []
+  url: https://hackerone.com/reports/130133
+- produced_insights: []
+  url: https://hackerone.com/reports/370777
+- produced_insights: []
+  url: https://hackerone.com/reports/2396571
+- produced_insights: []
+  url: https://hackerone.com/reports/2999394
+- produced_insights: []
+  url: https://hackerone.com/reports/440963
+- produced_insights: []
+  url: https://hackerone.com/reports/501081
+- produced_insights: []
+  url: https://hackerone.com/reports/2686750
+- produced_insights: []
+  url: https://hackerone.com/reports/148764
+- produced_insights: []
+  url: https://hackerone.com/reports/2188569
+- produced_insights: []
+  url: https://hackerone.com/reports/3577145
+- produced_insights: []
+  url: https://hackerone.com/reports/2190827
+- produced_insights: []
+  url: https://hackerone.com/reports/2388183
+- produced_insights: []
+  url: https://hackerone.com/reports/947728
+- produced_insights: []
+  url: https://hackerone.com/reports/3114132
+- produced_insights: []
+  url: https://hackerone.com/reports/3287060
+- produced_insights: []
+  url: https://hackerone.com/reports/819930
+- produced_insights: []
+  url: https://hackerone.com/reports/389145
+- produced_insights: []
+  url: https://hackerone.com/reports/2357113
+- produced_insights: []
+  url: https://hackerone.com/reports/2808412
+- produced_insights: []
+  url: https://hackerone.com/reports/3014785
+- produced_insights: []
+  url: https://hackerone.com/reports/2451113
+- produced_insights: []
+  url: https://hackerone.com/reports/215053
+- produced_insights: []
+  url: https://hackerone.com/reports/472470
+- produced_insights: []
+  url: https://hackerone.com/reports/1355817
+- produced_insights: []
+  url: https://hackerone.com/reports/1539426
+- produced_insights: []
+  url: https://hackerone.com/reports/2000000
+- produced_insights: []
+  url: https://hackerone.com/reports/3101986
+- produced_insights: []
+  url: https://hackerone.com/reports/2339192
+- produced_insights: []
+  url: https://hackerone.com/reports/1266828
+- produced_insights: []
+  url: https://hackerone.com/reports/700831
+- produced_insights: []
+  url: https://hackerone.com/reports/2828641
+- produced_insights: []
+  url: https://hackerone.com/reports/1842829
+- produced_insights: []
+  url: https://hackerone.com/reports/1718574
+- produced_insights: []
+  url: https://hackerone.com/reports/213558
+- produced_insights: []
+  url: https://hackerone.com/reports/662083
+- produced_insights: []
+  url: https://hackerone.com/reports/277138
+- produced_insights: []
+  url: https://hackerone.com/reports/3101858
+- produced_insights: []
+  url: https://hackerone.com/reports/3367292
+- produced_insights: []
+  url: https://hackerone.com/reports/2208656
+- produced_insights: []
+  url: https://hackerone.com/reports/3543475
+- produced_insights: []
+  url: https://hackerone.com/reports/273557
+- produced_insights: []
+  url: https://hackerone.com/reports/869831
+- produced_insights: []
+  url: https://hackerone.com/reports/2130385
+- produced_insights: []
+  url: https://hackerone.com/reports/3465156
+- produced_insights: []
+  url: https://hackerone.com/reports/332586
+- produced_insights: []
+  url: https://hackerone.com/reports/2216036
+- produced_insights: []
+  url: https://hackerone.com/reports/2185545
+- produced_insights: []
+  url: https://hackerone.com/reports/2357443
+- produced_insights: []
+  url: https://hackerone.com/reports/2981210
+- produced_insights: []
+  url: https://hackerone.com/reports/1285226
+- produced_insights: []
+  url: https://hackerone.com/reports/1572591
+- produced_insights: []
+  url: https://hackerone.com/reports/1703733
+- produced_insights: []
+  url: https://hackerone.com/reports/1486310
+- produced_insights: []
+  url: https://hackerone.com/reports/2387458
+- produced_insights: []
+  url: https://hackerone.com/reports/1394910
+- produced_insights: []
+  url: https://hackerone.com/reports/1783001
+- produced_insights: []
+  url: https://hackerone.com/reports/2354136
+- produced_insights: []
+  url: https://hackerone.com/reports/2323292
+- produced_insights: []
+  url: https://hackerone.com/reports/2329547
+- produced_insights: []
+  url: https://hackerone.com/reports/2380133
+- produced_insights: []
+  url: https://hackerone.com/reports/1091303
+- produced_insights: []
+  url: https://hackerone.com/reports/1241637
+- produced_insights: []
+  url: https://hackerone.com/reports/2212555
+- produced_insights: []
+  url: https://hackerone.com/reports/2735646
+- produced_insights: []
+  url: https://hackerone.com/reports/2309291
+- produced_insights: []
+  url: https://hackerone.com/reports/3445710
+- produced_insights: []
+  url: https://hackerone.com/reports/214022
+- produced_insights: []
+  url: https://hackerone.com/reports/1121972
+- produced_insights: []
+  url: https://hackerone.com/reports/1114617
+- produced_insights: []
+  url: https://hackerone.com/reports/1168475
+- produced_insights: []
+  url: https://hackerone.com/reports/478621
+- produced_insights: []
+  url: https://hackerone.com/reports/490960
+- produced_insights: []
+  url: https://hackerone.com/reports/1088966
+- produced_insights: []
+  url: https://hackerone.com/reports/1806387
+- produced_insights: []
+  url: https://hackerone.com/reports/2764952
+- produced_insights: []
+  url: https://hackerone.com/reports/3009411
+- produced_insights: []
+  url: https://hackerone.com/reports/416983
+- produced_insights: []
+  url: https://hackerone.com/reports/850022
+- produced_insights: []
+  url: https://hackerone.com/reports/1403302
+- produced_insights: []
+  url: https://hackerone.com/reports/3020021
+- produced_insights: []
+  url: https://hackerone.com/reports/2225660
+- produced_insights: []
+  url: https://hackerone.com/reports/470003
+- produced_insights: []
+  url: https://hackerone.com/reports/767647
+- produced_insights: []
+  url: https://hackerone.com/reports/825764
+- produced_insights: []
+  url: https://hackerone.com/reports/1851818
+- produced_insights: []
+  url: https://hackerone.com/reports/2575105
+- produced_insights: []
+  url: https://hackerone.com/reports/776877
+- produced_insights: []
+  url: https://hackerone.com/reports/3423013
+- produced_insights: []
+  url: https://hackerone.com/reports/411930
+- produced_insights: []
+  url: https://hackerone.com/reports/314126
+- produced_insights: []
+  url: https://hackerone.com/reports/766434
+- produced_insights: []
+  url: https://hackerone.com/reports/808762
+- produced_insights: []
+  url: https://hackerone.com/reports/1219681
+- produced_insights: []
+  url: https://hackerone.com/reports/1050753
+- produced_insights: []
+  url: https://hackerone.com/reports/2261577
+- produced_insights: []
+  url: https://hackerone.com/reports/754339
+- produced_insights: []
+  url: https://hackerone.com/reports/729960
+- produced_insights:
+  - PKG_SERVICE_FILE_WORLD_WRITABLE_LPE
+  url: https://hackerone.com/reports/1218523
+- produced_insights: []
+  url: https://hackerone.com/reports/2184950
+- produced_insights: []
+  url: https://hackerone.com/reports/2279041
+- added_cases_to:
+  - HTTP_CLIENT_REDIRECT_SENSITIVE_HEADER_RESIDUAL_LEAK
+  produced_insights: []
+  url: https://hackerone.com/reports/3642600
+- added_cases_to:
+  - POSTMESSAGE_PUSHSTATE_PATH_TRAVERSAL_XSS
+  produced_insights: []
+  url: https://hackerone.com/reports/868615
+- produced_insights: []
+  url: https://hackerone.com/reports/1074996
+- produced_insights:
+  - ORIGIN_IP_CDN_SSO_BYPASS
+  url: https://hackerone.com/reports/736391
+- added_cases_to:
+  - AWS_NON_PROD_ENDPOINT_CLOUDTRAIL_BYPASS_ENUM
+  produced_insights: []
+  url: https://hackerone.com/reports/3021451
+- produced_insights: []
+  url: https://hackerone.com/reports/3589551
+- produced_insights: []
+  url: https://hackerone.com/reports/3650504
+- added_cases_to:
+  - HMAC_SIGNED_URL_NO_REVOCATION_STAFF_PERSISTENCE
+  produced_insights: []
+  url: https://hackerone.com/reports/254588
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/1174527
+- produced_insights: []
+  url: https://hackerone.com/reports/1948506
+- produced_insights: []
+  url: https://hackerone.com/reports/3247499
+- produced_insights:
+  - THIRD_PARTY_SAAS_INVITE_API_SELF_ADD_ADMIN
+  url: https://hackerone.com/reports/152067
+- produced_insights: []
+  url: https://hackerone.com/reports/320173
+- added_cases_to:
+  - GRAPHQL_MUTATION_ALIAS_RESOURCE_EXHAUSTION_DOS
+  produced_insights: []
+  url: https://hackerone.com/reports/2166697
+- produced_insights:
+  - CROSS_SERVICE_TOKEN_MINT_IDOR_PRIVESC
+  url: https://hackerone.com/reports/909863
+- produced_insights: []
+  url: https://hackerone.com/reports/1933304
+- added_cases_to:
+  - AWS_NON_PROD_ENDPOINT_CLOUDTRAIL_BYPASS_ENUM
+  produced_insights: []
+  url: https://hackerone.com/reports/2800091
+- produced_insights: []
+  url: https://hackerone.com/reports/226418
+- added_cases_to:
+  - AWS_NON_PROD_ENDPOINT_CLOUDTRAIL_BYPASS_ENUM
+  produced_insights: []
+  url: https://hackerone.com/reports/2926361
+- produced_insights: []
+  url: https://hackerone.com/reports/144000
+- produced_insights:
+  - ERROR_RESPONSE_SECRET_TOKEN_LEAK_PRIVATE_RESOURCE
+  url: https://hackerone.com/reports/137502
+- produced_insights: []
+  url: https://hackerone.com/reports/263876
+- produced_insights: []
+  url: https://hackerone.com/reports/594080
+- produced_insights: []
+  url: https://hackerone.com/reports/766437
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/1394982
+- added_cases_to:
+  - JSMAP_HIDDEN_ENDPOINT_DISCOVERY
+  produced_insights: []
+  url: https://hackerone.com/reports/1486417
+- produced_insights:
+  - PERMISSION_MODEL_PATH_FORMAT_PREFIX_ASSUMPTION_BYPASS
+  url: https://hackerone.com/reports/2079103
+- produced_insights: []
+  url: https://hackerone.com/reports/853894
+- produced_insights: []
+  url: https://hackerone.com/reports/960851
+- produced_insights: []
+  url: https://hackerone.com/reports/977597
+- produced_insights: []
+  url: https://hackerone.com/reports/1056676
+- produced_insights: []
+  url: https://hackerone.com/reports/1267476
+- produced_insights:
+  - ADMIN_ENDPOINT_REAUTH_BYPASS_SENSITIVE_OP
+  url: https://hackerone.com/reports/3398283
+- added_cases_to:
+  - PERMISSION_MODEL_FD_VS_PATH_OPERATION_BYPASS
+  produced_insights: []
+  url: https://hackerone.com/reports/3390084
+- produced_insights: []
+  url: https://hackerone.com/reports/1677541
+- produced_insights:
+  - PERMISSION_MODEL_FD_VS_PATH_OPERATION_BYPASS
+  url: https://hackerone.com/reports/2590608
+- produced_insights:
+  - SETTINGS_PERMISSION_SECRET_CROSS_BOUNDARY_PRIVESC
+  url: https://hackerone.com/reports/541606
+- added_cases_to:
+  - API_SIDEEFFECT_STATE_RESET_BYPASS
+  produced_insights: []
+  url: https://hackerone.com/reports/1085042
+- produced_insights: []
+  url: https://hackerone.com/reports/1784681
+- produced_insights: []
+  url: https://hackerone.com/reports/2610478
+- produced_insights: []
+  url: https://hackerone.com/reports/3518758
+- added_cases_to:
+  - PARTNER_PORTAL_CROSS_TENANT_RESOURCE_ID_IDOR
+  produced_insights: []
+  url: https://hackerone.com/reports/243943
+- produced_insights:
+  - CLIENT_SUPPLIED_PERMISSION_CONTEXT_TRUST_BYPASS
+  url: https://hackerone.com/reports/308610
+- produced_insights:
+  - OAUTH_CROSSDOMAIN_POLICY_FILE_TOKEN_THEFT
+  url: https://hackerone.com/reports/136582
+- produced_insights:
+  - LOGROTATE_RACE_SYMLINK_LOG_DIR_OWNED_PRIVESC
+  url: https://hackerone.com/reports/578119
+- produced_insights:
+  - USER_ID_SYSTEM_PATH_COLLISION_DATA_DESTRUCTION
+  url: https://hackerone.com/reports/508493
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/1167753
+- produced_insights: []
+  url: https://hackerone.com/reports/2081744
+- added_cases_to:
+  - API_STATE_FIELD_DIRECT_WRITE_APPROVAL_BYPASS
+  produced_insights: []
+  url: https://hackerone.com/reports/2144868
+- added_cases_to:
+  - PARTNER_PORTAL_CROSS_TENANT_RESOURCE_ID_IDOR
+  produced_insights: []
+  url: https://hackerone.com/reports/3650582
+- produced_insights:
+  - PREVIEW_BEARER_TOKEN_CROSS_INSTANCE_REUSE
+  url: https://hackerone.com/reports/961929
+- added_cases_to:
+  - ADMIN_ENDPOINT_REAUTH_BYPASS_SENSITIVE_OP
+  produced_insights: []
+  url: https://hackerone.com/reports/2120667
+- produced_insights: []
+  url: https://hackerone.com/reports/271407
+- produced_insights: []
+  url: https://hackerone.com/reports/1024356
+- produced_insights: []
+  url: https://hackerone.com/reports/1499114
+- produced_insights: []
+  url: https://hackerone.com/reports/1991214
+- added_cases_to:
+  - HTTP_CLIENT_REDIRECT_SENSITIVE_HEADER_RESIDUAL_LEAK
+  produced_insights: []
+  url: https://hackerone.com/reports/2390009
+- produced_insights: []
+  url: https://hackerone.com/reports/1199965
+- produced_insights:
+  - CROSS_TENANT_GID_COMMENT_INJECTION_PAGE_CORRUPTION
+  url: https://hackerone.com/reports/629150
+- produced_insights:
+  - ROLE_HIERARCHY_ACTION_PANEL_UPWARD_ABUSE
+  url: https://hackerone.com/reports/816143
+- produced_insights: []
+  url: https://hackerone.com/reports/1195325
+- produced_insights:
+  - MUTATION_SIDEEFFECT_FIRES_BEFORE_AUTHZ_CHECK
+  url: https://hackerone.com/reports/1084638
+- added_cases_to:
+  - OAUTH_AUTHORIZE_DIRECT_POST_EMAIL_VERIFY_BYPASS
+  produced_insights: []
+  url: https://hackerone.com/reports/1018489
+- produced_insights:
+  - MOBILE_DEEPLINK_OAUTH_CODE_INTERCEPTION
+  url: https://hackerone.com/reports/1700734
+- produced_insights: []
+  url: https://hackerone.com/reports/2340833
+- produced_insights: []
+  url: https://hackerone.com/reports/326080
+- produced_insights:
+  - AV_QUARANTINE_RESTORE_DIR_JUNCTION_LPE
+  url: https://hackerone.com/reports/980500
+- produced_insights: []
+  url: https://hackerone.com/reports/1137218
+- added_cases_to:
+  - PARTNER_PORTAL_CROSS_TENANT_RESOURCE_ID_IDOR
+  produced_insights: []
+  url: https://hackerone.com/reports/1063022
+- produced_insights:
+  - SQLI_TRANSACTION_ESCAPE_AUDIT_TRAIL_DESER_RCE
+  url: https://hackerone.com/reports/1663299
+- produced_insights: []
+  url: https://hackerone.com/reports/2214049
+- added_cases_to:
+  - TOKEN_ENDPOINT_COARSE_PERMISSION_GATE
+  produced_insights: []
+  url: https://hackerone.com/reports/2209433
+- produced_insights:
+  - SNAPSHOT_RESTORE_STATE_DESYNC_PATCH_BYPASS
+  url: https://hackerone.com/reports/3738654
+- produced_insights:
+  - ELEVATED_PROCESS_HKCU_HANDLER_HIJACK_UAC_BYPASS
+  url: https://hackerone.com/reports/530292
+- produced_insights: []
+  url: https://hackerone.com/reports/2419776
+- added_cases_to:
+  - HMAC_SIGNED_URL_NO_REVOCATION_STAFF_PERSISTENCE
+  produced_insights: []
+  url: https://hackerone.com/reports/698708
+- produced_insights:
+  - PLUGIN_ROLE_BLACKLIST_META_CAP_PRIVESC
+  url: https://hackerone.com/reports/403039
+- produced_insights: []
+  url: https://hackerone.com/reports/1169340
+- produced_insights:
+  - ARCHIVE_UPLOAD_DANGEROUS_FILE_TYPE_EXTRACTION_RCE
+  url: https://hackerone.com/reports/1122791
+- produced_insights: []
+  url: https://hackerone.com/reports/2250398
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/1991290
+- produced_insights: []
+  url: https://hackerone.com/reports/2858876
+- produced_insights:
+  - SHARE_LINK_PATH_PREFIX_MATCH_UNAUTHORIZED_FILE_ACCESS
+  url: https://hackerone.com/reports/214001
+- produced_insights: []
+  url: https://hackerone.com/reports/197958
+- produced_insights:
+  - ADMIN_SELF_EDIT_ROLE_UPWARD_PRIVESC
+  url: https://hackerone.com/reports/272570
+- produced_insights: []
+  url: https://hackerone.com/reports/796414
+- added_cases_to:
+  - SPRING_ACTUATOR_HEAPDUMP_CREDENTIAL_LEAK
+  produced_insights: []
+  url: https://hackerone.com/reports/1417635
+- added_cases_to:
+  - INTEGRATION_PLUGIN_ROLE_BYPASS_JWT_LEAK
+  produced_insights: []
+  url: https://hackerone.com/reports/848625
+- produced_insights: []
+  url: https://hackerone.com/reports/802286
+- produced_insights: []
+  url: https://hackerone.com/reports/1672614
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/300454
+- produced_insights: []
+  url: https://hackerone.com/reports/1546726
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/1421804
+- added_cases_to:
+  - ROLE_MISSING_ENDPOINT_ACL_SECRET_OVERWRITE
+  produced_insights: []
+  url: https://hackerone.com/reports/1021460
+- produced_insights:
+  - TEAM_MEMBERSHIP_IDOR_CROSS_TEAM_DESTRUCTIVE_ACTION
+  url: https://hackerone.com/reports/1448550
+- produced_insights:
+  - DLL_SEARCH_ORDER_HIJACK_WRITABLE_PATH_LPE
+  url: https://hackerone.com/reports/959608
+- added_cases_to:
+  - AWS_NON_PROD_ENDPOINT_CLOUDTRAIL_BYPASS_ENUM
+  produced_insights: []
+  url: https://hackerone.com/reports/3021618
+- produced_insights:
+  - GITHUB_ACTIONS_WORKFLOW_SECRET_EXFIL
+  url: https://hackerone.com/reports/1548870
+- produced_insights:
+  - MSI_REPAIR_DLL_HIJACK_TEMP_LPE
+  url: https://hackerone.com/reports/1071832
+- added_cases_to:
+  - AV_QUARANTINE_RESTORE_DIR_JUNCTION_LPE
+  produced_insights: []
+  url: https://hackerone.com/reports/1075449
+- produced_insights: []
+  url: https://hackerone.com/reports/3385434
+- produced_insights:
+  - METEOR_ALLOW_DENY_CLIENT_MUTATION_PRIVESC
+  url: https://hackerone.com/reports/261285
+- produced_insights:
+  - OPENSSL_HARDCODED_CONFDIR_ENGINE_LOAD_LPE
+  url: https://hackerone.com/reports/608577
+- added_cases_to:
+  - GDPR_EMAIL_SPOOF_ACCOUNT_DELETION
+  produced_insights: []
+  url: https://hackerone.com/reports/803141
+- produced_insights:
+  - MICROSERVICE_SESSION_CROSS_TENANT_RESOURCE_IDOR
+  url: https://hackerone.com/reports/884159
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/1521336
+- produced_insights: []
+  url: https://hackerone.com/reports/794904
+- added_cases_to:
+  - AWS_NON_PROD_ENDPOINT_CLOUDTRAIL_BYPASS_ENUM
+  produced_insights: []
+  url: https://hackerone.com/reports/2951803
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/1679124
+- added_cases_to:
+  - DIFFERENTIAL_RESPONSE_ENTITY_STATE_FINGERPRINT
+  produced_insights: []
+  url: https://hackerone.com/reports/167828
+- produced_insights: []
+  url: https://hackerone.com/reports/152407
+- produced_insights: []
+  url: https://hackerone.com/reports/407763
+- produced_insights:
+  - BADGE_STATUS_ENDPOINT_VISIBILITY_BYPASS
+  url: https://hackerone.com/reports/477222
+- produced_insights:
+  - ROLE_DOWNGRADE_CACHED_VIEW_STALE_ACCESS
+  url: https://hackerone.com/reports/853355
+- produced_insights: []
+  url: https://hackerone.com/reports/1159367
+- produced_insights: []
+  url: https://hackerone.com/reports/1099489
+- produced_insights:
+  - TURN_RELAY_OPEN_PEER_SSRF_INTERNAL_ACCESS
+  url: https://hackerone.com/reports/843256
+- produced_insights:
+  - EMBEDDED_DEVICE_API_PATH_TRAVERSAL_PRIVESC
+  url: https://hackerone.com/reports/239719
+- produced_insights: []
+  url: https://hackerone.com/reports/321725
+- produced_insights:
+  - POSTMESSAGE_ORIGIN_SUBSTRING_MATCH_XSS
+  url: https://hackerone.com/reports/387544
+- produced_insights: []
+  url: https://hackerone.com/reports/470398
+- produced_insights: []
+  url: https://hackerone.com/reports/779656
+- produced_insights: []
+  url: https://hackerone.com/reports/845729
+- added_cases_to:
+  - ROLE_MISSING_ENDPOINT_ACL_SECRET_OVERWRITE
+  produced_insights: []
+  url: https://hackerone.com/reports/865115
+- produced_insights:
+  - CTF_MULTISTAGE_RECON_TO_PAYMENT_TAKEOVER
+  url: https://hackerone.com/reports/895172
+- added_cases_to:
+  - SETTINGS_PERMISSION_SECRET_CROSS_BOUNDARY_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/1084892
+- added_cases_to:
+  - CLIENT_RESPONSE_STATUS_FLIP_AUTH_BYPASS
+  produced_insights: []
+  url: https://hackerone.com/reports/1508661
+- added_cases_to:
+  - API_STATE_FIELD_DIRECT_WRITE_APPROVAL_BYPASS
+  produced_insights: []
+  url: https://hackerone.com/reports/2249299
+- produced_insights: []
+  url: https://hackerone.com/reports/2237545
+- added_cases_to:
+  - AWS_NON_PROD_ENDPOINT_CLOUDTRAIL_BYPASS_ENUM
+  produced_insights: []
+  url: https://hackerone.com/reports/2972435
+- added_cases_to:
+  - AWS_NON_PROD_ENDPOINT_CLOUDTRAIL_BYPASS_ENUM
+  produced_insights: []
+  url: https://hackerone.com/reports/3029552
+- added_cases_to:
+  - ROLE_MISSING_ENDPOINT_ACL_SECRET_OVERWRITE
+  produced_insights: []
+  url: https://hackerone.com/reports/431633
+- produced_insights: []
+  url: https://hackerone.com/reports/749677
+- produced_insights:
+  - THIRD_PARTY_API_CROSS_SERVICE_PRIVACY_LEAK
+  url: https://hackerone.com/reports/273698
+- added_cases_to:
+  - PARTNER_PORTAL_CROSS_TENANT_RESOURCE_ID_IDOR
+  produced_insights: []
+  url: https://hackerone.com/reports/172545
+- produced_insights: []
+  url: https://hackerone.com/reports/410475
+- produced_insights:
+  - BROWSER_EXTENSION_SHARED_CONTEXT_NATIVE_METHOD_HOOK_HIJACK
+  url: https://hackerone.com/reports/470547
+- produced_insights: []
+  url: https://hackerone.com/reports/815547
+- produced_insights: []
+  url: https://hackerone.com/reports/1033423
+- produced_insights:
+  - APP_PROXY_XACCEL_REDIRECT_INTERNAL_LOCATION_ACCESS
+  url: https://hackerone.com/reports/1027873
+- produced_insights:
+  - INTEGRITY_CHECK_DRIVER_INSTALL_TOCTOU_LPE
+  url: https://hackerone.com/reports/852091
+- produced_insights: []
+  url: https://hackerone.com/reports/1063298
+- added_cases_to:
+  - SERVERLESS_APP_REPO_OVERBROAD_IAM_ROLE_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/2805173
+- produced_insights: []
+  url: https://hackerone.com/reports/2814750
+- produced_insights: []
+  url: https://hackerone.com/reports/927567
+- produced_insights: []
+  url: https://hackerone.com/reports/1519099
+- produced_insights: []
+  url: https://hackerone.com/reports/927661
+- added_cases_to:
+  - DISCLOSED_FIX_INCOMPLETE_RETEST
+  - ROLE_MISSING_ENDPOINT_ACL_SECRET_OVERWRITE
+  produced_insights: []
+  url: https://hackerone.com/reports/1218680
+- added_cases_to:
+  - MUTATION_SIDEEFFECT_FIRES_BEFORE_AUTHZ_CHECK
+  produced_insights: []
+  url: https://hackerone.com/reports/1102652
+- added_cases_to:
+  - MUTATION_SIDEEFFECT_FIRES_BEFORE_AUTHZ_CHECK
+  produced_insights: []
+  url: https://hackerone.com/reports/1102660
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/1609955
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/2262365
+- added_cases_to:
+  - AWS_NON_PROD_ENDPOINT_CLOUDTRAIL_BYPASS_ENUM
+  produced_insights: []
+  url: https://hackerone.com/reports/3042588
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/3259610
+- added_cases_to: []
+  produced_insights:
+  - DISTRIBUTED_SERVICE_DEFAULT_NO_AUTH_PORT_PROBE
+  url: https://hackerone.com/reports/154369
+- added_cases_to: []
+  produced_insights:
+  - BLIND_XSS_FORM_FIELD_ADMIN_REVIEW_SINK
+  url: https://hackerone.com/reports/197337
+- added_cases_to:
+  - POSTMESSAGE_PUSHSTATE_PATH_TRAVERSAL_XSS
+  produced_insights: []
+  url: https://hackerone.com/reports/883867
+- added_cases_to:
+  - COMMENTED_JS_CRED_LEAK
+  produced_insights: []
+  url: https://hackerone.com/reports/344566
+- added_cases_to: []
+  produced_insights:
+  - ANTIRANSOMWARE_RENAME_GAP_SYMLINK_PRIVDEL_LPE
+  url: https://hackerone.com/reports/1003007
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/129992
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/509080
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/728004
+- added_cases_to:
+  - FRONTEND_ROLE_MAPPING_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/751299
+- added_cases_to:
+  - DISCLOSED_FIX_INCOMPLETE_RETEST
+  produced_insights: []
+  url: https://hackerone.com/reports/1070889
+- added_cases_to:
+  - ROLE_MISSING_ENDPOINT_ACL_SECRET_OVERWRITE
+  produced_insights: []
+  url: https://hackerone.com/reports/877300
+- added_cases_to:
+  - GRAPHQL_MUTATION_IDOR_CONTENT_DELETION
+  produced_insights: []
+  url: https://hackerone.com/reports/1102365
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/1174734
+- added_cases_to: []
+  produced_insights:
+  - PERMISSION_MODEL_BUILTIN_NORMALIZER_OVERWRITE_BYPASS
+  url: https://hackerone.com/reports/2259914
+- added_cases_to:
+  - PERMISSION_MODEL_FD_VS_PATH_OPERATION_BYPASS
+  produced_insights: []
+  url: https://hackerone.com/reports/2472071
+- added_cases_to: []
+  produced_insights:
+  - FILE_WRITE_SIDE_EFFECT_PERMISSION_RESET_LEAK
+  url: https://hackerone.com/reports/1024749
+- added_cases_to: []
+  produced_insights:
+  - OVERPERMISSIVE_LOG_SYMLINK_SENSITIVE_FILE_READ
+  url: https://hackerone.com/reports/1872682
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/929288
+- added_cases_to: []
+  produced_insights:
+  - AUXILIARY_API_ENDPOINT_MISSING_RESOURCE_LEVEL_ACL
+  url: https://hackerone.com/reports/2208647
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/300879
+- added_cases_to: []
+  produced_insights:
+  - ADMIN_SIGNATURE_ACL_INDEPENDENT_PERSISTENT_ACCESS
+  url: https://hackerone.com/reports/156520
+- added_cases_to:
+  - PARTNER_PORTAL_CROSS_TENANT_RESOURCE_ID_IDOR
+  produced_insights: []
+  url: https://hackerone.com/reports/916704
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/392457
+- added_cases_to: []
+  produced_insights:
+  - LOG_FORMAT_UNQUOTED_FIELD_DELIMITER_INJECTION_EVASION
+  url: https://hackerone.com/reports/447488
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/879562
+- added_cases_to: []
+  produced_insights:
+  - OIDC_DISCOVERY_ENDPOINT_INJECTION_BROWSER_WORKAROUND_XSS
+  url: https://hackerone.com/reports/1687410
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/1757663
+- added_cases_to: []
+  produced_insights:
+  - WP_PLUGIN_HOOK_REDIRECT_LOG_UNSANITIZED_STORED_XSS
+  url: https://hackerone.com/reports/127948
+- added_cases_to: []
+  produced_insights:
+  - WEBSOCKET_FORM_UPDATE_HTML_VALUE_OVERWRITE_PATH_TRAVERSAL_CSRF
+  url: https://hackerone.com/reports/837328
+- added_cases_to:
+  - EMBEDDED_FORM_BYPASS_SECURITY_CONTROLS
+  produced_insights: []
+  url: https://hackerone.com/reports/1279322
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/300099
+- added_cases_to:
+  - INTEGRITY_CHECK_DRIVER_INSTALL_TOCTOU_LPE
+  produced_insights: []
+  url: https://hackerone.com/reports/768110
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/833735
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/1669176
+- added_cases_to:
+  - DISCLOSED_FIX_INCOMPLETE_RETEST
+  produced_insights: []
+  url: https://hackerone.com/reports/2352957
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/2145862
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/1946298
+- added_cases_to:
+  - AWS_NON_PROD_ENDPOINT_CLOUDTRAIL_BYPASS_ENUM
+  produced_insights: []
+  url: https://hackerone.com/reports/3031512
+- added_cases_to:
+  - HTTP_CLIENT_REDIRECT_SENSITIVE_HEADER_RESIDUAL_LEAK
+  produced_insights: []
+  url: https://hackerone.com/reports/3480713
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/3485930
+- added_cases_to:
+  - AWS_NON_PROD_ENDPOINT_CLOUDTRAIL_BYPASS_ENUM
+  produced_insights: []
+  url: https://hackerone.com/reports/3418966
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/473252
+- added_cases_to: []
+  produced_insights:
+  - APP_TOKEN_SESSION_SCOPE_REVOCATION_BYPASS
+  url: https://hackerone.com/reports/388515
+- added_cases_to: []
+  produced_insights:
+  - GROUP_SHARE_IDOR_PRIVATE_NAMESPACE_LEAK
+  url: https://hackerone.com/reports/131210
+- added_cases_to: []
+  produced_insights:
+  - API_CONTEXT_PARAM_ELEVATES_DATA_VISIBILITY
+  url: https://hackerone.com/reports/138244
+- added_cases_to:
+  - PARTNER_PORTAL_CROSS_TENANT_RESOURCE_ID_IDOR
+  produced_insights: []
+  url: https://hackerone.com/reports/317332
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/410245
+- added_cases_to:
+  - API_CONTEXT_PARAM_ELEVATES_DATA_VISIBILITY
+  produced_insights: []
+  url: https://hackerone.com/reports/772744
+- added_cases_to:
+  - AUXILIARY_API_ENDPOINT_MISSING_RESOURCE_LEVEL_ACL
+  produced_insights: []
+  url: https://hackerone.com/reports/1533220
+- added_cases_to:
+  - AWS_NON_PROD_ENDPOINT_CLOUDTRAIL_BYPASS_ENUM
+  produced_insights: []
+  url: https://hackerone.com/reports/3068422
+- added_cases_to:
+  - DIFFERENTIAL_RESPONSE_ENTITY_STATE_FINGERPRINT
+  produced_insights: []
+  url: https://hackerone.com/reports/159890
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/240562
+- added_cases_to: []
+  produced_insights:
+  - FILESYSTEM_UNPROTECTED_SESSION_FILE_PRIVESC
+  url: https://hackerone.com/reports/241044
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/317507
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/392701
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/435457
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/342977
+- added_cases_to: []
+  produced_insights:
+  - GRAPHQL_GID_TYPE_CONFUSION_DESTRUCTIVE_ACTION
+  url: https://hackerone.com/reports/960244
+- added_cases_to:
+  - AUXILIARY_API_ENDPOINT_MISSING_RESOURCE_LEVEL_ACL
+  produced_insights: []
+  url: https://hackerone.com/reports/1091380
+- added_cases_to:
+  - PROJECT_EXPORT_SERIALIZATION_TOKEN_LEAK
+  produced_insights: []
+  url: https://hackerone.com/reports/1489892
+- added_cases_to: []
+  produced_insights:
+  - PERMISSION_MODEL_NON_FS_API_FILE_WRITE_BYPASS
+  url: https://hackerone.com/reports/3692858
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/65825
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/267636
+- added_cases_to:
+  - ROLE_MISSING_ENDPOINT_ACL_SECRET_OVERWRITE
+  produced_insights: []
+  url: https://hackerone.com/reports/172733
+- added_cases_to:
+  - PKG_SERVICE_FILE_WORLD_WRITABLE_LPE
+  produced_insights: []
+  url: https://hackerone.com/reports/908162
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/1164854
+- added_cases_to:
+  - DLL_SEARCH_ORDER_HIJACK_WRITABLE_PATH_LPE
+  produced_insights: []
+  url: https://hackerone.com/reports/1008427
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/592864
+- added_cases_to: []
+  produced_insights:
+  - GROUP_MEMBERSHIP_MINIMUM_CONSTRAINT_BYPASS
+  url: https://hackerone.com/reports/141629
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/154762
+- added_cases_to:
+  - FILE_UPLOAD_CONTENT_TYPE_MISMATCH_STORED_XSS
+  produced_insights: []
+  url: https://hackerone.com/reports/149589
+- added_cases_to: []
+  produced_insights:
+  - URL_FIELD_JAVASCRIPT_SCHEME_STORED_XSS
+  url: https://hackerone.com/reports/245172
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/503300
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/852349
+- added_cases_to:
+  - CROSS_ENTITY_BODY_VS_URL_AUTHZ_MISMATCH
+  produced_insights: []
+  url: https://hackerone.com/reports/867052
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/587733
+- added_cases_to:
+  - BLIND_XSS_FORM_FIELD_ADMIN_REVIEW_SINK
+  produced_insights: []
+  url: https://hackerone.com/reports/1011888
+- added_cases_to:
+  - CROSS_ENTITY_BODY_VS_URL_AUTHZ_MISMATCH
+  produced_insights: []
+  url: https://hackerone.com/reports/1322334
+- added_cases_to:
+  - PREMIUM_PAYWALL_API_PAGINATION_BYPASS
+  produced_insights: []
+  url: https://hackerone.com/reports/1166993
+- added_cases_to:
+  - ROLE_MISSING_ENDPOINT_ACL_SECRET_OVERWRITE
+  produced_insights: []
+  url: https://hackerone.com/reports/1466855
+- added_cases_to:
+  - ROLE_MISSING_ENDPOINT_ACL_SECRET_OVERWRITE
+  produced_insights: []
+  url: https://hackerone.com/reports/1084939
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/3371067
+- added_cases_to: []
+  produced_insights:
+  - PERMISSION_MODEL_FS_API_NATIVE_VARIANT_COVERAGE_GAP
+  url: https://hackerone.com/reports/3480841
+- added_cases_to:
+  - ROLE_MISSING_ENDPOINT_ACL_SECRET_OVERWRITE
+  produced_insights: []
+  url: https://hackerone.com/reports/860348
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/782982
+- added_cases_to:
+  - CHAT_COMMAND_BYPASS_CLIENT_SIDE_ACL
+  produced_insights: []
+  url: https://hackerone.com/reports/202499
+- added_cases_to:
+  - DLL_SEARCH_ORDER_HIJACK_WRITABLE_PATH_LPE
+  produced_insights: []
+  url: https://hackerone.com/reports/959017
+- added_cases_to:
+  - CHAT_COMMAND_BYPASS_CLIENT_SIDE_ACL
+  produced_insights: []
+  url: https://hackerone.com/reports/137503
+- added_cases_to:
+  - OPENSSL_HARDCODED_CONFDIR_ENGINE_LOAD_LPE
+  produced_insights: []
+  url: https://hackerone.com/reports/162955
+- added_cases_to: []
+  produced_insights:
+  - OAUTH_REDIRECT_URI_HOSTNAME_PREFIX_BYPASS
+  url: https://hackerone.com/reports/384289
+- added_cases_to: []
+  produced_insights:
+  - RESHARE_IMPLIED_PERMISSION_PROPAGATION
+  url: https://hackerone.com/reports/633245
+- added_cases_to: []
+  produced_insights:
+  - DOUBLE_URL_ENCODING_SERVLET_PATH_TRAVERSAL
+  url: https://hackerone.com/reports/497771
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/165229
+- added_cases_to:
+  - CLIENT_RESPONSE_STATUS_FLIP_AUTH_BYPASS
+  produced_insights: []
+  url: https://hackerone.com/reports/1397564
+- added_cases_to:
+  - PARTNER_PORTAL_CROSS_TENANT_RESOURCE_ID_IDOR
+  produced_insights: []
+  url: https://hackerone.com/reports/1175980
+- added_cases_to: []
+  produced_insights:
+  - APP_CACHE_KEY_MISSING_USER_PREFIX_CROSS_USER_LEAK
+  url: https://hackerone.com/reports/1767503
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/2442229
+- added_cases_to:
+  - AWS_NON_PROD_ENDPOINT_CLOUDTRAIL_BYPASS_ENUM
+  produced_insights: []
+  url: https://hackerone.com/reports/3092085
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/3241304
+- added_cases_to:
+  - DLL_SEARCH_ORDER_HIJACK_WRITABLE_PATH_LPE
+  produced_insights: []
+  url: https://hackerone.com/reports/1010552
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/159399
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/159393
+- added_cases_to: []
+  produced_insights:
+  - OAUTH_CALLBACK_LAX_PATH_REFERER_TOKEN_LEAK
+  url: https://hackerone.com/reports/166942
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/235059
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/255651
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/221454
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/297434
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/336145
+- added_cases_to: []
+  produced_insights:
+  - INJECTED_SCRIPT_SELF_DOWNLOAD_COMMAND_INTERFACE_HIJACK
+  url: https://hackerone.com/reports/470544
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/701160
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/1022267
+- added_cases_to:
+  - ROLE_MISSING_ENDPOINT_ACL_SECRET_OVERWRITE
+  produced_insights: []
+  url: https://hackerone.com/reports/1168528
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/1548067
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/2946924
+- added_cases_to:
+  - DISCLOSED_FIX_INCOMPLETE_RETEST
+  produced_insights: []
+  url: https://hackerone.com/reports/3334165
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/891268
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/471739
+- added_cases_to: []
+  produced_insights:
+  - CLIENT_CLI_BYPASS_LOCKED_DESKTOP_POLICY
+  url: https://hackerone.com/reports/1635748
+- added_cases_to:
+  - ROLE_MISSING_ENDPOINT_ACL_SECRET_OVERWRITE
+  produced_insights: []
+  url: https://hackerone.com/reports/417839
+- added_cases_to:
+  - SPRING_ACTUATOR_HEAPDUMP_CREDENTIAL_LEAK
+  produced_insights: []
+  url: https://hackerone.com/reports/651355
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/159387
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/141329
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/123572
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/180895
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/129698
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/536669
+- added_cases_to:
+  - GRAPHQL_MUTATION_IDOR_CONTENT_DELETION
+  produced_insights: []
+  url: https://hackerone.com/reports/837256
+- added_cases_to: []
+  produced_insights:
+  - ADMIN_INTEGRATION_SERVER_CONFIG_SSRF
+  url: https://hackerone.com/reports/1018568
+- added_cases_to:
+  - BLIND_XSS_FORM_FIELD_ADMIN_REVIEW_SINK
+  produced_insights: []
+  url: https://hackerone.com/reports/1110243
+- added_cases_to: []
+  produced_insights:
+  - SOAP_WSDL_AUTH_HEADER_STRIP_ADMIN_ACCESS
+  url: https://hackerone.com/reports/1026146
+- added_cases_to:
+  - DISTRIBUTED_SERVICE_DEFAULT_NO_AUTH_PORT_PROBE
+  produced_insights: []
+  url: https://hackerone.com/reports/1317236
+- added_cases_to:
+  - DISTRIBUTED_SERVICE_DEFAULT_NO_AUTH_PORT_PROBE
+  produced_insights: []
+  url: https://hackerone.com/reports/2247231
+- added_cases_to:
+  - GITHUB_LEAKED_ARTIFACT_REPO_CREDS
+  produced_insights: []
+  url: https://hackerone.com/reports/1561448
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/919008
+- added_cases_to:
+  - DLL_SEARCH_ORDER_HIJACK_WRITABLE_PATH_LPE
+  produced_insights: []
+  url: https://hackerone.com/reports/924493
+- added_cases_to:
+  - AV_QUARANTINE_RESTORE_DIR_JUNCTION_LPE
+  produced_insights: []
+  url: https://hackerone.com/reports/983363
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/345
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/226037
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/243094
+- added_cases_to:
+  - PARTNER_PORTAL_CROSS_TENANT_RESOURCE_ID_IDOR
+  produced_insights: []
+  url: https://hackerone.com/reports/276976
+- added_cases_to: []
+  produced_insights:
+  - ADMIN_ROUTE_MISSING_MIDDLEWARE_REFERER_ROLE_TRUST
+  url: https://hackerone.com/reports/343626
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/376060
+- added_cases_to:
+  - AUXILIARY_API_ENDPOINT_MISSING_RESOURCE_LEVEL_ACL
+  produced_insights: []
+  url: https://hackerone.com/reports/411822
+- added_cases_to: []
+  produced_insights:
+  - CONFIG_READ_FAILURE_SETUP_STATE_REENTRY
+  url: https://hackerone.com/reports/522876
+- added_cases_to:
+  - BADGE_STATUS_ENDPOINT_VISIBILITY_BYPASS
+  produced_insights: []
+  url: https://hackerone.com/reports/667408
+- added_cases_to:
+  - EMBEDDED_DEVICE_API_PATH_TRAVERSAL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/330051
+- added_cases_to: []
+  produced_insights:
+  - CONFIG_RESTORE_ENDPOINT_MISSING_PRIVILEGE_CHECK
+  url: https://hackerone.com/reports/329659
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/870709
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/992618
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/1463028
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/1489470
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/1493007
+- added_cases_to:
+  - ROLE_MISSING_ENDPOINT_ACL_SECRET_OVERWRITE
+  produced_insights: []
+  url: https://hackerone.com/reports/1084904
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/1597437
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/1858495
+- added_cases_to: []
+  produced_insights: []
+  url: https://hackerone.com/reports/2090435
+- added_cases_to:
+  - HTTP_CLIENT_REDIRECT_SENSITIVE_HEADER_RESIDUAL_LEAK
+  produced_insights: []
+  url: https://hackerone.com/reports/3180396
+- added_cases_to:
+  - DLL_SEARCH_ORDER_HIJACK_WRITABLE_PATH_LPE
+  produced_insights: []
+  url: https://hackerone.com/reports/784714
+- added_cases_to:
+  - ROLE_MISSING_ENDPOINT_ACL_SECRET_OVERWRITE
+  produced_insights: []
+  url: https://hackerone.com/reports/100938
+- added_cases_to:
+  - CICD_BUILD_STEP_LOCAL_PACKAGE_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/1979372
+- produced_insights: []
+  url: https://hackerone.com/reports/158979
+- produced_insights: []
+  url: https://hackerone.com/reports/159391
+- produced_insights: []
+  url: https://hackerone.com/reports/1403614
+- produced_insights: []
+  url: https://hackerone.com/reports/62301
+- added_cases_to:
+  - CHAT_COMMAND_BYPASS_CLIENT_SIDE_ACL
+  produced_insights: []
+  url: https://hackerone.com/reports/145950
+- produced_insights: []
+  url: https://hackerone.com/reports/195544
+- added_cases_to:
+  - CHAT_COMMAND_BYPASS_CLIENT_SIDE_ACL
+  produced_insights: []
+  url: https://hackerone.com/reports/199286
+- added_cases_to:
+  - BLIND_XSS_FORM_FIELD_ADMIN_REVIEW_SINK
+  produced_insights: []
+  url: https://hackerone.com/reports/173501
+- added_cases_to:
+  - GRAPHQL_MUTATION_IDOR_CONTENT_DELETION
+  produced_insights: []
+  url: https://hackerone.com/reports/273805
+- produced_insights:
+  - LOCAL_PORT_PREBIND_RPC_IMPERSONATION
+  url: https://hackerone.com/reports/462442
+- produced_insights:
+  - WORKFLOW_ALTERNATIVE_ENDPOINT_PERMISSION_BYPASS
+  url: https://hackerone.com/reports/423546
+- produced_insights: []
+  url: https://hackerone.com/reports/593926
+- produced_insights: []
+  url: https://hackerone.com/reports/428757
+- produced_insights: []
+  url: https://hackerone.com/reports/725711
+- produced_insights:
+  - CTF_REGEX_TRIM_ATO_CSP_BYPASS_SSRF_CHAIN
+  url: https://hackerone.com/reports/781281
+- produced_insights:
+  - POS_EMBEDDED_APP_NAVIGATION_ESCAPE_PRIVESC
+  url: https://hackerone.com/reports/985150
+- produced_insights:
+  - XPC_TEAMID_ONLY_OLD_VERSION_DYLIB_INJECT_AV_BYPASS
+  url: https://hackerone.com/reports/980876
+- added_cases_to:
+  - DLL_SEARCH_ORDER_HIJACK_WRITABLE_PATH_LPE
+  produced_insights: []
+  url: https://hackerone.com/reports/1211160
+- produced_insights: []
+  url: https://hackerone.com/reports/1200810
+- added_cases_to:
+  - DISCLOSED_FIX_INCOMPLETE_RETEST
+  produced_insights: []
+  url: https://hackerone.com/reports/1374512
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/1714767
+- added_cases_to:
+  - PERMISSION_MODEL_CHANNEL_TYPE_COVERAGE_GAP
+  produced_insights: []
+  url: https://hackerone.com/reports/3559715
+- produced_insights: []
+  url: https://hackerone.com/reports/192388
+- added_cases_to:
+  - DLL_SEARCH_ORDER_HIJACK_WRITABLE_PATH_LPE
+  produced_insights: []
+  url: https://hackerone.com/reports/1004740
+- produced_insights: []
+  url: https://hackerone.com/reports/1520685
+- added_cases_to:
+  - AUXILIARY_API_ENDPOINT_MISSING_RESOURCE_LEVEL_ACL
+  produced_insights: []
+  url: https://hackerone.com/reports/13959
+- produced_insights: []
+  url: https://hackerone.com/reports/77679
+- produced_insights: []
+  url: https://hackerone.com/reports/199644
+- added_cases_to:
+  - RESHARE_IMPLIED_PERMISSION_PROPAGATION
+  produced_insights: []
+  url: https://hackerone.com/reports/166581
+- added_cases_to:
+  - NEW_FEATURE_API_CROSS_USER_DATA_LEAK
+  produced_insights: []
+  url: https://hackerone.com/reports/244781
+- produced_insights: []
+  url: https://hackerone.com/reports/197436
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/491892
+- added_cases_to:
+  - AUXILIARY_API_ENDPOINT_MISSING_RESOURCE_LEVEL_ACL
+  produced_insights: []
+  url: https://hackerone.com/reports/676976
+- produced_insights: []
+  url: https://hackerone.com/reports/716570
+- added_cases_to:
+  - DLL_SEARCH_ORDER_HIJACK_WRITABLE_PATH_LPE
+  produced_insights: []
+  url: https://hackerone.com/reports/530967
+- added_cases_to:
+  - CTF_MULTISTAGE_RECON_TO_PAYMENT_TAKEOVER
+  produced_insights: []
+  url: https://hackerone.com/reports/894863
+- added_cases_to:
+  - AUXILIARY_API_ENDPOINT_MISSING_RESOURCE_LEVEL_ACL
+  produced_insights: []
+  url: https://hackerone.com/reports/962462
+- produced_insights: []
+  url: https://hackerone.com/reports/935503
+- added_cases_to:
+  - GRAPHQL_MUTATION_IDOR_CONTENT_DELETION
+  produced_insights: []
+  url: https://hackerone.com/reports/1307943
+- added_cases_to:
+  - PASSWORD_RESET_TOKEN_RESPONSE_LEAK_ATO
+  produced_insights: []
+  url: https://hackerone.com/reports/1061736
+- produced_insights: []
+  url: https://hackerone.com/reports/1794884
+- added_cases_to:
+  - HTTP_CLIENT_REDIRECT_SENSITIVE_HEADER_RESIDUAL_LEAK
+  produced_insights: []
+  url: https://hackerone.com/reports/2408074
+- added_cases_to:
+  - OVERPERMISSIVE_LOG_SYMLINK_SENSITIVE_FILE_READ
+  produced_insights: []
+  url: https://hackerone.com/reports/1690093
+- produced_insights: []
+  url: https://hackerone.com/reports/462321
+- produced_insights:
+  - THIRD_PARTY_APP_OFFLINE_TOKEN_USER_SCOPE_BYPASS
+  url: https://hackerone.com/reports/64164
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/423198
+- added_cases_to:
+  - TEAM_MEMBERSHIP_IDOR_CROSS_TEAM_DESTRUCTIVE_ACTION
+  produced_insights: []
+  url: https://hackerone.com/reports/55670
+- produced_insights: []
+  url: https://hackerone.com/reports/159395
+- produced_insights: []
+  url: https://hackerone.com/reports/164515
+- produced_insights: []
+  url: https://hackerone.com/reports/2584
+- added_cases_to:
+  - PARTNER_PORTAL_CROSS_TENANT_RESOURCE_ID_IDOR
+  produced_insights: []
+  url: https://hackerone.com/reports/31383
+- produced_insights:
+  - OAUTH_AUTHZ_CODE_SURVIVES_REVOCATION
+  url: https://hackerone.com/reports/57603
+- produced_insights: []
+  url: https://hackerone.com/reports/203311
+- produced_insights:
+  - EMAIL_REMOVAL_PENDING_TOKEN_NOT_INVALIDATED
+  url: https://hackerone.com/reports/223434
+- produced_insights: []
+  url: https://hackerone.com/reports/225831
+- added_cases_to:
+  - MUTATION_SIDEEFFECT_FIRES_BEFORE_AUTHZ_CHECK
+  produced_insights: []
+  url: https://hackerone.com/reports/245340
+- produced_insights: []
+  url: https://hackerone.com/reports/271861
+- produced_insights: []
+  url: https://hackerone.com/reports/329407
+- produced_insights: []
+  url: https://hackerone.com/reports/307978
+- produced_insights: []
+  url: https://hackerone.com/reports/319483
+- produced_insights: []
+  url: https://hackerone.com/reports/630192
+- produced_insights: []
+  url: https://hackerone.com/reports/788420
+- produced_insights:
+  - SECONDARY_USER_TYPE_HIDDEN_EDIT_ROLE_BACKDOOR
+  url: https://hackerone.com/reports/962895
+- produced_insights: []
+  url: https://hackerone.com/reports/974878
+- produced_insights:
+  - SEQUENTIAL_TOKEN_UNAUTHENTICATED_DIRECT_OBJECT_ACCESS
+  url: https://hackerone.com/reports/921717
+- produced_insights: []
+  url: https://hackerone.com/reports/963161
+- produced_insights:
+  - SUID_COLOCATED_BINARY_UNLOCKED_VALIDATION_TOCTOU_LPE
+  url: https://hackerone.com/reports/1251464
+- produced_insights: []
+  url: https://hackerone.com/reports/1587150
+- produced_insights: []
+  url: https://hackerone.com/reports/1804174
+- produced_insights:
+  - POLICY_SYSTEM_PROTO_CHAIN_REQUIRE_BYPASS
+  url: https://hackerone.com/reports/1877919
+- produced_insights:
+  - WP_PLUGIN_ERROR_BANNER_UNSANITIZED_STORED_XSS
+  url: https://hackerone.com/reports/126099
+- produced_insights: []
+  url: https://hackerone.com/reports/138852
+- added_cases_to:
+  - HIDDEN_ADMIN_URL_NO_SERVER_ACL_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/97452
+- produced_insights: []
+  url: https://hackerone.com/reports/3356
+- produced_insights: []
+  url: https://hackerone.com/reports/906328
+- produced_insights: []
+  url: https://hackerone.com/reports/1388788
+- produced_insights:
+  - BOOLEAN_PARAM_TYPE_CONFUSION_ACL_BYPASS
+  url: https://hackerone.com/reports/107336
+- produced_insights: []
+  url: https://hackerone.com/reports/148538
+- added_cases_to:
+  - CLIENT_SUPPLIED_IDENTIFIER_XSS
+  produced_insights: []
+  url: https://hackerone.com/reports/117449
+- added_cases_to:
+  - CHAT_COMMAND_BYPASS_CLIENT_SIDE_ACL
+  produced_insights: []
+  url: https://hackerone.com/reports/46113
+- produced_insights:
+  - PASSWORD_RESET_AUTO_LOGIN_REFERER_ATO
+  url: https://hackerone.com/reports/164648
+- produced_insights: []
+  url: https://hackerone.com/reports/280914
+- produced_insights:
+  - PREVIEW_API_BYPASSES_FILE_LEVEL_ACL
+  url: https://hackerone.com/reports/358339
+- produced_insights: []
+  url: https://hackerone.com/reports/337426
+- produced_insights: []
+  url: https://hackerone.com/reports/514584
+- added_cases_to:
+  - INJECTED_SCRIPT_SELF_DOWNLOAD_COMMAND_INTERFACE_HIJACK
+  produced_insights: []
+  url: https://hackerone.com/reports/470553
+- added_cases_to:
+  - SPRING_ACTUATOR_HEAPDUMP_CREDENTIAL_LEAK
+  produced_insights: []
+  url: https://hackerone.com/reports/241116
+- produced_insights: []
+  url: https://hackerone.com/reports/827595
+- added_cases_to:
+  - FRONTEND_ROLE_MAPPING_PRIVESC
+  produced_insights: []
+  url: https://hackerone.com/reports/796379
+- produced_insights: []
+  url: https://hackerone.com/reports/954818
+- produced_insights:
+  - EMAIL_IDENTITY_CHANGE_STALE_ACCESS_PERSISTENCE
+  url: https://hackerone.com/reports/870001
+- produced_insights: []
+  url: https://hackerone.com/reports/773571
+- produced_insights: []
+  url: https://hackerone.com/reports/952035
+- produced_insights: []
+  url: https://hackerone.com/reports/1062803
+- produced_insights: []
+  url: https://hackerone.com/reports/1602234
+- produced_insights: []
+  url: https://hackerone.com/reports/963103
+- produced_insights:
+  - UNQUOTED_SERVICE_PATH_EXE_HIJACK_CHAIN_LPE
+  url: https://hackerone.com/reports/971610
+- produced_insights:
+  - CROSS_TENANT_API_RESOURCE_NAME_ENUMERATION
+  url: https://hackerone.com/reports/93921
+- produced_insights: []
+  url: https://hackerone.com/reports/1561579
+- produced_insights: []
+  url: https://hackerone.com/reports/49806
+- produced_insights:
+  - GROUP_KICK_SESSION_PERMISSION_SURVIVES
+  url: https://hackerone.com/reports/197153
+- produced_insights: []
+  url: https://hackerone.com/reports/752443
+- produced_insights: []
+  url: https://hackerone.com/reports/344468
+- produced_insights: []
+  url: https://hackerone.com/reports/119427
+- produced_insights: []
+  url: https://hackerone.com/reports/952174
+- produced_insights: []
+  url: https://hackerone.com/reports/905756
+- produced_insights: []
+  url: https://hackerone.com/reports/95589
+- produced_insights: []
+  url: https://hackerone.com/reports/139192
+- produced_insights: []
+  url: https://hackerone.com/reports/178503
+- produced_insights: []
+  url: https://hackerone.com/reports/242407
+- produced_insights:
+  - NOSQL_REGEX_BLIND_FIELD_EXTRACTION
+  url: https://hackerone.com/reports/397445
+- produced_insights: []
+  url: https://hackerone.com/reports/394861
+- produced_insights:
+  - DWR_DEBUG_PAGE_DEFAULT_ADMIN_EXPOSURE
+  url: https://hackerone.com/reports/214800
+- produced_insights: []
+  url: https://hackerone.com/reports/648222
+- produced_insights: []
+  url: https://hackerone.com/reports/837018
+- produced_insights: []
+  url: https://hackerone.com/reports/787886
+- produced_insights:
+  - FRAMABLE_CHECKOUT_CLICKJACK_FORCED_PURCHASE
+  url: https://hackerone.com/reports/391385
+- produced_insights:
+  - GRAFANA_DATASOURCE_PROXY_OVERPRIVILEGED_DB_USER
+  url: https://hackerone.com/reports/802011
+- produced_insights:
+  - UPLOAD_PARAM_KEY_FILENAME_CONTROL_PATH_DISCLOSURE
+  url: https://hackerone.com/reports/1781751
+- produced_insights:
+  - TWO_FA_ACTIVATION_STALE_SESSION_PERSISTENCE
+  url: https://hackerone.com/reports/992280
+- produced_insights:
+  - SLASH_COMMAND_ACL_ORDER_MEMBERSHIP_LEAK
+  url: https://hackerone.com/reports/1445810
+- produced_insights: []
+  url: https://hackerone.com/reports/1966492
+- produced_insights: []
+  url: https://hackerone.com/reports/3008481
+- produced_insights: []
+  url: https://hackerone.com/reports/1483919
+- produced_insights: []
+  url: https://hackerone.com/reports/56626
+- produced_insights: []
+  url: https://hackerone.com/reports/96908
+- produced_insights: []
+  url: https://hackerone.com/reports/117862
+- produced_insights: []
+  url: https://hackerone.com/reports/849157
+- produced_insights: []
+  url: https://hackerone.com/reports/145091
+- produced_insights:
+  - PAID_RESOURCE_FREE_DOWNLOAD_ENDPOINT_BYPASS
+  url: https://hackerone.com/reports/43770
+- produced_insights: []
+  url: https://hackerone.com/reports/45960
+- produced_insights: []
+  url: https://hackerone.com/reports/96855
+- produced_insights: []
+  url: https://hackerone.com/reports/145745
+- produced_insights: []
+  url: https://hackerone.com/reports/148537
+current_insight_count: 239
+failed_urls: []
+in_progress_urls: []
+last_updated: '2026-06-23'
+pending_urls:
+- https://hackerone.com/reports/261706
+- https://hackerone.com/reports/210298
+- https://hackerone.com/reports/766770
+- https://hackerone.com/reports/937921
+- https://hackerone.com/reports/819591
+- https://hackerone.com/reports/1113759
+- https://hackerone.com/reports/858598
+- https://hackerone.com/reports/946384
+- https://hackerone.com/reports/1607756
+- https://hackerone.com/reports/1397786
+- https://hackerone.com/reports/970739
+- https://hackerone.com/reports/3677576
+- https://hackerone.com/reports/92453
+- https://hackerone.com/reports/42961
+- https://hackerone.com/reports/93680
+- https://hackerone.com/reports/202501
+- https://hackerone.com/reports/220864
+- https://hackerone.com/reports/674866
+- https://hackerone.com/reports/8803
+- https://hackerone.com/reports/28500
+- https://hackerone.com/reports/62427
+- https://hackerone.com/reports/72793
+- https://hackerone.com/reports/95441
+- https://hackerone.com/reports/139502
+- https://hackerone.com/reports/232994
+- https://hackerone.com/reports/247225
+- https://hackerone.com/reports/783688
+- https://hackerone.com/reports/409973
+- https://hackerone.com/reports/1147611
+- https://hackerone.com/reports/1198907
+- https://hackerone.com/reports/1200989
+- https://hackerone.com/reports/899103
+- https://hackerone.com/reports/1081137
+- https://hackerone.com/reports/1954535
+- https://hackerone.com/reports/43065
+- https://hackerone.com/reports/769684
+- https://hackerone.com/reports/38965
+- https://hackerone.com/reports/220874
+- https://hackerone.com/reports/119432
+- https://hackerone.com/reports/46750
+- https://hackerone.com/reports/812143
+- https://hackerone.com/reports/8104
+- https://hackerone.com/reports/8102
+- https://hackerone.com/reports/21210
+- https://hackerone.com/reports/36586
+- https://hackerone.com/reports/67220
+- https://hackerone.com/reports/92633
+- https://hackerone.com/reports/90671
+- https://hackerone.com/reports/93294
+- https://hackerone.com/reports/30575
+- https://hackerone.com/reports/115209
+- https://hackerone.com/reports/145402
+- https://hackerone.com/reports/114870
+- https://hackerone.com/reports/188195
+- https://hackerone.com/reports/153799
+- https://hackerone.com/reports/140793
+- https://hackerone.com/reports/358359
+- https://hackerone.com/reports/242119
+- https://hackerone.com/reports/681882
+- https://hackerone.com/reports/341074
+- https://hackerone.com/reports/376563
+- https://hackerone.com/reports/767468
+- https://hackerone.com/reports/799898
+- https://hackerone.com/reports/854973
+- https://hackerone.com/reports/605845
+- https://hackerone.com/reports/901775
+- https://hackerone.com/reports/1073734
+- https://hackerone.com/reports/1200992
+- https://hackerone.com/reports/93004
+- https://hackerone.com/reports/31082
+- https://hackerone.com/reports/135252
+- https://hackerone.com/reports/16392
+- https://hackerone.com/reports/47940
+- https://hackerone.com/reports/46747
+- https://hackerone.com/reports/31188
+- https://hackerone.com/reports/71614
+- https://hackerone.com/reports/118103
+- https://hackerone.com/reports/151583
+- https://hackerone.com/reports/188205
+- https://hackerone.com/reports/171130
+- https://hackerone.com/reports/116179
+- https://hackerone.com/reports/226648
+- https://hackerone.com/reports/175366
+- https://hackerone.com/reports/260928
+- https://hackerone.com/reports/210304
+- https://hackerone.com/reports/103182
+- https://hackerone.com/reports/834065
+- https://hackerone.com/reports/788499
+- https://hackerone.com/reports/693788
+- https://hackerone.com/reports/1086259
+- https://hackerone.com/reports/47932
+- https://hackerone.com/reports/18845
+- https://hackerone.com/reports/12685
+- https://hackerone.com/reports/11414
+- https://hackerone.com/reports/126260
+- https://hackerone.com/reports/119148
+- https://hackerone.com/reports/303480
+- https://hackerone.com/reports/535705
+- https://hackerone.com/reports/1186740
+- https://hackerone.com/reports/29420
+- https://hackerone.com/reports/107849
+- https://hackerone.com/reports/380782
+- https://hackerone.com/reports/1075540
+- https://hackerone.com/reports/591295
+- https://hackerone.com/reports/921780
+- https://hackerone.com/reports/335330
+- https://hackerone.com/reports/683957
+- https://hackerone.com/reports/770504
+- https://hackerone.com/reports/876295
+- https://hackerone.com/reports/3081691
+- https://hackerone.com/reports/736273
+- https://hackerone.com/reports/219205
+- https://hackerone.com/reports/127844
+- https://hackerone.com/reports/783258
+- https://hackerone.com/reports/772118
+- https://hackerone.com/reports/3329310
+- https://hackerone.com/reports/126522
+- https://hackerone.com/reports/2915647
+- https://hackerone.com/reports/258117
+- https://hackerone.com/reports/1709881
+- https://hackerone.com/reports/739321
+- https://hackerone.com/reports/417360
+- https://hackerone.com/reports/1245762
+- https://hackerone.com/reports/810880
+- https://hackerone.com/reports/3160210
+- https://hackerone.com/reports/3676308
+- https://hackerone.com/reports/223014
+- https://hackerone.com/reports/2286745
+- https://hackerone.com/reports/138869
+- https://hackerone.com/reports/347296
+- https://hackerone.com/reports/540242
+- https://hackerone.com/reports/3088290
+- https://hackerone.com/reports/2666323
+- https://hackerone.com/reports/404874
+- https://hackerone.com/reports/2269989
+- https://hackerone.com/reports/2642615
+- https://hackerone.com/reports/206650
+- https://hackerone.com/reports/2213337
+- https://hackerone.com/reports/2334420
+- https://hackerone.com/reports/3734326
+- https://hackerone.com/reports/328724
+- https://hackerone.com/reports/1050244
+- https://hackerone.com/reports/3424977
+- https://hackerone.com/reports/3419636
+- https://hackerone.com/reports/3417162
+- https://hackerone.com/reports/970157
+- https://hackerone.com/reports/2536758
+- https://hackerone.com/reports/2414707
+- https://hackerone.com/reports/2007235
+- https://hackerone.com/reports/2623715
+- https://hackerone.com/reports/172137
+- https://hackerone.com/reports/1747978
+- https://hackerone.com/reports/1879549
+- https://hackerone.com/reports/3120790
+- https://hackerone.com/reports/2412983
+- https://hackerone.com/reports/1442783
+- https://hackerone.com/reports/2248689
+- https://hackerone.com/reports/2472798
+- https://hackerone.com/reports/1378889
+- https://hackerone.com/reports/1608151
+- https://hackerone.com/reports/1283938
+- https://hackerone.com/reports/2463279
+- https://hackerone.com/reports/3489490
+- https://hackerone.com/reports/202425
+- https://hackerone.com/reports/634488
+- https://hackerone.com/reports/1124540
+- https://hackerone.com/reports/2337427
+- https://hackerone.com/reports/998457
+- https://hackerone.com/reports/143482
+- https://hackerone.com/reports/2037902
+- https://hackerone.com/reports/2633988
+- https://hackerone.com/reports/209008
+- https://hackerone.com/reports/982293
+- https://hackerone.com/reports/1842183
+- https://hackerone.com/reports/2061982
+- https://hackerone.com/reports/3321406
+- https://hackerone.com/reports/3666576
+- https://hackerone.com/reports/297339
+- https://hackerone.com/reports/3697719
+- https://hackerone.com/reports/366638
+- https://hackerone.com/reports/121696
+- https://hackerone.com/reports/1210502
+- https://hackerone.com/reports/2800511
+- https://hackerone.com/reports/284
+- https://hackerone.com/reports/948345
+- https://hackerone.com/reports/2292236
+- https://hackerone.com/reports/1929915
+- https://hackerone.com/reports/1664974
+- https://hackerone.com/reports/2401359
+- https://hackerone.com/reports/2486086
+- https://hackerone.com/reports/2978267
+- https://hackerone.com/reports/576504
+- https://hackerone.com/reports/3687142
+- https://hackerone.com/reports/2107934
+- https://hackerone.com/reports/195156
+- https://hackerone.com/reports/1248052
+- https://hackerone.com/reports/684070
+- https://hackerone.com/reports/2529780
+- https://hackerone.com/reports/1447619
+- https://hackerone.com/reports/1278261
+- https://hackerone.com/reports/969605
+- https://hackerone.com/reports/2543342
+- https://hackerone.com/reports/3346118
+- https://hackerone.com/reports/176979
+- https://hackerone.com/reports/128085
+- https://hackerone.com/reports/1989884
+- https://hackerone.com/reports/480928
+- https://hackerone.com/reports/17474
+- https://hackerone.com/reports/449671
+- https://hackerone.com/reports/429000
+- https://hackerone.com/reports/992450
+- https://hackerone.com/reports/2088808
+- https://hackerone.com/reports/3463949
+- https://hackerone.com/reports/3752567
+- https://hackerone.com/reports/257305
+- https://hackerone.com/reports/1924212
+- https://hackerone.com/reports/1485788
+- https://hackerone.com/reports/809357
+- https://hackerone.com/reports/31756
+- https://hackerone.com/reports/187520
+- https://hackerone.com/reports/1747146
+- https://hackerone.com/reports/145629
+- https://hackerone.com/reports/1130721
+- https://hackerone.com/reports/1797661
+- https://hackerone.com/reports/3473384
+- https://hackerone.com/reports/146133
+- https://hackerone.com/reports/1087382
+- https://hackerone.com/reports/238260
+- https://hackerone.com/reports/350288
+- https://hackerone.com/reports/400826
+- https://hackerone.com/reports/1364022
+- https://hackerone.com/reports/3584491
+- https://hackerone.com/reports/3707747
+- https://hackerone.com/reports/222082
+- https://hackerone.com/reports/197114
+- https://hackerone.com/reports/661722
+- https://hackerone.com/reports/858608
+- https://hackerone.com/reports/1736846
+- https://hackerone.com/reports/3514263
+- https://hackerone.com/reports/3584865
+- https://hackerone.com/reports/3680038
+- https://hackerone.com/reports/219607
+- https://hackerone.com/reports/1146600
+- https://hackerone.com/reports/409237
+- https://hackerone.com/reports/1401891
+- https://hackerone.com/reports/1357948
+- https://hackerone.com/reports/2231261
+- https://hackerone.com/reports/302651
+- https://hackerone.com/reports/17383
+- https://hackerone.com/reports/152080
+- https://hackerone.com/reports/127202
+- https://hackerone.com/reports/812064
+- https://hackerone.com/reports/641240
+- https://hackerone.com/reports/684758
+- https://hackerone.com/reports/937592
+- https://hackerone.com/reports/1130874
+- https://hackerone.com/reports/194832
+- https://hackerone.com/reports/187705
+- https://hackerone.com/reports/168108
+- https://hackerone.com/reports/165561
+- https://hackerone.com/reports/748214
+- https://hackerone.com/reports/633231
+- https://hackerone.com/reports/1089116
+- https://hackerone.com/reports/853284
+- https://hackerone.com/reports/1839012
+- https://hackerone.com/reports/866605
+- https://hackerone.com/reports/23579
+- https://hackerone.com/reports/189356
+- https://hackerone.com/reports/148151
+- https://hackerone.com/reports/229528
+- https://hackerone.com/reports/249759
+- https://hackerone.com/reports/367581
+- https://hackerone.com/reports/1248040
+- https://hackerone.com/reports/1690548
+- https://hackerone.com/reports/963815
+- https://hackerone.com/reports/129918
+- https://hackerone.com/reports/190
+- https://hackerone.com/reports/201152
+- https://hackerone.com/reports/225653
+- https://hackerone.com/reports/479464
+- https://hackerone.com/reports/1040373
+- https://hackerone.com/reports/1020943
+- https://hackerone.com/reports/3749428
+- https://hackerone.com/reports/3791191
+- https://hackerone.com/reports/55530
+- https://hackerone.com/reports/22203
+- https://hackerone.com/reports/78781
+- https://hackerone.com/reports/226712
+- https://hackerone.com/reports/292463
+- https://hackerone.com/reports/661051
+- https://hackerone.com/reports/905194
+- https://hackerone.com/reports/1023635
+- https://hackerone.com/reports/3776535
+- https://hackerone.com/reports/3786077
+- https://hackerone.com/reports/163307
+- https://hackerone.com/reports/2559
+- https://hackerone.com/reports/300104
+- https://hackerone.com/reports/335717
+- https://hackerone.com/reports/323906
+- https://hackerone.com/reports/778803
+- https://hackerone.com/reports/695041
+- https://hackerone.com/reports/1249456
+- https://hackerone.com/reports/1406471
+- https://hackerone.com/reports/3487952
+- https://hackerone.com/reports/3508799
+- https://hackerone.com/reports/151786
+- https://hackerone.com/reports/56628
+- https://hackerone.com/reports/239479
+- https://hackerone.com/reports/113424
+- https://hackerone.com/reports/247721
+- https://hackerone.com/reports/382667
+- https://hackerone.com/reports/798812
+- https://hackerone.com/reports/473798
+- https://hackerone.com/reports/917791
+- https://hackerone.com/reports/914877
+- https://hackerone.com/reports/1350755
+- https://hackerone.com/reports/1607645
+- https://hackerone.com/reports/1448268
+- https://hackerone.com/reports/3030158
+- https://hackerone.com/reports/124845
+- https://hackerone.com/reports/128777
+- https://hackerone.com/reports/23921
+- https://hackerone.com/reports/98432
+- https://hackerone.com/reports/99273
+- https://hackerone.com/reports/298990
+- https://hackerone.com/reports/315512
+- https://hackerone.com/reports/622864
+- https://hackerone.com/reports/708303
+- https://hackerone.com/reports/915813
+- https://hackerone.com/reports/2665879
+- https://hackerone.com/reports/3672641
+- https://hackerone.com/reports/866597
+- https://hackerone.com/reports/121469
+- https://hackerone.com/reports/66223
+- https://hackerone.com/reports/67660
+- https://hackerone.com/reports/116504
+- https://hackerone.com/reports/134206
+- https://hackerone.com/reports/198673
+- https://hackerone.com/reports/223326
+- https://hackerone.com/reports/293359
+- https://hackerone.com/reports/319480
+- https://hackerone.com/reports/474963
+- https://hackerone.com/reports/258573
+- https://hackerone.com/reports/838231
+- https://hackerone.com/reports/1049375
+- https://hackerone.com/reports/1132202
+- https://hackerone.com/reports/1081986
+- https://hackerone.com/reports/1126414
+- https://hackerone.com/reports/3774977
+- https://hackerone.com/reports/1212274
+- https://hackerone.com/reports/1095708
+- https://hackerone.com/reports/18503
+- https://hackerone.com/reports/32944
+- https://hackerone.com/reports/44425
+- https://hackerone.com/reports/48065
+- https://hackerone.com/reports/83803
+- https://hackerone.com/reports/119262
+- https://hackerone.com/reports/124151
+- https://hackerone.com/reports/120293
+- https://hackerone.com/reports/146838
+- https://hackerone.com/reports/135891
+- https://hackerone.com/reports/201529
+- https://hackerone.com/reports/223475
+- https://hackerone.com/reports/496326
+- https://hackerone.com/reports/895722
+- https://hackerone.com/reports/736522
+- https://hackerone.com/reports/1102297
+- https://hackerone.com/reports/1271710
+- https://hackerone.com/reports/1287575
+- https://hackerone.com/reports/1350076
+- https://hackerone.com/reports/31166
+- https://hackerone.com/reports/80883
+- https://hackerone.com/reports/135283
+- https://hackerone.com/reports/139965
+- https://hackerone.com/reports/151847
+- https://hackerone.com/reports/168293
+- https://hackerone.com/reports/476439
+- https://hackerone.com/reports/920548
+- https://hackerone.com/reports/993767
+- https://hackerone.com/reports/1184041
+- https://hackerone.com/reports/7369
+- https://hackerone.com/reports/33432
+- https://hackerone.com/reports/3577
+- https://hackerone.com/reports/115245
+- https://hackerone.com/reports/318295
+- https://hackerone.com/reports/120903
+- https://hackerone.com/reports/1563061
+- https://hackerone.com/reports/1591504
+- https://hackerone.com/reports/1209
+- https://hackerone.com/reports/10912
+- https://hackerone.com/reports/95804
+- https://hackerone.com/reports/167698
+- https://hackerone.com/reports/363544
+- https://hackerone.com/reports/3767963
+- https://hackerone.com/reports/14698
+- https://hackerone.com/reports/39203
+- https://hackerone.com/reports/205309
+- https://hackerone.com/reports/897385
+- https://hackerone.com/reports/2885636
+- https://hackerone.com/reports/1247108
+- https://hackerone.com/reports/667739
+- https://hackerone.com/reports/649533
+- https://hackerone.com/reports/2598548
+- https://hackerone.com/reports/3356149
+- https://hackerone.com/reports/587910
+- https://hackerone.com/reports/3329361
+- https://hackerone.com/reports/2234736
+- https://hackerone.com/reports/665722
+- https://hackerone.com/reports/1276373
+- https://hackerone.com/reports/701901
+- https://hackerone.com/reports/1179232
+- https://hackerone.com/reports/3016540
+- https://hackerone.com/reports/1139535
+- https://hackerone.com/reports/1250474
+- https://hackerone.com/reports/2197244
+- https://hackerone.com/reports/178293
+- https://hackerone.com/reports/699200
+- https://hackerone.com/reports/1618021
+- https://hackerone.com/reports/2571981
+- https://hackerone.com/reports/486693
+- https://hackerone.com/reports/670329
+- https://hackerone.com/reports/2492631
+- https://hackerone.com/reports/2569993
+- https://hackerone.com/reports/1593404
+- https://hackerone.com/reports/2479622
+- https://hackerone.com/reports/2469706
+- https://hackerone.com/reports/2463069
+- https://hackerone.com/reports/1701378
+- https://hackerone.com/reports/1265709
+- https://hackerone.com/reports/1394984
+- https://hackerone.com/reports/163834
+- https://hackerone.com/reports/2528919
+- https://hackerone.com/reports/248656
+- https://hackerone.com/reports/10554
+- https://hackerone.com/reports/2962527
+- https://hackerone.com/reports/167121
+- https://hackerone.com/reports/260390
+- https://hackerone.com/reports/667740
+- https://hackerone.com/reports/743518
+- https://hackerone.com/reports/100509
+- https://hackerone.com/reports/893085
+- https://hackerone.com/reports/249695
+- https://hackerone.com/reports/179421
+- https://hackerone.com/reports/90165
+- https://hackerone.com/reports/249346
+- https://hackerone.com/reports/316078
+- https://hackerone.com/reports/979820
+- https://hackerone.com/reports/1465277
+- https://hackerone.com/reports/264090
+- https://hackerone.com/reports/1185479
+- https://hackerone.com/reports/2575079
+- https://hackerone.com/reports/249337
+- https://hackerone.com/reports/250082
+- https://hackerone.com/reports/249467
+- https://hackerone.com/reports/249431
+- https://hackerone.com/reports/251200
+- https://hackerone.com/reports/250243
+- https://hackerone.com/reports/155774
+- https://hackerone.com/reports/16696
+- https://hackerone.com/reports/259416
+- https://hackerone.com/reports/259415
+- https://hackerone.com/reports/260491
+- https://hackerone.com/reports/722748
+- https://hackerone.com/reports/1080839
+- https://hackerone.com/reports/987650
+- https://hackerone.com/reports/745324
+- https://hackerone.com/reports/2293343
+- https://hackerone.com/reports/737140
+- https://hackerone.com/reports/129873
+- https://hackerone.com/reports/1342088
+- https://hackerone.com/reports/314808
+- https://hackerone.com/reports/744662
+- https://hackerone.com/reports/563870
+- https://hackerone.com/reports/1010522
+- https://hackerone.com/reports/773519
+- https://hackerone.com/reports/905607
+- https://hackerone.com/reports/2010530
+- https://hackerone.com/reports/143717
+- https://hackerone.com/reports/534450
+- https://hackerone.com/reports/723060
+- https://hackerone.com/reports/110293
+- https://hackerone.com/reports/2831902
+- https://hackerone.com/reports/876300
+- https://hackerone.com/reports/1581240
+- https://hackerone.com/reports/463330
+- https://hackerone.com/reports/3178999
+- https://hackerone.com/reports/1089467
+- https://hackerone.com/reports/317476
+- https://hackerone.com/reports/915114
+- https://hackerone.com/reports/604120
+- https://hackerone.com/reports/1667998
+- https://hackerone.com/reports/1698316
+- https://hackerone.com/reports/3024673
+- https://hackerone.com/reports/862589
+- https://hackerone.com/reports/725707
+- https://hackerone.com/reports/707231
+- https://hackerone.com/reports/206591
+- https://hackerone.com/reports/1760403
+- https://hackerone.com/reports/730067
+- https://hackerone.com/reports/2516732
+- https://hackerone.com/reports/1114347
+- https://hackerone.com/reports/2542372
+- https://hackerone.com/reports/922418
+- https://hackerone.com/reports/1639802
+- https://hackerone.com/reports/1760213
+- https://hackerone.com/reports/1632973
+- https://hackerone.com/reports/407971
+- https://hackerone.com/reports/1679734
+- https://hackerone.com/reports/419891
+- https://hackerone.com/reports/685304
+- https://hackerone.com/reports/2515808
+- https://hackerone.com/reports/1634165
+- https://hackerone.com/reports/3228888
+- https://hackerone.com/reports/1923672
+- https://hackerone.com/reports/1046630
+- https://hackerone.com/reports/2748003
+- https://hackerone.com/reports/1253462
+- https://hackerone.com/reports/1074047
+- https://hackerone.com/reports/1404612
+- https://hackerone.com/reports/136885
+- https://hackerone.com/reports/423022
+- https://hackerone.com/reports/464426
+- https://hackerone.com/reports/235642
+- https://hackerone.com/reports/2699029
+- https://hackerone.com/reports/685007
+- https://hackerone.com/reports/302581
+- https://hackerone.com/reports/671406
+- https://hackerone.com/reports/538800
+- https://hackerone.com/reports/602527
+- https://hackerone.com/reports/824931
+- https://hackerone.com/reports/3608199
+- https://hackerone.com/reports/3079738
+- https://hackerone.com/reports/2194928
+- https://hackerone.com/reports/2119892
+- https://hackerone.com/reports/843160
+- https://hackerone.com/reports/2712857
+- https://hackerone.com/reports/2289836
+- https://hackerone.com/reports/842625
+- https://hackerone.com/reports/915110
+- https://hackerone.com/reports/127703
+- https://hackerone.com/reports/1079561
+- https://hackerone.com/reports/260697
+- https://hackerone.com/reports/1379842
+- https://hackerone.com/reports/2142109
+- https://hackerone.com/reports/394329
+- https://hackerone.com/reports/1695454
+- https://hackerone.com/reports/1235008
+- https://hackerone.com/reports/397497
+- https://hackerone.com/reports/1175081
+- https://hackerone.com/reports/950881
+- https://hackerone.com/reports/3316910
+- https://hackerone.com/reports/1817214
+- https://hackerone.com/reports/1623672
+- https://hackerone.com/reports/2652603
+- https://hackerone.com/reports/763058
+- https://hackerone.com/reports/827484
+- https://hackerone.com/reports/944392
+- https://hackerone.com/reports/439207
+- https://hackerone.com/reports/670924
+- https://hackerone.com/reports/735638
+- https://hackerone.com/reports/2132183
+- https://hackerone.com/reports/2682974
+- https://hackerone.com/reports/541701
+- https://hackerone.com/reports/1004536
+- https://hackerone.com/reports/1065186
+- https://hackerone.com/reports/2341038
+- https://hackerone.com/reports/1021232
+- https://hackerone.com/reports/1443567
+- https://hackerone.com/reports/1078479
+- https://hackerone.com/reports/263873
+- https://hackerone.com/reports/1166500
+- https://hackerone.com/reports/855618
+- https://hackerone.com/reports/1208453
+- https://hackerone.com/reports/1272478
+- https://hackerone.com/reports/1066189
+- https://hackerone.com/reports/1670586
+- https://hackerone.com/reports/426147
+- https://hackerone.com/reports/542047
+- https://hackerone.com/reports/974704
+- https://hackerone.com/reports/1994227
+- https://hackerone.com/reports/332632
+- https://hackerone.com/reports/1081148
+- https://hackerone.com/reports/1791720
+- https://hackerone.com/reports/969223
+- https://hackerone.com/reports/3174778
+- https://hackerone.com/reports/1029877
+- https://hackerone.com/reports/1224008
+- https://hackerone.com/reports/566811
+- https://hackerone.com/reports/493535
+- https://hackerone.com/reports/922559
+- https://hackerone.com/reports/1058015
+- https://hackerone.com/reports/766875
+- https://hackerone.com/reports/2017600
+- https://hackerone.com/reports/324230
+- https://hackerone.com/reports/985367
+- https://hackerone.com/reports/1108874
+- https://hackerone.com/reports/758785
+- https://hackerone.com/reports/292673
+- https://hackerone.com/reports/215859
+- https://hackerone.com/reports/906790
+- https://hackerone.com/reports/1212374
+- https://hackerone.com/reports/1525578
+- https://hackerone.com/reports/1073780
+- https://hackerone.com/reports/685338
+- https://hackerone.com/reports/1004360
+- https://hackerone.com/reports/121827
+- https://hackerone.com/reports/209352
+- https://hackerone.com/reports/685032
+- https://hackerone.com/reports/1959540
+- https://hackerone.com/reports/192648
+- https://hackerone.com/reports/147203
+- https://hackerone.com/reports/987751
+- https://hackerone.com/reports/1023986
+- https://hackerone.com/reports/1687415
+- https://hackerone.com/reports/1624421
+- https://hackerone.com/reports/892289
+- https://hackerone.com/reports/1434967
+- https://hackerone.com/reports/761655
+- https://hackerone.com/reports/6910
+- https://hackerone.com/reports/1004750
+- https://hackerone.com/reports/330760
+- https://hackerone.com/reports/17512
+- https://hackerone.com/reports/915331
+- https://hackerone.com/reports/1627961
+- https://hackerone.com/reports/1825227
+- https://hackerone.com/reports/271533
+- https://hackerone.com/reports/1483201
+- https://hackerone.com/reports/1059758
+- https://hackerone.com/reports/3324823
+- https://hackerone.com/reports/1170522
+- https://hackerone.com/reports/159202
+- https://hackerone.com/reports/386807
+- https://hackerone.com/reports/411920
+- https://hackerone.com/reports/691698
+- https://hackerone.com/reports/785833
+- https://hackerone.com/reports/1455987
+- https://hackerone.com/reports/50703
+- https://hackerone.com/reports/152052
+- https://hackerone.com/reports/1626356
+- https://hackerone.com/reports/1815463
+- https://hackerone.com/reports/1079275
+- https://hackerone.com/reports/173251
+- https://hackerone.com/reports/223461
+- https://hackerone.com/reports/388531
+- https://hackerone.com/reports/887700
+- https://hackerone.com/reports/847176
+- https://hackerone.com/reports/1581059
+- https://hackerone.com/reports/308394
+- https://hackerone.com/reports/361194
+- https://hackerone.com/reports/388254
+- https://hackerone.com/reports/329263
+- https://hackerone.com/reports/792737
+- https://hackerone.com/reports/1018270
+- https://hackerone.com/reports/1090982
+- https://hackerone.com/reports/1165285
+- https://hackerone.com/reports/3723458
+- https://hackerone.com/reports/410099
+- https://hackerone.com/reports/223637
+- https://hackerone.com/reports/751281
+- https://hackerone.com/reports/799895
+- https://hackerone.com/reports/6907
+- https://hackerone.com/reports/207552
+- https://hackerone.com/reports/764558
+- https://hackerone.com/reports/999314
+- https://hackerone.com/reports/261652
+- https://hackerone.com/reports/895650
+- https://hackerone.com/reports/890196
+- https://hackerone.com/reports/761975
+- https://hackerone.com/reports/15476
+- https://hackerone.com/reports/45084
+- https://hackerone.com/reports/273647
+- https://hackerone.com/reports/281449
+- https://hackerone.com/reports/282572
+- https://hackerone.com/reports/1250631
+- https://hackerone.com/reports/740989
+- https://hackerone.com/reports/202781
+- https://hackerone.com/reports/861940
+- https://hackerone.com/reports/488269
+- https://hackerone.com/reports/787160
+- https://hackerone.com/reports/482743
+- https://hackerone.com/reports/3099816
+- https://hackerone.com/reports/665651
+- https://hackerone.com/reports/456333
+- https://hackerone.com/reports/55140
+- https://hackerone.com/reports/1216203
+- https://hackerone.com/reports/405100
+- https://hackerone.com/reports/292783
+- https://hackerone.com/reports/168538
+- https://hackerone.com/reports/342709
+- https://hackerone.com/reports/642475
+- https://hackerone.com/reports/655288
+- https://hackerone.com/reports/1031240
+- https://hackerone.com/reports/677617
+- https://hackerone.com/reports/315205
+- https://hackerone.com/reports/1129761
+- https://hackerone.com/reports/131202
+- https://hackerone.com/reports/875938
+- https://hackerone.com/reports/87040
+- https://hackerone.com/reports/798121
+- https://hackerone.com/reports/163707
+- https://hackerone.com/reports/770548
+- https://hackerone.com/reports/140432
+- https://hackerone.com/reports/159507
+- https://hackerone.com/reports/316948
+- https://hackerone.com/reports/3595753
+- https://hackerone.com/reports/55525
+- https://hackerone.com/reports/2228
+- https://hackerone.com/reports/5314
+- https://hackerone.com/reports/261138
+- https://hackerone.com/reports/497655
+- https://hackerone.com/reports/405697
+- https://hackerone.com/reports/3930
+- https://hackerone.com/reports/3596
+- https://hackerone.com/reports/659784
+- https://hackerone.com/reports/699112
+- https://hackerone.com/reports/7900
+- https://hackerone.com/reports/176308
+- https://hackerone.com/reports/498358
+- https://hackerone.com/reports/46485
+- https://hackerone.com/reports/13555
+- https://hackerone.com/reports/64946
+- https://hackerone.com/reports/491654
+- https://hackerone.com/reports/2688
+- https://hackerone.com/reports/44492
+- https://hackerone.com/reports/111218
+- https://hackerone.com/reports/753547
+- https://hackerone.com/reports/87561
+- https://hackerone.com/reports/9460
+- https://hackerone.com/reports/131052
+- https://hackerone.com/reports/160120
+- https://hackerone.com/reports/510388
+- https://hackerone.com/reports/31168
+- https://hackerone.com/reports/118737
+- https://hackerone.com/reports/1074869
+- https://hackerone.com/reports/20661
+total_articles_learned: 303
+version: '2.0'

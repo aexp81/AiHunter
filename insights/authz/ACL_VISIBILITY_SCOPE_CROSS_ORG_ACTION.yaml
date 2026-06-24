@@ -1,0 +1,77 @@
+name: "ACL 可见性范围混淆导致跨组织操作引用"
+id: "ACL_VISIBILITY_SCOPE_CROSS_ORG_ACTION"
+applicable: "blackbox"
+phase: "authz"
+also_phases: []
+tags: ["access-control", "cross-org", "acl-bypass", "visibility-scope", "report-linking", "hackerone"]
+source: "https://hackerone.com/reports/2516250"
+
+observation: >
+  用户 B 拥有 Sandbox 项目的 Report 和 Engagement 权限，在关闭报告为"duplicate"时，
+  可以指定 original_report_id 为另一个项目（如 HackerOne 自身安全项目）的已公开报告 ID，
+  服务端返回 200 OK 并成功关联。
+  (原文: "Only replace the values which are enclosed inside <> and then forward the request.
+  Notice that the response is 200 OK and the report is closed as duplicate of █████
+  which is publicly disclosed report of Hackerone program")
+
+hypothesis: >
+  服务端在关闭报告为 duplicate 时，ACL 检查仅验证 original_report 对当前用户"可见"
+  (limited disclosure / public)，未验证该报告是否属于同一组织或项目。
+  (原文 RCA: "We relied on an ACL check can?(:view, original_report) that the report
+  was visible to the team member closing the report as a duplicate, but we didn't take
+  into account limited disclosed reports also return true on this ACL check or that
+  the original report was in the same organization.")
+
+action_result: >
+  成功跨项目关闭报告为 duplicate，被引用的公开报告的 duplicate 面板显示了来自
+  其他项目的报告关联。
+  (原文: "it might show like this to the program team in a genuine publicly disclosed
+  report as the attacker can dupe his/her report to public report and the public report
+  will be shown like that to the program manager or the viewers")
+
+why_here_first: "未叙述（仅结果）"
+chaining: "N/A — 单步 ACL 绕过即造成跨组织数据关联泄露"
+
+approach: >
+  在多租户/多项目平台的报告管理操作（duplicate/merge/link）中，
+  测试"引用目标"的 ACL 检查是否仅验证了可见性（visibility/public/limited disclosure），
+  而遗漏了组织/项目归属验证。发送操作请求时将 target_id 替换为其他组织的公开资源 ID，
+  检查服务端是否接受跨边界引用。
+
+reasoning_chain:
+  - "问：平台是否有多项目/多组织架构，且操作涉及跨报告/跨资源引用（duplicate/link/merge）？"
+  - "问：引用目标是否可以通过 ID 指定，而非从当前项目可选范围中选择？"
+  - "问：是否存在 limited disclosure / public 状态的资源，其可见性与归属组织不一致？"
+  - "问：将 original_report_id / target_id 替换为另一个组织的公开资源 ID 后，操作是否成功？"
+  - "如果成功 → 确认 ACL 混淆：can?(:view) 通过但 can?(:same_org) 未检查"
+  - "问：跨边界关联后，被引用资源的元数据是否泄露给了无权用户？"
+
+vuln_root: "ACL 检查用 visibility（可见性）代替了 ownership（归属）验证——公开/限制公开的资源对所有人可见，但可见不等于可引用。"
+
+transferable_to:
+  - "任何多租户 SaaS 平台的跨项目/跨组织资源引用操作"
+  - "Bug Bounty / Issue Tracker 的 duplicate/link/merge 功能"
+  - "CRM/ITSM 系统中跨 workspace 的工单关联"
+  - "代码托管平台跨仓库的 issue/MR 引用"
+  - "项目管理工具中的跨团队依赖关联"
+
+cases:
+  - url: "https://hackerone.com/reports/2516250"
+    title: "Access Control Vulnerability Enabling Unauthorized Access to Limited Disclosure Reports"
+    author: "akashhamal0x01"
+    platform: "HackerOne"
+    severity: "High (CVSS 8.2)"
+    note: >
+      Sandbox 项目成员通过 POST /reports/bulk 的 original_report_id 参数
+      跨组织关闭报告为 duplicate。RCA: can?(:view) 对 limited disclosed reports
+      返回 true，未检查 same_organization。
+  - url: "https://hackerone.com/reports/3012526"
+    title: "Chained Broken Access Control in TikTok Live Backstage Enables Full Control of Public Leaderboard Activities"
+    author: "eneri"
+    platform: "TikTok"
+    severity: "Medium (CVSS 4.3)"
+    note: >
+      TikTok Live Backstage (live-backstage.tiktok.com) 的 BAC 漏洞，
+      低权限用户（group member/leader）可获取对其他组织公开排行榜活动的完整控制权。
+      no-content 公开，仅有团队摘要。approach 相同：跨组织操作资源时
+      仅验证用户角色/可见性，未验证资源归属组织。

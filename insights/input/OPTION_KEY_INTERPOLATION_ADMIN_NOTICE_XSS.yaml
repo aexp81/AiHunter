@@ -1,0 +1,85 @@
+name: "CMS option/settings 表的 key 名在管理后台通知中未转义输出——二阶存储型 XSS"
+id: "OPTION_KEY_INTERPOLATION_ADMIN_NOTICE_XSS"
+applicable: "whitebox"
+phase: "input"
+also_phases: []
+tags: ["xss", "stored-xss", "second-order", "option-table", "admin-notice", "output-encoding", "wordpress", "pressable", "cms"]
+source: "https://hackerone.com/reports/3447021"
+
+# ——— L3 核心 ———
+
+observation: >
+  Pressable/Atomic 平台的 atomic-platform.php 中，admin notice 输出使用
+  echo $notice[0] 未经 esc_html() 转义。
+  notice 消息来自 single_option_limiter_notices() 函数，将 option key 名
+  直接插值到字符串中：
+  "Excess updates to option <strong>$option</strong> blocked."
+  而 $option 来自 get_option() 返回的数组 key。
+  (原文: "The notices are echoed without any escaping -- missing esc_html()
+  around the $notice[0].")
+
+hypothesis: >
+  未叙述（仅结果）。报告者直接审查代码发现输出未转义，指出 option key 来自
+  数据库且未经 sanitize，但未描述为什么先看这里。
+  推断：admin notice 输出中的 echo 语句是常见的 XSS 审计高价值点，
+  尤其当 notice 内容包含 <strong> 等标记暗示开发者故意跳过了 esc_html()。
+
+action_result: >
+  成功：将 atomic_single_option_limiter_notices option 设为包含 XSS payload
+  作为 key 的序列化数组：
+  a:1:{s:34:"<script>alert('test')</script>test";a:1:{s:7:"expires";i:1893456000;}}
+  访问 /wp-admin/plugins.php 时 payload 在 admin notice 区域执行。
+  (原文: "Update or set the atomic_single_option_limiter_notices option on a
+  site to [...] Visit /wp-admin/plugins.php [...] The XSS payload will execute
+  in the admin notice area")
+  注：前置条件是需要能写入 options 表（通过另一个漏洞或低权限写入路径）。
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  此 XSS 本身需要先获得 option 写入能力（如 SQL 注入、低权限 option update API、
+  或 WordPress plugin 漏洞）。一旦注入 option 表，所有访问受影响 admin 页面的
+  管理员都会触发 payload → 可窃取 admin cookie/nonce → 完整站点接管。
+  (原文: "This vulnerability is contingent on getting the XSS payload into
+  the options table first. Once injected, it will be executed when other users
+  view the affected admin page.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  白盒审查 CMS/平台插件的 admin notice 输出函数：
+  当 notice 消息中包含 HTML 标记（如 <strong>）时，开发者往往对整个消息跳过
+  esc_html() 而直接 echo——此时检查消息中是否插值了来自 DB/用户输入的变量
+  （尤其是 option key、文件名、用户名等"看似安全"的字段）。
+
+reasoning_chain:
+  - "问：插件/主题/平台扩展的 admin notice 是用 esc_html() 输出还是直接 echo？"
+  - "白盒：grep -rn 'echo.*\\$notice' --include='*.php' | grep -v 'esc_html'"
+  - "问：如果直接 echo，notice 消息中是否包含来自数据库或用户输入的变量？"
+  - "白盒：grep -rn 'add_admin_notice' --include='*.php' 追踪所有调用点，检查参数来源"
+  - "问：变量是否经过 sanitize 或来自 get_option() / get_post_meta() 等 DB 读取？"
+  - "如果 DB 读取且未转义 → 问：攻击者是否有路径写入该 option/meta（直接 API、SQL 注入、plugin 漏洞）？"
+  - "如果可写入 → 在 option key 或 value 中注入 <script> payload，访问 admin 页面验证执行"
+
+vuln_root: >
+  开发者因 notice 消息中需要嵌入 HTML 标记（如 <strong>）而放弃了 esc_html()
+  整体转义，但未对插值到消息中的外部数据（option key）单独做 esc_html()。
+  假设 option key 是系统生成的安全值，实际上 key 可以是攻击者控制的任意字符串。
+
+transferable_to:
+  - "WordPress MU-Plugin / 托管平台扩展中的 admin notice 输出"
+  - "任何 CMS（Drupal / Joomla）的后台系统消息/通知渲染"
+  - "SaaS 管理面板中的告警/通知消息，消息模板中插值用户可控字段"
+  - "日志查看器/审计日志 UI 中直接渲染未转义的 key/value"
+  - "WordPress 插件的 settings 页面——option name 或 value 渲染在表单中"
+
+cases:
+  - url: "https://hackerone.com/reports/3447021"
+    title: "XSS Vulnerability on Pressable/Atomic Hosting Platform via unescaped admin notices leads to code execution"
+    platform: "Automattic (Pressable/Atomic)"
+    severity: "Medium-High"
+    note: >
+      atomic-platform.php 的 single_option_limiter_notices() 将 option key
+      直接插值到 admin notice 字符串中，print_admin_notices() 使用 echo 输出
+      未经 esc_html() 转义。前置条件：需要先通过其他途径写入 options 表。
+      reporter: georgestephanis。

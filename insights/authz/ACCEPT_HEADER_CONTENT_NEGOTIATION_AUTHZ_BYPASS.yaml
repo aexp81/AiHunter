@@ -1,0 +1,71 @@
+name: "切换 Accept Header 到 JSON 格式绕过仅 HTML 路径实施的授权检查"
+id: "ACCEPT_HEADER_CONTENT_NEGOTIATION_AUTHZ_BYPASS"
+applicable: "blackbox"
+phase: "authz"
+also_phases: []
+tags: ["content-negotiation", "accept-header", "authorization-bypass", "idor", "json-response", "rails", "privacy"]
+source: "https://hackerone.com/reports/1424291"
+
+# ——— L3 核心 ———
+
+observation: >
+  端点 /users/{user-id}/pictures/{pic-id} 有两种响应格式：HTML 和 JSON，
+  取决于请求的 Accept header。
+  (原文: "Endpoint has 2 types of responses, HTML and JSON. The type of response depends
+  on Accept header of request it get. If request contains Accept: application/json,
+  then it will return JSON response.")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  以 Accept: application/json 请求他人的私有图片/视频/帖子端点，
+  成功获得了完整的 JSON 响应（含私有资源数据），而 HTML 路径会正确拒绝访问。
+  (原文: "When this endpoint returns JSON response, it does not check if requester
+  is authorized to access requested resource. Therefore, attacker can access any
+  private picture by requesting them in JSON response.")
+
+why_here_first: "未叙述（仅结果）"
+chaining: "N/A — 单步授权绕过即可访问私有资源"
+
+approach: >
+  对受保护的资源端点，在 Accept header 中切换响应格式
+  （text/html → application/json / application/xml / text/csv 等），
+  检查非默认格式的响应路径是否遗漏了授权检查。
+  Rails / Django 等框架的 respond_to 多格式渲染中，
+  开发者常在 HTML 路径（before_action / view 层）实施权限过滤，
+  但 JSON 渲染路径跳过了同一检查。
+
+reasoning_chain:
+  - "问：目标资源端点是否支持多种响应格式（在 URL 末尾加 .json / .xml 或切换 Accept header）？"
+  - "问：HTML 格式下的授权检查（403/redirect）在 JSON 格式下是否同样生效？"
+  - "如果 JSON 路径返回了数据 → 问：返回的 JSON 中是否包含了在 HTML 页面中被 ACL 隐藏的字段？"
+  - "问：批量遍历资源 ID（IDOR）时，JSON 路径是否都缺少授权检查？"
+  - "问：同一手法是否适用于 .xml / .csv / .pdf 等其他备选格式？"
+
+vuln_root: "Web 框架的多格式渲染（respond_to）中，授权检查仅在 HTML 路径实施而未覆盖 JSON/XML 等备选格式"
+
+transferable_to:
+  - "Ruby on Rails 应用使用 respond_to 块的多格式端点"
+  - "Django REST Framework 同时服务 HTML 和 API 响应的视图"
+  - "任何支持 URL 后缀格式切换（.json / .xml）的 Web 框架"
+  - "社交平台/内容平台的用户资源端点（图片/视频/帖子）"
+
+cases:
+  - note: "FetLife 私有图片/视频/帖子通过 Accept: application/json 绕过授权检查访问，CVSS 6.5"
+    source: "https://hackerone.com/reports/1424291"
+  - url: "https://hackerone.com/reports/96908"
+    title: "An administrator without the 'Settings' permission is able to see payment gateways"
+    author: "brakhane"
+    platform: "Shopify (shop.myshopify.com)"
+    severity: "Improper Authentication"
+    bounty: "$500"
+    note: >
+      Shopify 中缺少 Settings 权限的 admin 无法通过 UI 查看 payment gateways，
+      但直接访问 /admin/payment_gateways.json 端点即可获取完整的支付网关信息。
+      HTML 页面路径实施了权限检查但 JSON 格式路径未做同等检查。
+      (原文: "An administrator who lacks the 'Settings' permission is not able to see
+      the shops payment gateways through the UI. But the endpoint
+      shop.myshopify.com/admin/payment_gateways.json does disclose payment gateways
+      to the unprivileged user.")
+      2015-10 报告，2015-11 公开。$500 赏金。纯结果文，无导航叙事。
+      approach 相同：通过 .json URL 后缀请求受保护页面，绕过仅在 HTML 路径实施的授权检查。

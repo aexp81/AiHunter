@@ -1,0 +1,83 @@
+name: "SSH 证书认证在子服务缺少身份校验——跨用户 Gist 写入"
+id: "SSH_CERT_AUTHORITY_SERVICE_BOUNDARY_BYPASS"
+applicable: "both"
+phase: "auth"
+also_phases: ["authz"]
+tags: ["ssh-certificate", "authentication-bypass", "gist", "github", "service-boundary", "certificate-authority", "CVE-2023-23761"]
+source: "https://hackerone.com/reports/1901040"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。GitHub 支持 SSH Certificate Authority 认证（企业云客户功能），
+  证书中包含 extension:login@github.com=username 字段，标识以哪个组织用户身份认证。
+  gist.github.com 也使用 SSH 协议（git push），但其认证流程与 github.com 主站独立。
+  (原文研究者摘要: "Github supports SSH certificate authority authentication for
+  Github Enterprise Cloud customers. As part of certificate authority authentication,
+  the certificate contains a extension:login@github.com=username corresponding to
+  which username from the organization to authenticate as.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：如果 gist.github.com 的 SSH 认证流程在处理 certificate authority
+  认证时遗漏了身份验证步骤（missed check），攻击者可伪造证书中的 username 字段，
+  以任意用户身份对 gist 进行写操作。
+
+action_result: >
+  未叙述（仅结果）。根据摘要：
+  攻击者可创建包含任意 username 的 SSH 证书，通过 gist.github.com 的 SSH 认证，
+  获得对目标用户所有 gist（包括 secret gists 和 public gists）的 push 权限。
+  (原文研究者摘要: "Due to a missed check in the gist.github.com authentication flow,
+  an attacker could create a certificate giving them access to push to any username's gists.")
+  (原文研究者修正: "it's not just secret gists that were at risk. An attacker could have
+  pushed changes to a user's public gists as well.")
+
+  CVE-2023-23761，影响所有 GHES < 3.9 版本。
+  修复版本：3.4.18, 3.5.15, 3.6.11, 3.7.8, 3.8.1。
+  赏金 $10,000。
+
+why_here_first: >
+  未叙述（仅结果）。推断：研究者了解 GitHub 的 SSH Certificate Authority 功能，
+  注意到 gist.github.com 作为独立子服务（独立域名、独立认证流程），
+  可能未完整实现主站的认证校验逻辑。
+
+chaining: "N/A — 单个 missed check 即可直接以任意用户身份写入 gist。"
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对支持 SSH Certificate Authority 认证的平台，测试子服务/子域名（如 gist、pages、
+  codespaces 等）是否完整验证证书中的身份信息（username/extension），
+  特别关注主站与子服务之间的认证逻辑是否一致。
+
+reasoning_chain:
+  - "问：目标平台是否支持 SSH Certificate Authority 认证（通常是企业功能）？"
+  - "问：平台是否有子服务/子域名使用 SSH 协议（如 gist、pages、CI runner）？"
+  - "问：子服务的 SSH 认证逻辑是否与主站共享同一代码路径？还是独立实现？"
+  - "黑盒测试：创建 SSH 证书，在 extension 中设置不同的 username，尝试对子服务进行认证操作。"
+  - "问：子服务是否验证证书中 extension:login@github.com 的值是否匹配当前认证用户？"
+  - "白盒审计：搜索 SSH 认证相关代码（sshd config、AuthorizedKeysCommand、certificate validation），对比主站和子服务的验证逻辑差异。"
+  - "扩展：除 gist 外，其他子服务（GitHub Pages、Codespaces、Actions runner SSH）是否有类似遗漏？"
+  - "扩展：非 GitHub 场景——GitLab、Bitbucket 等代码托管平台的 SSH 证书认证在子服务中的校验。"
+
+vuln_root: >
+  开发者假设 SSH Certificate Authority 的身份校验在所有服务入口（主站 + 子服务）一致执行，
+  但子服务（gist.github.com）遗漏了关键的身份验证步骤（missed check），
+  导致攻击者可通过伪造证书扩展字段中的用户名以任意用户身份操作。
+
+transferable_to:
+  - "代码托管平台子服务（GitLab Pages、Bitbucket Snippets）的 SSH 证书认证"
+  - "企业 SSH Certificate Authority 环境中的内部服务（Jump Server、CI/CD SSH runner）"
+  - "Kubernetes 集群中使用 SSH 证书认证的独立节点/命名空间"
+  - "任何使用 X.509 / SSH 证书且有多个独立服务入口的系统——子服务可能遗漏证书字段校验"
+
+cases:
+  - source: "https://hackerone.com/reports/1901040"
+    author: "ammar2"
+    platform: "GitHub (gist.github.com)"
+    bounty: "$10,000"
+    cve: "CVE-2023-23761"
+    note: >
+      gist.github.com 的 SSH Certificate Authority 认证流程遗漏了身份校验步骤（missed check），
+      攻击者可创建包含任意 username 的 SSH 证书，获得目标用户所有 gist 的 push 权限
+      （包括 secret gists 和 public gists）。影响 GHES < 3.9 全版本。
+      纯结果文——报告 visibility: no-content，仅有团队和研究者摘要。

@@ -1,0 +1,97 @@
+name: "端口扫描发现分布式协调/中间件服务默认无认证实例"
+id: "DISTRIBUTED_SERVICE_DEFAULT_NO_AUTH_PORT_PROBE"
+applicable: "blackbox"
+phase: "recon"
+also_phases: ["auth"]
+tags: ["port-scan", "zookeeper", "default-config", "no-auth", "distributed-system", "infrastructure", "CWE-306"]
+source: "https://hackerone.com/reports/154369"
+
+# ——— L3 核心 ———
+
+observation: >
+  对 Shopify 的子域名进行端口扫描时，发现 locutus-zk3.ec2.shopify.com 开放了 2181 端口。
+  抓取 banner 识别出 Zookeeper 服务及版本。
+  (原文: "While scanning for Open ports on http://locutus-zk3.ec2.shopify.com,
+  I came across port 2181. Grabbing the banner on this port revealed that
+  it's running Zookeeper: Zookeeper version: 3.5.1-alpha-1693007")
+
+hypothesis: >
+  Zookeeper 默认不启用认证，因此该实例可能允许远程执行管理命令（dump/envi/stat/kill 等）。
+  (原文: "Zookeeper installations does not deploy any authentication by default,
+  this makes it very easy for remote attackers to abuse Zookeeper installations,
+  gather information and cause havoc inside Zookeeper clusters by killing the servers")
+
+action_result: >
+  成功验证：通过 ncat 发送四字命令（dump/envi/stat/ruok/reqs），全部返回结果，
+  获取到内部会话信息、内网 IP 地址（10.92.x.x）、Java 版本、集群节点列表等敏感信息。
+  kill 命令也可用但研究者未执行。
+  (原文: "After some testing, I found that I was able to run all the commands
+  that are only allowed to be run by admins!"
+  "my tests showed that the kill command is available on this instance")
+
+why_here_first: >
+  未叙述（仅结果）。研究者描述了先做端口扫描、再对非标准端口抓 banner 的流程，
+  但未解释为什么优先选择这个子域名或为什么关注非 Web 端口。
+
+chaining: >
+  暴露的 Zookeeper 实例可泄露内网拓扑（内部 IP、节点路径）→
+  可进一步利用内网信息横向移动或使用 kill 命令进行 DoS 攻击。
+  (原文: "gather information and cause havoc inside Zookeeper clusters
+  by killing the servers")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对目标子域名进行全端口扫描，识别分布式协调/消息中间件服务
+  （Zookeeper 2181 / etcd 2379 / Consul 8500 / Redis 6379 / Kafka 9092 等）
+  的默认端口，利用这些服务默认无认证的特性直接执行管理命令。
+
+reasoning_chain:
+  - "问：目标的子域名（尤其是含 zk/kafka/redis/consul/etcd 等关键字的）是否暴露了非 Web 端口？"
+  - "问：扫描到非标准端口后，banner 是否能识别出分布式协调/中间件服务？"
+  - "如果识别到 Zookeeper(2181)/etcd(2379)/Redis(6379)/Consul(8500) → 问：该服务是否启用了认证？"
+  - "如果无认证 → 尝试执行管理命令（Zookeeper: ruok/dump/envi/stat; Redis: INFO/CONFIG GET; etcd: /v2/keys/; Consul: /v1/agent/members）"
+  - "问：返回的信息中是否包含内网 IP、集群拓扑、敏感配置、会话信息？"
+  - "问：是否有破坏性命令可用（如 Zookeeper kill、Redis FLUSHALL）？如有则仅报告不执行。"
+
+vuln_root: "分布式协调/中间件服务默认不启用认证，运维人员直接将其暴露到公网而未加网络隔离或 ACL 限制。"
+
+transferable_to:
+  - "任何暴露到公网的 Zookeeper / etcd / Consul / Redis / Kafka / Elasticsearch 实例"
+  - "云环境中安全组配置过宽，允许从公网访问中间件端口的场景"
+  - "内部微服务暴露到公网的 gRPC / Thrift 端口"
+  - "Docker / Kubernetes 管理端口（Docker API 2375/2376、Kubelet 10250）暴露"
+
+cases:
+  - url: "https://hackerone.com/reports/154369"
+    title: "Unauthorized access to Zookeeper on Shopify EC2 instance"
+    author: "mico02"
+    platform: "Shopify (locutus-zk3.ec2.shopify.com)"
+    severity: "未评级"
+    bounty: "$1,000"
+    note: >
+      端口扫描发现 Shopify EC2 子域名开放 2181 端口，识别为 Zookeeper 3.5.1-alpha。
+      无认证保护，可执行全部管理命令（dump/envi/stat/ruok），泄露内网 IP、
+      会话信息、Java 环境、集群节点路径。kill 命令可用（未执行）。
+      (原文: "While scanning for Open ports... I came across port 2181.
+      Grabbing the banner on this port revealed that it's running Zookeeper")
+  - url: "https://hackerone.com/reports/1317236"
+    title: "Unauthorized Kubernetes to RCE (root) and found TEAMTNT Crypto Miner on it"
+    platform: "IBM"
+    severity: "Critical"
+    bounty: "N/A"
+    note: >
+      no-content 报告。IBM 服务器运行未授权 Kubernetes 实例，
+      研究者获得 RCE (root) 并发现已被 TEAMTNT 加密挖矿恶意软件感染。
+      (团队摘要: "This report revealed a vulnerable server running an unauthorized
+      Kubernetes which allowed un_kn0wn to gain remote code execution")
+  - url: "https://hackerone.com/reports/2247231"
+    title: "Unauthorized access to Argo dashboard"
+    platform: "U.S. Dept Of Defense"
+    severity: "Medium"
+    bounty: "N/A (VDP)"
+    note: >
+      Argo Workflows dashboard 暴露在公网且无需认证，
+      可操纵 workflows（删除/添加）和修改 sensors。
+      (原文: "I can manipulate workflows, including deletion and addition,
+      as well as modify sensors")

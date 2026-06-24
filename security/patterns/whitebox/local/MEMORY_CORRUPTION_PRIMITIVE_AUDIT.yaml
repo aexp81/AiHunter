@@ -1,0 +1,25 @@
+id: MEMORY_CORRUPTION_PRIMITIVE_AUDIT
+name: "内核/解析器内存破坏原语审计（UAF/double-free/OOB/溢出）"
+applicable: whitebox
+category: local
+cwe: CWE-416
+# 覆盖 insight: KERNEL_SOCKET_OPTION_RACE_UAF / KERNEL_FD_IDENTITY_CONFUSION_DOUBLE_FREE /
+#   KERNEL_SYSCALL_RACE_STACK_POINTER_FREE / APACHE_SHM_SCOREBOARD_OOB_INDEX / GAME_ASSET_FILE_FORMAT_OVERFLOW
+
+trigger:
+  - "审计内核子系统、特权 daemon、二进制文件格式解析器的 C/C++ 源码"
+  - "存在并发 syscall 路径、共享内存、手写边界计算、自定义格式解析"
+
+reasoning_chain:
+  - "执行规则：以下每条必须逐一执行，命令必须实际运行，不允许跳过"
+  - "问：哪些可从低权限/沙箱内触达的入口会操作堆对象或共享内存？（setsockopt option、ioctl、syscall、SHM 字段）"
+  - "白盒：grep -rniE 'setsockopt|ioctl|copyin|copyout|memcpy|alloca' 找无锁/无边界的处理路径"
+  - "问：并发路径是否有锁？遗留/弃用 option（如 IPV6_2292*）是否仍可调用但缺维护？"
+  - "白盒：grep -rniE 'mtx_lock|lock_held|deprecated|XXX|FIXME' 对照 option 处理函数是否在锁内"
+  - "问：被操作的结构体释放后是否可能被再次使用/释放？指针是否清空？"
+  - "白盒：grep -rniE 'free\\(|kfree|m_free' 后看指针是否置 NULL、是否有第二次解引用/释放"
+  - "问：高权限进程读共享内存字段当索引/指针/回调时是否做边界与完整性校验？"
+  - "白盒：定位 SHM 读取点，检查 index 是否 bounds-check、是否在 drop_privileges 之前使用"
+  - "问：自定义文件格式解析是手写边界检查还是盲目 memcpy？该文件能否远程下发（Workshop/服务器→客户端）？"
+  - "白盒：审解析函数的长度字段处理；用 fuzzing 复现崩溃，确认 EIP/RIP 可控"
+  - "如果：竞态/UAF/OOB/溢出成立 + 可控释放后内存或越界写 → 评估能否升级为任意读写/执行"

@@ -1,0 +1,73 @@
+name: "GraphQL GID 多态解析无类型校验——跨对象类型破坏性操作"
+id: "GRAPHQL_GID_TYPE_CONFUSION_DESTRUCTIVE_ACTION"
+applicable: "both"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["graphql", "gid", "type-confusion", "object_from_id", "gitlab", "destructive-action", "delete", "polymorphic-resolution"]
+source: "https://hackerone.com/reports/960244"
+
+# --- L3 核心 ---
+
+observation: >
+  GitLab GraphQL DeleteAnnotation mutation 的 find_object 方法直接调用
+  GitlabSchema.object_from_id(id) 而未校验返回对象的类型。
+  同时 Developer 角色恰好拥有 delete_metrics_dashboard_annotation 权限，
+  该权限在 Project 对象上也被满足。
+  (原文: "in app/graphql/mutations/metrics/dashboard/annotations/base.rb
+  def find_object(id:) GitlabSchema.object_from_id(id) end
+  There is no type check for find_object")
+
+hypothesis: >
+  如果 object_from_id 接受任意 GID 且不做类型限制，传入 Project 的 GID
+  到期望 Annotation 的 mutation 中，DeleteService 会对 Project 对象执行删除操作。
+  (原文: "Similar bug to #858671, but this time with annotations mutation: DeleteAnnotation")
+
+action_result: >
+  成功：Developer 用户执行 deleteAnnotation(input: {id: "gid://Gitlab/Project/<project-id>"})，
+  目标项目及其仓库被删除。
+  (原文: "Project disappear along with Repository")
+
+why_here_first: >
+  研究者引用了同类前序漏洞 #858671，说明是沿着"GraphQL mutation 中 GID 解析无类型检查"
+  这一已知模式进行审计。
+  (原文: "Similar bug to #858671")
+
+chaining: "N/A — 单步即可删除 Project/Repository/Group，Developer 权限即足够。"
+
+# --- 落地检查清单 ---
+
+approach: >
+  对 GraphQL schema 中接受 GID (Global ID) 参数的 mutation，检查 find_object / object_from_id
+  是否做了返回类型校验——若仅用通用 object_from_id 解析而不限定 expected_type，
+  则可传入任意类型的 GID（如 Project 代替 Annotation），触发对错误对象类型的操作。
+  重点关注 delete/update mutation，尤其是低权限角色可达的 mutation。
+
+reasoning_chain:
+  - "问：GraphQL schema 中哪些 mutation 接受 GID/ID 参数并执行破坏性操作（delete/update/archive）？"
+  - "问：这些 mutation 的 find_object 方法是否使用通用的 object_from_id 而无 expected_type 约束？"
+  - "如果无约束 → 传入不同类型的 GID（如 Project、Group、User 的 GID），观察后端行为"
+  - "问：执行操作前的权限检查（如 Ability.allowed?）是否对传入的实际对象类型有效？"
+  - "如果权限检查是泛化的（如 Developer 对 Project 有某权限，恰好通过了 Annotation 的权限检查） → 确认类型混淆漏洞"
+  - "扩展：同一 codebase 的其他 mutation 是否共享相同的无类型检查 find_object？"
+
+vuln_root: >
+  GraphQL mutation 的 find_object 方法使用通用 object_from_id 解析 GID，
+  信任客户端传入的 ID 属于预期类型，未做 expected_type 约束。
+  当权限检查也是基于 policy 而非 object class 时，类型混淆可绕过所有防线。
+
+transferable_to:
+  - "任何使用 Rails GlobalID 或类似全局 ID 解析机制的 GraphQL 实现"
+  - "GitLab 其他使用 object_from_id 的 mutation（有前序漏洞 #858671）"
+  - "Ruby on Rails + graphql-ruby 的 authorized_find! 调用链"
+  - "其他实现了 Relay-style Node interface 的 GraphQL 后端"
+  - "Hasura/Apollo Federation 中跨 service 的 GID 解析"
+
+cases:
+  - url: "https://hackerone.com/reports/960244"
+    title: "Insufficient Type Check leading to Developer ability to delete Project, Repository, Group"
+    platform: "GitLab"
+    severity: "High"
+    note: >
+      DeleteAnnotation mutation 的 object_from_id 无类型检查，
+      Developer 传入 Project GID 即可删除整个项目及仓库。
+      引用前序漏洞 #858671。2020-08 报告，2020-11 公开。

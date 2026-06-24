@@ -1,0 +1,83 @@
+name: "Git archive 的 path 参数以 -- 开头触发 flag injection → 文件覆写 → SSH RCE"
+id: "GIT_ARCHIVE_PATH_FLAG_INJECTION_FILE_OVERWRITE_RCE"
+applicable: "whitebox"
+phase: "chain"
+also_phases: ["input"]
+tags: ["git-flag-injection", "argument-injection", "git-archive", "file-overwrite", "ssh-authorized-keys", "rce", "gitlab", "gitaly", "go", "tar-format"]
+source: "https://hackerone.com/reports/587854"
+
+# ——— L3 核心 ———
+
+observation: >
+  GitLab 11.11 新增的"下载仓库子目录"功能在 Gitaly 的 archive.go 中直接将 path 参数
+  拼接到 git archive 命令，当 path 以 -- 开头时变成 git 命令的 flag。
+  (原文: "A new parameter path is concatenated to the command, the parameter is supposed
+  to carry the path of the directory to be downloaded in the repository. However, Gitaly
+  could be misled by an attacker if the path starts with double dashes")
+  (原文: 引用 archive.go 源码
+  git.Command(ctx, in.GetRepository(), "archive", "--format="+format,
+  "--prefix="+in.GetPrefix()+"/", in.GetCommitId(), path))
+
+hypothesis: >
+  如果在仓库中创建以 --output=/目标文件 命名的目录路径，下载该目录时
+  git archive 命令会将 --output= 解释为 flag，将归档内容写入目标文件而非返回给用户。
+  (原文: "The actual command get executed here is:
+  git --git-dir=DIR archive --format tar --prefix=/ COMMIT_ID
+  --output=/var/opt/gitlab/.ssh/authorized_keys")
+
+action_result: >
+  成功实现 RCE：
+  1. 创建仓库，目录名为 --output=/var/opt/gitlab/.ssh/authorized_keys/
+  2. 在该目录深处放置含 SSH 公钥的文件（前后加 # 注释行和换行）
+  3. 选择 tar 格式下载（tar 不压缩，内容保持可读）
+  4. 文件内容被写入 authorized_keys，SSH 公钥在新行开头
+  5. SSH 登录成功获得 git 用户 shell
+  (原文: "$ ssh -i ~/.ssh/id_ed25519 git@10.26.0.3 ... $ whoami git")
+  关键技巧：选择 tar 格式而非 gzip，因为 tar 不压缩，公钥文本保持原样。
+  SSH authorized_keys 容忍其中的 tar 头部垃圾数据。
+
+why_here_first: >
+  研究者通过审计 GitLab 11.11 的新增代码（Gitaly archive.go 中新增的 path 参数处理），
+  发现该参数直接拼接到 git 命令中。
+  (原文: "A new feature (download a directory of a repository) in GitLab 11.11
+  introduced some changes in ./internal/service/repository/archive.go of Gitaly")
+
+chaining: >
+  三步链：
+  1. 仓库中创建 --output=目标路径 的目录名 → git archive flag injection
+  2. tar 格式保留明文内容 + SSH 容忍垃圾行 → 公钥写入 authorized_keys
+  3. SSH 登录 → RCE
+
+# ——— 落地检查清单 ———
+
+approach: >
+  审计 git hosting 平台中新增的 git 命令调用点，检查用户可控参数（path, directory name,
+  ref, branch）是否直接拼接到命令行且允许 leading dash。重点关注新增功能（changelog diff,
+  directory download, partial clone）在 Gitaly/git-shell 层的参数处理。
+
+reasoning_chain:
+  - "问：目标 git hosting 平台最近新增了哪些功能？（changelog, directory download, partial clone, archive）"
+  - "白盒：检查 Gitaly / git-shell 中新增的 git.Command() 调用及其参数来源"
+  - "问：新增的参数（path, directory, file）是否直接拼接到 git 命令行？"
+  - "如果直接拼接 → 问：参数是否可以以 - 或 -- 开头？是否有 -- 分隔符？"
+  - "如果无分隔符 → 问：git 子命令有哪些可利用的 flag？（--output=, --exec=, --upload-pack=）"
+  - "问：能否通过仓库中的文件名/目录名来注入 leading-dash 参数？"
+  - "如果能控制写入 → 问：选择哪种输出格式能保留明文内容？（tar vs gzip/zip）"
+  - "如果能覆写文件 → 目标哪些文件覆写后可 RCE？（authorized_keys, crontab, gitconfig hooks）"
+
+vuln_root: >
+  新增功能在 Gitaly 层将用户可控的 path 参数（来自仓库目录名）直接拼接到
+  git archive 命令行，未检查 leading dash 或使用 -- 分隔符。
+
+transferable_to:
+  - "任何 git hosting 平台的 archive/download/export 功能——Gitea, Gogs, Bitbucket Server"
+  - "新增功能引入新参数时对 git CLI 的 argument injection"
+  - "仓库内容（文件名/目录名/branch 名）作为 git 命令参数的场景"
+  - "类似的 CLI argument injection：tar, curl, rsync 等工具的 leading-dash 参数注入"
+
+cases:
+  - url: "https://hackerone.com/reports/587854"
+    note: >
+      GitLab 11.11.0，Gitaly archive.go path 参数 git flag injection，
+      $12,000 赏金。通过 --output= 覆写 authorized_keys 实现 RCE。
+      研究者 saltyyolk。选择 tar 格式因为不压缩内容，SSH 容忍 tar 头垃圾。

@@ -1,0 +1,78 @@
+name: "X-Forwarded-Host 头注入 + @ 符号绕过主机白名单——后端服务器盲 SSRF"
+id: "X_FORWARDED_HOST_AT_SIGN_SSRF"
+applicable: "blackbox"
+phase: "input"
+also_phases: ["recon"]
+tags: ["ssrf", "x-forwarded-host", "host-header", "url-authority-parsing", "at-sign-bypass", "blind-ssrf", "aws", "cloud-metadata", "slack"]
+source: "https://hackerone.com/reports/727330"
+
+# ——— L3 核心 ———
+
+observation: >
+  files.slack.com 在收到非标准 Host 时返回 500，但接受 X-Forwarded-Host 头。
+  服务端后续请求会被发送到 X-Forwarded-Host 指定的地址而非原始 Host。
+  (原文: "I found files.slack.com domain will honor the X-Forwarded-Host header,
+  instead of host header")
+
+hypothesis: >
+  虽然有主机名校验返回 500，但可以用 @ 符号绕过：
+  files.slack.com@attacker.com 格式中，校验部分看到 files.slack.com 通过，
+  而 URL 解析时 @ 前的部分被当作用户名，实际请求发往 attacker.com。
+  (原文: "Although file.slack.com has host validation to return 500 Internal server error
+  when host is not files.slack.com, I can bypass the validation by appending @ at the
+  end of host name")
+
+action_result: >
+  设置 X-Forwarded-Host: files.slack.com@YOUR_DOMAIN 后服务器返回 302，
+  Location 指向 YOUR_DOMAIN/files-pri/...。确认请求来自 xxx.amazonaws.com（后端服务器），
+  不是 CloudFront（前端 CDN）。可以进一步将 YOUR_DOMAIN 替换为内网 IP 进行端口扫描。
+  (原文: "Update header to X-Forwarded-Host: files.slack.com@YOUR_DOMAIN,
+  make sure server response with 302, and the location is YOUR_DOMAIN/files-pri/...
+  Make sure the request did sent to your domain, and the server is from xxx.amazonaws.com")
+
+why_here_first: >
+  未叙述（仅结果）——报告者直接测试 X-Forwarded-Host 头对 files.slack.com 的影响。
+
+chaining: >
+  X-Forwarded-Host 注入 → @ 符号绕过白名单 → 后端盲 SSRF → 内网端口扫描/云元数据探测。
+  (原文: "change YOUR_DOMAIN into intranet ip, ex: 169.254.169.254:PORT,
+  change the port to check the response delay time")
+
+approach: >
+  对文件服务/CDN/代理后端添加 X-Forwarded-Host/X-Host/X-Original-Host 头，
+  观察服务端是否将请求或重定向目标发往该主机。如果有主机白名单校验，
+  尝试 URL 权威段 @ 绕过（whitelist.com@attacker.com）让校验器匹配白名单前缀
+  而 URL 解析器跟随 @ 后面的真实主机。
+
+reasoning_chain:
+  - "问：目标的文件/静态资源子域（files.*、cdn.*、assets.*）是否位于反向代理/CDN 后面？"
+  - "问：添加 X-Forwarded-Host / X-Host / X-Original-Host 头后，响应是否变化（302/Location/Set-Cookie/body 中的 URL）？"
+  - "如果返回 500 或拒绝 → 问：是否有主机名白名单校验？"
+  - "如果有白名单 → 尝试 legitimate.host@attacker.host 格式。@ 前的部分是否通过校验？"
+  - "如果返回 302/200 → 问：Location 头或 body 中的 URL 是否指向 @attacker.host？"
+  - "确认 SSRF → 问：请求发出方是 CDN 边缘还是后端应用服务器？（从监听端看 IP 来源）"
+  - "如果是后端 → 问：将目标改为 169.254.169.254 云元数据端点后是否返回了内部信息？"
+  - "扩展：是否可以通过响应延迟差分推断内网端口开放状态？"
+
+vuln_root: >
+  后端服务器信任 X-Forwarded-Host 头并用于构造后续请求 URL，
+  主机名白名单校验与 URL 解析器对 @ 符号的语义理解不一致
+  （校验看前缀，解析器以 @ 后作为实际 host），导致 SSRF。
+
+transferable_to:
+  - "所有位于反向代理/CDN 后面的文件服务子域"
+  - "使用 X-Forwarded-Host 的 Web 应用框架（Django、Rails、Express behind nginx/ALB）"
+  - "云环境中可探测元数据端点（169.254.169.254）的盲 SSRF 场景"
+  - "需要绕过 Host 白名单的 SSRF 测试"
+  - "OAuth/SSO 回调中涉及主机名校验的重定向场景"
+
+cases:
+  - url: "https://hackerone.com/reports/727330"
+    author: "showuon"
+    platform: "Slack (files.slack.com)"
+    severity: "Medium"
+    bounty: "有赏金（具体金额未公开）"
+    note: >
+      files.slack.com 盲 SSRF：X-Forwarded-Host: files.slack.com@attacker.com
+      绕过主机白名单，后端 amazonaws 服务器发出请求到攻击者域名。
+      可进一步针对内网 IP 端口扫描。2019-11 报告，2021-06 公开。95 votes。

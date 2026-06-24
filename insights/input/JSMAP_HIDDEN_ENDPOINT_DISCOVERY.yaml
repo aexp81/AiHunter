@@ -29,3 +29,18 @@ transferable_to:
 cases:
   - note: "从登录页面到服务器登录拿下多个网站权限：命令执行扑空→JS map 还原发现隐藏下载接口"
     source: "https://mp.weixin.qq.com/s/gjr4EXjVLRl5_O8DE0MAtQ"
+  - url: "https://hackerone.com/reports/1486417"
+    title: "[Bypass] Ability to invite a new member in sandbox Organization"
+    platform: "HackerOne"
+    severity: "Medium (CVSS 5.2)"
+    bounty: "有奖金（金额未公开）"
+    note: >
+      HackerOne sandbox Organization 的邀请功能在默认 UI 上显示已达上限灰显。
+      研究者从 JS chunk 文件（30.8f8e2bc5.chunk.js）中发现了隐藏的
+      /organizations/{handle}/users/new_invite 端点，直接访问该端点可绕过
+      UI 层面的邀请限制，成功向任意安全研究员发送组织邀请。
+      approach 相同：审计前端打包产物发现 UI 未展示的隐藏端点，绕过前端限制。
+      (原文: "using this endpoint i found in
+      https://hackerone.com/assets/static/js/30.8f8e2bc5.chunk.js
+      https://hackerone.com/organizations/hackycorp_demo/users/new_invite
+      I can send an invite to anyone.")

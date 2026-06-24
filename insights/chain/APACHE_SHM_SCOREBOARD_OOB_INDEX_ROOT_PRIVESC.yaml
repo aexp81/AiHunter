@@ -1,0 +1,83 @@
+name: "Apache 共享内存 scoreboard 的 bucket 索引越界写——从 www-data 到 root 的任意函数调用"
+id: "APACHE_SHM_SCOREBOARD_OOB_INDEX_ROOT_PRIVESC"
+applicable: "whitebox"
+phase: "chain"
+also_phases: ["input"]
+tags: ["apache", "httpd", "mod_prefork", "shared-memory", "oob-write", "privilege-escalation", "local-root",
+       "php-uaf", "scoreboard", "graceful-restart", "cve-2019-0211", "logrotate"]
+source: "https://hackerone.com/reports/520903"
+
+observation: >
+  Apache prefork 模式下，低权限 worker 进程（www-data）对共享内存 scoreboard 有完全读写权限，
+  而 scoreboard 中 process_score 结构的 bucket 字段会被 root 主进程在 graceful restart 时
+  作为 all_buckets 数组索引使用，且没有边界检查。
+  (原文: "Each worker is meant to maintain a process_score structure associated with its PID,
+  and has full read/write access to the SHM."
+  及 "No bound checks happen. Therefore, a rogue worker can change its bucket index
+  and make it point to the shared memory, in order to control the prefork_child_bucket
+  structure upon restart.")
+
+hypothesis: >
+  如果低权限 worker 能篡改 bucket 索引指向 SHM 中攻击者构造的伪 prefork_child_bucket 结构，
+  那么 graceful restart 时 root 主进程会解引用该结构并调用 mutex->meth->child_init()，
+  从而在 drop_privileges 之前实现以 root 身份的任意函数调用。
+  (原文: "Eventually, and before privileges are dropped, mutex->meth->child_init() is called.
+  This results in an arbitrary function call as root.")
+
+action_result: >
+  四步利用链：(1) 通过 PHP UAF 0-day 获取 worker 进程的任意读写；
+  (2) 在 SHM 中布置伪造的 prefork_child_bucket + mutex + meth 结构；
+  (3) 篡改所有 worker 的 bucket 索引覆盖不同内存范围以应对 all_buckets 地址变化；
+  (4) 等待 logrotate 在 6:25AM 触发 graceful restart，root 进程执行 system() 命令。
+  成功率约 80%（4 worker 默认配置）。
+  (原文: "After a few tries on my test Apache server of 4 workers (default),
+  I had ~80% success rate."
+  及 "pDestructor is set to system, and &ht->arData[0]->val is a string.")
+
+why_here_first: >
+  prefork 模式的 worker 进程以低权限运行但与 root 主进程共享内存区域，
+  且 /proc/self/maps 可读（绕过 ASLR/PIE），worker 崩溃后自动重启（不会 DoS），
+  这三个特性使得 SHM 成为 www-data→root 提权的天然攻击面。
+  (原文: "The main process never exits, so we know where everything is mapped
+  by reading /proc/self/maps (ASLR/PIE useless)"
+  及 "When a worker dies (or segfaults), it is automatically restarted
+  by the main process, so there is no risk of DOSing Apache")
+
+chaining: >
+  PHP UAF 0-day（CVE-2019-6977 可替代）→ 堆上 zend_string.len 增量获得越界读写 →
+  通过 /proc/self/maps 定位 SHM 和 all_buckets →
+  伪造 mutex 结构 + bucket 索引 spray →
+  graceful restart 触发 root 任意函数调用 → system() 命令执行。
+  (原文: "By incrementing it, we can read and write further in memory,
+  and therefore access the two memory regions we're interested in: the SHM and Apache's all_buckets."
+  及 "pDestructor is set to system")
+
+approach: >
+  在共享内存（SHM）架构的多进程服务中，识别低权限 worker 可写但高权限主进程会读取并用作
+  控制流数据（数组索引、函数指针、回调结构）的字段。确认写入后主进程是否有边界检查，
+  以及主进程使用该数据时是否仍处于高权限状态（如 drop_privileges 之前）。
+  结合进程崩溃自动重启特性进行 spray 以提高成功率。
+
+reasoning_chain:
+  - "问：目标服务是否采用 prefork/多进程模型，且 worker 与 master 共享内存？"
+  - "问：共享内存区域中有哪些字段会被高权限主进程读取并用于控制流决策（索引、指针、回调）？"
+  - "问：主进程在使用这些字段时是否做了边界检查或完整性校验？"
+  - "问：从字段使用到权限降低（drop_privileges）之间的代码路径有多远？——在降权之前触发才有意义"
+  - "问：低权限 worker 能否通过已有漏洞（PHP UAF、web shell、CGI 漏洞）获得 SHM 写入能力？"
+  - "问：/proc/self/maps 是否可读？——可读则 ASLR/PIE 无效，能精确定位内存布局"
+  - "问：worker 崩溃后是否自动重启？——自动重启意味着可以反复尝试 spray 而不触发 DoS"
+  - "问：触发主进程读取被篡改数据的条件是什么？（graceful restart / SIGHUP / logrotate 等）——多久触发一次？"
+  - "问：能否通过多个 worker 的索引值覆盖不同内存范围来应对目标地址漂移？"
+
+vuln_root: "高权限主进程信任低权限 worker 写入的共享内存数据作为数组索引，未做边界检查，导致 OOB 访问可被武器化为任意函数调用。"
+
+transferable_to:
+  - "其他使用 prefork/worker/event MPM 的 Apache 部署（2.4.17-2.4.38）"
+  - "任何采用共享内存 + 多权限等级进程模型的服务（nginx worker、Postgres shared buffers）"
+  - "通过 PHP/CGI 已获得低权限 webshell 后的本地提权场景"
+  - "容器环境中 Apache 以 root 启动、worker 以 www-data 运行的配置"
+  - "嵌入式系统中主进程与 worker 共享内存且缺少地址空间隔离的架构"
+
+cases:
+  - url: "https://hackerone.com/reports/520903"
+    note: "CVE-2019-0211，Apache 2.4.17-2.4.38，mod_prefork/worker/event，配合 PHP UAF 0-day 实现 www-data→root，约 80% 成功率，$1,500 bounty (IBB)。作者 @cfreal。"

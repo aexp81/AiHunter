@@ -1,0 +1,86 @@
+name: "邮箱/身份变更后旧身份保留残余访问权限"
+id: "EMAIL_IDENTITY_CHANGE_STALE_ACCESS_PERSISTENCE"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["authz", "logic"]
+tags: ["session-management", "email-change", "identity-binding", "access-revocation", "stale-session", "shopify", "partner-portal"]
+source: "https://hackerone.com/reports/870001"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。报告者发现：在 Shopify Partners 中将 business email 替换为新邮箱后，
+  被替换掉的旧邮箱账户仍然可以作为协作者登录并访问之前获得权限的店铺。
+  (原文: "a partner uses another business email account and when the business email
+  has been replaced or deleted from a partner, it turns out that the account still has
+  full access as a collaborator account or still has permission as a partner account.")
+
+hypothesis: >
+  未叙述（仅结果）。隐含假设：变更 partner 账户的 business email 时，
+  系统应撤销旧邮箱关联的所有会话和协作者权限。
+  实际上权限绑定在旧邮箱的 Shopify 账户上，邮箱从 partner 移除后这些权限未被清理。
+
+action_result: >
+  成功：(1) 创建 partner 账户，使用 business email A，获取店铺协作者权限。
+  (2) 在 partner 设置中将 business email 从 A 改为攻击者自己的邮箱 B。
+  (3) 用旧邮箱 A 登录 accounts.shopify.com → 仍然成功。
+  (4) 用旧邮箱 A 访问之前授权的店铺 → 仍有完整权限，且显示为 partner 账户身份。
+  (原文: "entered the store that was added, after successfully logging in it turns out
+  that this account entered using the name of the partner account")
+  #952035 补充验证：变更 Shopify 账户邮箱后，在另一浏览器用旧邮箱登录 → 仍可进入店铺并保持完整访问。
+  (原文: "open another browser (chrome beta) and log in with the old email...
+  still have full access, even after changing my email address")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  单步权限持久化。若旧邮箱已被攻击者接管（如企业员工离职后邮箱被回收），
+  攻击者可通过残留的协作者权限访问所有之前授权的店铺数据。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在支持多身份/邮箱绑定的多租户系统中，将账户的邮箱/身份标识替换为新邮箱后，
+  用旧邮箱尝试登录并访问之前通过该身份获取的资源权限，
+  验证身份变更是否同步撤销了旧身份的会话和资源级访问授权。
+
+reasoning_chain:
+  - "问：系统是否允许用户更换账户邮箱/身份标识？"
+  - "问：更换邮箱后，用旧邮箱是否仍能登录（Session 是否被失效）？"
+  - "问：旧邮箱登录后，之前通过该身份获取的资源权限（协作者/成员/管理员）是否仍然有效？"
+  - "如果仍有效 → 确认漏洞：身份变更未传播到资源级权限绑定"
+  - "延伸测试：团队/组织的成员移除后，该成员的现有会话是否被即时终止？"
+  - "延伸测试：partner/供应商门户的联系邮箱变更后，旧邮箱的 API token / OAuth grant 是否仍然有效？"
+  - "延伸测试：用户删除账户后，已有的 session cookie 是否仍然可用？"
+
+vuln_root: >
+  开发者假设"变更邮箱 = 旧邮箱不再有任何权限"，
+  但实际上协作者/成员权限绑定在旧邮箱的独立 Shopify 账户上，
+  变更 partner 的 business email 不会撤销旧邮箱账户的资源级访问授权，
+  也不会终止旧邮箱的活跃会话。
+
+transferable_to:
+  - "SaaS 平台的 partner/reseller 门户（Shopify Partners, Stripe Connect, HubSpot Partners）"
+  - "任何允许变更主邮箱的多租户系统——变更后检查旧邮箱是否残留权限"
+  - "企业 SSO/IdP 中员工邮箱变更后，旧邮箱在下游 SaaS 应用中的权限是否被撤销"
+  - "OAuth 授权方的邮箱变更后，已授权的第三方应用是否仍可通过旧身份访问"
+
+cases:
+  - url: "https://hackerone.com/reports/870001"
+    title: "access permission is not revoked even if the email has been deleted or changed on the partner account"
+    author: "jaka-tingkir"
+    platform: "Shopify (partners.shopify.com)"
+    severity: "Medium"
+    bounty: "有赏金（金额未公开）"
+    note: >
+      Partner 账户替换 business email 后，旧邮箱仍可作为协作者登录已授权的店铺，
+      保持完整权限。
+  - url: "https://hackerone.com/reports/952035"
+    title: "Admin web sessions remain active after logout of Shopify ID"
+    author: "jaka-tingkir"
+    platform: "Shopify (accounts.shopify.com)"
+    severity: "未评级"
+    bounty: "有赏金（金额未公开）"
+    note: >
+      变更 Shopify 账户邮箱后，旧邮箱在另一浏览器仍可登录并访问店铺，
+      会话未被失效。引用前序报告 #837729（密码可见）。

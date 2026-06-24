@@ -35,3 +35,31 @@ cases:
       拥有对 Shopify 所有私有仓库的 read/write 权限。
       解包命令：npx asar extract app.asar extracted/；
       验证命令：curl -H "Authorization: token $GH_TOKEN" https://api.github.com/user
+  - url: "https://hackerone.com/reports/1703733"
+    title: "Exposure Of Admin Username & Password"
+    platform: "MTN Group (mtnonline.com)"
+    severity: "Critical"
+    bounty: "无赏金 (VDP)"
+    note: >
+      MTN 子域名页面源码中 JavaScript 代码块直接包含明文 uid 和 MD5 密码哈希，
+      用于 mobucksApi.placeAd() 调用。攻击者查看页面源码（Ctrl+U）即可获取凭证，
+      MD5 哈希可直接解密。纯结果文，无导航叙事。
+      (原文: "press CTRL+U to view the source code of this page... Look for this code...
+      uid: 'mtnng', passwd: '███████'...
+      The exposed password is in md5 which I was able to decrypt easily")
+  - url: "https://hackerone.com/reports/344566"
+    title: "Cleartext password exposure allows access to the desafio5estrelas.com admin panel"
+    author: "healdb"
+    platform: "Uber (desafio5estrelas.com)"
+    severity: "Medium"
+    bounty: "$500"
+    note: >
+      Uber 在葡萄牙运营的司机激励网站 desafio5estrelas.com 的 JavaScript 源码中
+      硬编码了管理员登录密码明文，可直接访问管理面板。管理面板暴露了游戏内调查数据
+      和用户 ID（可用于以该用户身份登录网站）。报告为 no-content，信息来自 team summary。
+      (原文 team summary: "exposes an administrator login password through the
+      javascript source... This password allowed remote users access to the
+      administrator panel of the site, which exposed data collected through
+      the in-game surveys, as well as user IDs"
+      原文 researcher summary: "Hard coded password for admin panel in the
+      JavaScript file.")

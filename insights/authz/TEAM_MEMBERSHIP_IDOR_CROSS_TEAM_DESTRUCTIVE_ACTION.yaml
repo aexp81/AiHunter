@@ -1,0 +1,104 @@
+name: "团队成员管理端点 IDOR——替换 team_id + user_id 跨团队移除任意用户"
+id: "TEAM_MEMBERSHIP_IDOR_CROSS_TEAM_DESTRUCTIVE_ACTION"
+applicable: "blackbox"
+phase: "authz"
+also_phases: []
+tags: ["idor", "team-management", "destructive-action", "membership", "brute-force", "mtn", "developer-portal"]
+source: "https://hackerone.com/reports/1448550"
+
+# ——— L3 核心 ———
+
+observation: >
+  开发者门户（developers.mtn.com）的团队成员移除 API 接受 team_id 和 user_id 参数，
+  服务端未校验请求者是否对目标 team_id 有管理权限。
+  (原文: "Modify the request(Our Goal is to remove C from Team B, which we don't have
+  access or permissions to.) Replace the team_id with Team B's team_id.
+  Replace the user_id with C's user_id.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：移除成员 API 仅验证请求者有"某个团队"的管理权限，
+  但未验证 team_id 参数对应的团队是否属于请求者可管理的范围。
+
+action_result: >
+  成功：用账户 A（仅有自己团队的管理权限）发送移除请求，将 team_id 替换为
+  账户 B 的团队 ID、user_id 替换为账户 C 的用户 ID → 账户 C 被从账户 B
+  的团队中移除，并收到 MTN 的移除通知邮件。
+  响应中泄露了目标用户的用户名和团队名称（信息泄露副作用）。
+  (原文: "C will be removed from B's Team B. C will receive an email from MTN
+  telling him/her that he/she has been removed from Team B.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  IDOR 单步即可：team_id 和 user_id 均为 4 位数字，可自动化暴力遍历
+  在 12-20 小时内移除平台上所有用户的所有团队归属。
+  (原文: "If my calculations are correct, it should take 12 Hours to remove every
+  user from every group they're in, the maximum being 20 Hours.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对团队/组织成员管理 API（添加/移除/修改角色）中的 team_id 和 user_id 参数进行
+  交叉替换测试：用自己有管理权限的某个团队的身份去操作另一个团队的成员，
+  检查服务端是否对 team_id 做归属校验。
+
+reasoning_chain:
+  - "问：目标平台有团队/组织/工作区等多租户成员管理功能吗？"
+  - "问：移除/添加/修改角色的 API 请求中是否包含 team_id/org_id 和 user_id 参数？"
+  - "问：这些 ID 是否为短数字序列（4-6 位），容易枚举？"
+  - "用账户 A 拦截移除自己团队成员的请求 → 将 team_id 替换为其他团队、user_id 替换为其他用户。"
+  - "问：请求是否成功？目标用户是否真的被移除？是否收到通知邮件？"
+  - "问：响应中是否泄露了目标用户/团队的元信息（用户名、团队名等）？"
+  - "扩展：同一端点的 添加/修改角色/转移所有权 操作是否也存在类似 IDOR？"
+
+vuln_root: >
+  开发者假设"团队管理 API 的调用者一定是该团队的管理员"，
+  仅校验了请求者是否登录并拥有团队管理权限，但未校验请求中的
+  team_id 是否属于请求者可管理的范围。
+
+transferable_to:
+  - "开发者门户/API 平台的团队/组织成员管理功能"
+  - "SaaS 平台的工作区/项目/频道成员管理 API"
+  - "企业协作工具（Slack/Teams/Lark）的频道成员管理"
+  - "Bug bounty 平台的团队成员管理"
+  - "任何多租户系统中 REST API 接受两个外键（容器 ID + 目标 ID）的破坏性操作"
+
+cases:
+  - url: "https://hackerone.com/reports/1448550"
+    author: "wallotry"
+    platform: "MTN Group (developers.mtn.com)"
+    severity: "Critical"
+    bounty: "无赏金"
+    note: >
+      移除成员 API 的 team_id + user_id 跨团队 IDOR。
+      4 位数 ID 可在 12-20 小时内遍历移除所有用户。
+      附带信息泄露（响应中返回目标用户名和团队名）。
+  - url: "https://hackerone.com/reports/55670"
+    title: "Fabric.io: Ex-admin of an organization can delete team members"
+    author: "satishb3"
+    platform: "Twitter / X (Fabric.io)"
+    severity: "Privilege Escalation"
+    bounty: "$280"
+    note: >
+      Fabric.io 平台：被移除的前管理员仍可使用自己的 session 调用
+      DELETE /api/v3/accounts/{account_id}/organizations/{org_id}/leave
+      端点，将 account_id 和 org_id 替换为其他组织的成员和组织 ID，
+      成功将目标成员从目标组织中移除。API 未校验请求者是否仍为目标组织的成员/管理员。
+      (原文: "When an admin is deleted from an organization, his access
+      rights are not removed properly. This allows an ex-admin to delete
+      team members from the organization.")
+  - url: "https://hackerone.com/reports/837018"
+    title: "Privilege Escalation in BuddyPress core allows Moderate to Administrator"
+    author: "hoangkien1020"
+    platform: "WordPress (BuddyPress)"
+    severity: "Medium"
+    bounty: "有赏金"
+    note: >
+      BuddyPress 群组成员管理 REST API：Moderator 在自己的群组中抓取
+      promote 请求（POST /wp-json/buddypress/v1/groups/{group_id}/members/{user_id}
+      body: action=promote&role=admin），将 group_id 替换为另一个自己仅为
+      Moderator 的群组 ID，user_id 替换为自己的 ID → 成功将自己提升为
+      该群组的 Administrator。API 未校验请求者在目标群组中的实际角色。
+      (原文: "Change [group_A_id] to group you are moderator and [id_user]- your id...
+      Done, you are admin's group A.")
+      2020-04 报告，2020-05 公开。6 votes。

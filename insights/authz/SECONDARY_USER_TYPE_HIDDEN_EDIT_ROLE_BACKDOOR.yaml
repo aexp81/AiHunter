@@ -1,0 +1,83 @@
+name: "非主要用户类型的隐藏编辑端点缺少角色字段保护——mass assignment 创建不可见后门管理员"
+id: "SECONDARY_USER_TYPE_HIDDEN_EDIT_ROLE_BACKDOOR"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["mass-assignment", "hidden-endpoint", "backdoor", "pos-user", "secondary-user-type",
+       "role-escalation", "invisible-admin", "shopify", "rbac"]
+source: "https://hackerone.com/reports/962895"
+
+# ——— L3 核心 ———
+
+observation: >
+  Stocky App 的用户管理页面 (/users) 对 POS User 类型没有提供编辑入口——
+  UI 上只能看到他们和一个删除按钮，但审查删除按钮的 HTML 可以获取 user_id，
+  然后拼接 /users/{user_id}/edit 端点发现该编辑页面实际存在且可用。
+  (原文: "From the users management page...there's no visible way to edit
+  those POS users. Although, it is possible to edit them by inspecting
+  their user id from the delete button and then opening
+  https://stocky.shopifyapps.com/users/{user_id}/edit endpoint.")
+
+hypothesis: >
+  未叙述（仅结果）。报告者发现隐藏编辑端点后直接尝试添加 user[admin]=1
+  参数，成功将 POS 用户提升为管理员。
+  (原文: "you can even make that user an admin by adding user[admin]
+  to the request being sent once you save their profile")
+
+action_result: >
+  成功：通过隐藏编辑端点修改 POS User 的 email 为攻击者控制的邮箱 + 添加
+  user[admin]=1 参数 → POS 用户变成管理员。由于 UI 不为 POS 用户显示
+  admin 列，其他管理员无法发现该用户已被提升为 admin。
+  (原文: "As the UI doesn't show an admin column for POS users,
+  it becomes a bit transparent to any other admins that a POS User
+  does have an actual account and what roles he's assigned to.")
+  无扑空叙述（报告直接给出成功路径）。
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  Admin 权限 + POS User 存在 → 隐藏编辑端点 + mass assignment → 不可见后门管理员
+  → 即使原始 admin 被降权，仍可通过后门 POS 账户维持管理员访问（前提是保留 App 权限）。
+  (原文: "He could then be using that backdoor account at some point later
+  if he does lose its Administrator role from the app")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在有多种用户类型（Staff/POS User/Bot/Service Account 等）的应用中，找到管理 UI
+  上没有完整 CRUD 入口的次要用户类型，通过审查页面 HTML（如删除按钮、隐藏字段）
+  提取其 ID，拼接标准 CRUD 端点（/users/{id}/edit），检查该端点是否存在且缺少
+  角色/权限字段的 mass assignment 保护——将次要用户类型提升为 admin 后，由于
+  UI 不展示该类型的权限列，形成不可检测的后门。
+
+reasoning_chain:
+  - "问：目标应用是否存在多种用户类型（如 Staff、POS User、Bot、Service Account、API User）？"
+  - "问：管理 UI 对各用户类型的管理功能是否完整？是否有某些用户类型只能查看/删除而不能编辑？"
+  - "如果存在仅部分管理的用户类型 → 问：能否从页面 HTML（删除按钮、data 属性、hidden input）中提取该用户的 ID？"
+  - "问：用提取的 ID 拼接标准 CRUD 端点（/users/{id}/edit、PUT /users/{id}）是否返回 200？"
+  - "如果端点存在 → 问：提交请求时添加角色/权限字段（如 user[admin]=1、role=admin）是否被后端接受？"
+  - "如果 mass assignment 成功 → 问：该用户类型的管理列表中是否显示了新添加的角色？（不显示 = 不可检测后门）"
+  - "问：被提权的次要用户能否实际登录并行使 admin 权限？"
+
+vuln_root: >
+  开发者认为 UI 上不提供编辑入口的用户类型不会被修改，因此其后端编辑端点
+  缺少 mass assignment 保护（未将 admin/role 字段列入白名单或黑名单），
+  且管理 UI 不为该用户类型渲染角色信息列，导致提权后不可检测。
+
+transferable_to:
+  - "任何有多种用户类型（正式员工/POS 用户/设备用户/API 密钥）且管理 UI 对部分类型功能不完整的 SaaS 平台"
+  - "嵌入式应用（Shopify App、Slack Bot、WordPress 插件）的用户管理——次要用户类型往往缺少完整的权限模型"
+  - "企业系统中的 Service Account / Machine User——管理界面通常只展示 human user 的权限，service account 的权限可能不可见"
+  - "移动端专属用户类型（POS、Kiosk、IoT Device User）映射到 Web 管理后台时的 CRUD 覆盖差异"
+
+cases:
+  - url: "https://hackerone.com/reports/962895"
+    title: "Stocky App Administrator can create a backdoor admin account by using an existing POS User"
+    platform: "Shopify (Stocky App — stocky.shopifyapps.com)"
+    severity: "Medium"
+    bounty: "有奖金（金额未公开）"
+    note: >
+      Shopify Stocky App：POS User 在管理 UI 中没有编辑入口，但 /users/{id}/edit
+      端点实际存在。通过审查 HTML 获取 user_id → 访问隐藏编辑端点 → mass assignment
+      添加 user[admin]=1 → POS 用户变成 admin 但 UI 不显示其 admin 列 →
+      形成不可检测的后门管理员账户。攻击者需已有 Stocky App Administrator 权限。

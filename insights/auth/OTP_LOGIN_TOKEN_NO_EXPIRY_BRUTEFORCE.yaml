@@ -1,0 +1,88 @@
+name: "手机登录OTP验证token无过期——暴力破解PIN接管账户"
+id: "OTP_LOGIN_TOKEN_NO_EXPIRY_BRUTEFORCE"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["logic"]
+tags: ["otp", "brute-force", "token-expiry", "mobile-auth", "account-takeover", "rate-limit", "pin"]
+source: "https://hackerone.com/reports/766578"
+
+# ——— L3 核心 ———
+
+observation: >
+  Affirm 移动应用的手机号登录流程：输入手机号 → POST /api/v3/login/phone/ 返回
+  含 token 的 response_url → 用该 URL 提交 OTP PIN。发现 token 不会过期，
+  且无暴力破解保护。
+  (原文: "Since SOMETOKEN in the above request doesn't get expired, this request
+  can be sent to Intruder or similar tools to brute force the response OTP parameter.")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  成功：使用 Burp Intruder 对 4 位 PIN 进行暴力破解（0000-9999），
+  通过 200 状态码和响应长度差异识别正确 PIN，获取 Affirm-Client 会话令牌，
+  用该令牌访问 /api/v2/users/{user_id} 获取用户完整个人信息（姓名/地址/DOB/email/手机号）。
+  (原文: "Once the response is valid, this can be verified by the 200 status
+  obtained in the response and the length of the response.")
+
+why_here_first: >
+  未叙述（仅结果）。报告者在移动应用测试中发现该流程。
+  (原文: "While doing the testing for the mobile app, I observed out that it is
+  possible to bypass the authentication")
+
+chaining: >
+  OTP token 不过期 + 无速率限制 → 暴力破解 PIN → 获取会话令牌 → 完整账户接管。
+  (原文: "The fundamental problem here is not that OTP is possible for Bruteforce,
+  but the lack of token expiry generated for login purpose.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对基于手机号 + OTP/PIN 的登录流程，检查 OTP 验证 token 是否有过期时间和
+  尝试次数限制：1) 获取 token 后等待较长时间再提交 PIN，观察是否仍有效；
+  2) 对 PIN 字段进行暴力枚举（4位数 = 10000种），观察是否有速率限制或锁定机制。
+
+reasoning_chain:
+  - "问：登录/验证流程是否使用手机号 + OTP/PIN 模式？"
+  - "问：请求 OTP 时返回的 token/URL 是否有过期时间？等待 5 分钟、1 小时后重试是否仍有效？"
+  - "问：PIN 提交端点是否有速率限制？连续提交 100 个错误 PIN 会怎样？"
+  - "问：PIN 长度是多少位？4 位 = 10,000 种组合，6 位 = 1,000,000 种——4 位在无限制下可快速穷举。"
+  - "问：正确 PIN 的响应与错误 PIN 的响应有何差异（状态码/响应长度/响应体字段）？"
+  - "如果 token 不过期且无速率限制 → 使用 Intruder 暴力枚举 PIN → 获取会话令牌 → 验证账户接管。"
+
+vuln_root: >
+  开发者假设 OTP 验证 token 和 PIN 组合的安全性足够（短时间内用户会输入正确 PIN），
+  但未实施 token 过期和尝试次数限制，4 位 PIN 的有限空间使暴力破解可行。
+
+transferable_to:
+  - "任何使用手机号 + 短 PIN/OTP 登录的移动应用"
+  - "两步验证流程中第二步（PIN/OTP 验证）独立于第一步（手机号提交）的系统"
+  - "金融科技应用（如 BNPL 服务）的手机登录验证"
+  - "SMS 验证码作为唯一认证因子的服务（无密码登录）"
+
+cases:
+  - url: "https://hackerone.com/reports/766578"
+    title: "Absence of Token expiry leads to Unauthorized login Access"
+    platform: "Affirm"
+    severity: "Critical"
+    bounty: "有奖金（金额未公开）"
+    note: >
+      Affirm 移动应用手机号登录，POST /api/v3/login/phone/ 获取 token，
+      token 不过期且无速率限制，4 位 PIN 可暴力穷举。
+      成功后获取 Affirm-Client 会话令牌，可访问用户完整个人信息。
+  - url: "https://hackerone.com/reports/205000"
+    title: "Authorization bypass using login by phone option+horizontal escalation possible on Grab Android App"
+    author: "sp1d3rs"
+    platform: "Grab"
+    severity: "High (CVSS 7.5)"
+    bounty: "有奖金（金额未公开）"
+    note: >
+      Grab Android App 手机号登录流程：activationsms 端点重发 OTP 仅有 30 秒冷却
+      但无总次数限制，activate 端点每次 OTP 仅允许 3 次尝试但可无限重发。
+      攻击者固定 3 个候选 PIN（如 1056/1057/1058），每 30 秒重发一次新 OTP 并
+      尝试 3 次，等效 6 次/分钟、8640 次/24h，4 位 PIN（9999 值）在 24-72h 内
+      大概率命中。
+      (原文: "This gave us 6 attempts in the minute, 360 attempts in the hour,
+      and 8640 attempts in 24 hour")
+      approach 相同：OTP 重发无总次数限制 + PIN 空间过小 → 暴力破解接管账户。
+      与 Affirm 案例的差异：Affirm 是 token 不过期可直接穷举；Grab 是 OTP 重发
+      无限制 + 固定候选码等待服务器生成匹配码（概率性碰撞）。

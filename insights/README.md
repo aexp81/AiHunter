@@ -3,7 +3,8 @@
 由 `/learn-writeup` 写入，schema 见项目 CLAUDE.md 第 8 节。
 
 ## 目录 = 挖洞阶段（phase）
-recon / auth / authz / input / logic / chain。一条思路一个文件，文件名 = id。
+<!-- [原始] recon / auth / authz / input / logic / chain。一条思路一个文件，文件名 = id。 -->
+recon / auth / authz / input / logic / chain / supply-chain。一条思路一个文件，文件名 = id。
 跨阶段的思路放“主阶段”目录，其余阶段写进 `also_phases` 字段（不靠目录硬分）。
 
 ## 去重键（重要，C1 修正）

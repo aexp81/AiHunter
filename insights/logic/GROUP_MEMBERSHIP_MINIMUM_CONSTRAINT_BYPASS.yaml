@@ -1,0 +1,68 @@
+name: "管理组成员修改 API 未强制最少成员约束——移除全部管理员致程序失控"
+id: "GROUP_MEMBERSHIP_MINIMUM_CONSTRAINT_BYPASS"
+applicable: "blackbox"
+phase: "logic"
+also_phases: ["authz"]
+tags: ["rbac", "group-management", "minimum-constraint", "admin-removal", "api-logic",
+       "destructive-action", "hackerone"]
+source: "https://hackerone.com/reports/141629"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。报告者发现 HackerOne 平台的 PUT /TEAM/groups/{id} API
+  接受 team_member_ids 数组参数，可以将 Admin 组的成员列表缩减为任意子集。
+  (原文: "{\"id\":12307,\"name\":\"Admin\",\"team_members_count\":2,\"permissions\":
+  [\"user_management\",\"program_management\"],\"immutable\":true,
+  \"team_member_ids\":[{\"id\":\"17940\"}]}")
+
+hypothesis: >
+  未叙述（仅结果）。推断：如果 API 未检查修改后 Admin 组是否仍包含至少一名成员，
+  则攻击者可将自己从 Admin 组移除或清空全部管理员，致使程序失去管理控制。
+
+action_result: >
+  成功：通过 PUT 请求修改 Admin 组的 team_member_ids，
+  将管理员移除使程序变为无管理员状态（"admin free"）。
+  (原文: "using which i am able to make the my program admin free.
+  This shouldn't be happen in the program because atleast one admin be there in program.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: "N/A"
+
+# ——— 落地检查清单 ———
+
+approach: >
+  测试角色/组成员修改 API 是否强制执行"至少保留 N 个成员"等业务约束——
+  尝试清空全部管理员、移除最后一个 owner、将成员数减至零等边界操作。
+
+reasoning_chain:
+  - "问：目标平台的团队/组织管理功能是否有管理员组或 owner 角色？"
+  - "问：修改组成员的 API 端点接受哪些参数？——是否可直接传入 team_member_ids 数组覆盖成员列表？"
+  - "问：将 Admin 组的 team_member_ids 设为空数组或仅包含非管理员用户会怎样？——API 是否返回错误？"
+  - "如果 API 允许清空 → 程序进入无管理员状态，可能导致永久失控"
+  - "问：是否有 immutable 标志但后端未实际强制执行该约束？"
+  - "问：非管理员用户是否也能调用此 API 修改管理员组成员？（与 IDOR/权限提升交叉）"
+
+vuln_root: >
+  开发者在 API 层未强制执行"Admin 组至少保留一名成员"的业务不变量，
+  仅依赖前端 UI 层阻止用户移除最后一个管理员。
+
+transferable_to:
+  - "SaaS 平台的团队/组织管理——修改角色组成员列表的 API"
+  - "CMS/论坛/项目管理工具中管理员组的成员增删功能"
+  - "任何有 'immutable' 或 'protected' 标志的系统对象——验证标志是否在后端实际强制执行"
+  - "owner 转移/删除 API——是否允许组织进入无 owner 状态"
+
+cases:
+  - url: "https://hackerone.com/reports/141629"
+    title: "Able to remove the admin access of my program"
+    author: "pardeepbattu02"
+    platform: "HackerOne"
+    severity: "Low"
+    bounty: "有赏金（金额未公开）"
+    note: >
+      HackerOne 平台：PUT /TEAM/groups/{id} 端点允许管理员修改 Admin 组
+      的 team_member_ids，可以将所有管理员移除使程序变为无管理员状态。
+      API 中 Admin 组标记为 immutable:true 但后端未实际阻止清空成员。
+      2016 年报告。纯结果文，无导航叙事。

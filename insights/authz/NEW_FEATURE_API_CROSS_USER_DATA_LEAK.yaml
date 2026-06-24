@@ -1,0 +1,101 @@
+name: "新功能 API 响应跨用户数据泄露——beta 阶段的查询未做用户隔离"
+id: "NEW_FEATURE_API_CROSS_USER_DATA_LEAK"
+applicable: "blackbox"
+phase: "authz"
+also_phases: []
+tags: ["new-feature", "api-response", "cross-user", "data-leak", "beta", "overfetch", "skills"]
+source: "https://hackerone.com/reports/188719"
+
+observation: >
+  /skills API 调用的响应中包含了所有提交审核的报告信息，而非仅限当前用户自己的数据。
+  (原文: "IN respone of above request all reports submitted for review are getting disclosed.")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  访问 /settings/skills 对应的 API 端点，在响应中看到其他用户提交的报告标题
+  作为 skill 证明材料被返回。
+  (原文: "Due to an incorrectly written query, the proof, which includes report titles, was exposed to all other hackers that applied for the same skill set." — 团队确认)
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: "N/A — 单步信息泄露，但泄露的是私有项目的报告标题"
+
+approach: >
+  当平台新上线涉及多用户协作或共享数据的功能（如 skills、团队匹配、群组推荐）时，
+  检查 API 响应是否包含了其他用户的数据——特别是 beta 阶段用户量少时，
+  查询可能未做用户隔离就返回了全量结果。
+
+reasoning_chain:
+  - "问：目标平台最近是否新增了涉及多用户关联的功能？（技能匹配、推荐、排行榜、群组等）"
+  - "问：该功能的 API 响应中是否包含其他用户提交的数据？（检查 JSON 响应中的列表/数组字段）"
+  - "问：返回的列表是否按当前用户 ID 过滤，还是返回了全部或同组用户的数据？"
+  - "如果返回了其他用户的数据 → 查询缺少 user_id scoping"
+  - "问：泄露的字段是否包含敏感信息？（报告标题、邮箱、私有项目名等）"
+
+vuln_root: "新功能的数据库查询未加用户隔离条件（WHERE user_id = ?），导致 API 响应包含跨用户数据。"
+
+transferable_to:
+  - "任何新增 skills/能力证明/推荐匹配功能的平台"
+  - "beta/灰度发布阶段的社交或协作功能"
+  - "涉及用户分组或标签匹配的 SaaS API"
+  - "内部工具中的审批/审核流程 API 可能泄露其他审批人的数据"
+
+cases:
+  - url: "https://hackerone.com/reports/188719"
+    note: "HackerOne /skills API 泄露其他用户的已修复报告标题，$10,000，beta 阶段仅约 20 人有权限时发现。"
+  - url: "https://hackerone.com/reports/3279508"
+    note: "WakaTime 私有排行榜：创建排行榜→邀请用户加入→用户接受后，排行榜页面/API 响应中暴露用户设为私有的邮箱地址。CVSS 4.3，Medium。社交功能（排行榜）未对私有字段做隐私过滤，approach 与 skills API 泄露同构——多用户关联功能返回未做隐私 scoping 的数据。"
+  - url: "https://hackerone.com/reports/2140960"
+    note: "X/Twitter 隐藏点赞功能绕过：Premium 用户启用 hidden likes 后，认证用户仍可通过 GraphQL API 端点 /i/api/graphql/.../Likes?variables={userId:目标ID} 直接查询到被隐藏的点赞列表。新上线的隐私可见性功能仅在 UI 层面隐藏，后端 API 未检查目标用户的 likes 可见性设置。Medium，有 bounty。"
+  - url: "https://hackerone.com/reports/2524939"
+    title: "[Spot Check] - Ability to disclose metadata about Spot Checks (Number of Hackers + Hackers Criteria) via SpotCheckSingleQuery"
+    platform: "HackerOne"
+    severity: "Medium (CVSS 4.3)"
+    bounty: "有赏金（金额未公开）"
+    note: >
+      Hacker 接受 Spot Check 邀请后，直接导航到 /organizations/ORG/spot_checks/ID
+      （程序方视角 URL），通过 SpotCheckSingleQuery GraphQL 查询获取本应仅对程序方可见的
+      机密元数据：参与 hacker 数量和 hacker 选择标准。
+      新功能（Spot Check）的不同角色视图返回了不同粒度的数据，
+      hacker 侧视图未做字段裁剪即返回了程序方专用字段。纯结果文，无导航叙事。
+      (原文: "I was able to open the Spot Check settings as a program,
+      which leaked metadata that should be confidential such as:
+      Number of Hackers and the Hackers Selection Criteria.")
+  - url: "https://hackerone.com/reports/2610467"
+    title: "Able to see location coordinates in any event without permission to do so"
+    platform: "FetLife"
+    severity: "Low"
+    bounty: "有赏金（金额未公开）"
+    note: >
+      活动主持人通过隐私设置隐藏了活动地址（"Address & Name of Location"），
+      但 GET /events/{event-id} 的 API 响应中仍返回了 location 坐标。
+      UI 层隐藏了地址，但后端 API 未根据隐私设置过滤坐标字段。
+      纯结果文，无导航叙事。
+      (原文: "You can see the location coordinates in endpoint
+      https://fetlife.com/events/{event-id} response even though the host
+      event has blocked non-RSVP users from seeing the exact address.")
+  - url: "https://hackerone.com/reports/3114132"
+    title: "Broken Access Control Exposes Email Verification Status and Privacy Settings via API Endpoint"
+    author: "ctrl_cipher"
+    platform: "WakaTime"
+    severity: "Low"
+    note: >
+      /api/v1/users/{username} 端点将 URL 中 username 替换为任意用户名，
+      响应中泄露 is_email_confirmed、is_email_public 等隐私元数据。
+      UI 端不可见但 API 直接返回。无赏金。纯结果文，无导航叙事。
+      (原文: "The /api/v1/users/{username} endpoint leaks sensitive email-related
+      metadata (e.g., is_email_confirmed, is_email_public) without proper
+      authorization checks.")
+  - url: "https://hackerone.com/reports/244781"
+    title: "Users with member privilege are able to see emails and membership information of other users"
+    platform: "WakaTime"
+    severity: "Medium"
+    bounty: "无赏金"
+    note: >
+      WakaTime 排行榜团队：Member 角色在 UI 上无法查看其他成员信息，
+      但通过 /api/v1/users/current/leaderboards/<team_id>/members 端点
+      可获取所有团队成员的邮箱地址。仅 Owner/Admin 应有权访问该信息。
+      纯结果文，无导航叙事。
+      (原文: "Through API it is possible for a user with member role to reveal
+      personal information of all team members.")

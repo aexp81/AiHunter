@@ -1,0 +1,108 @@
+name: "postMessage 路由 API 路径穿越——逃逸 Admin iframe 加载攻击者控制页面执行 XSS"
+id: "POSTMESSAGE_PUSHSTATE_PATH_TRAVERSAL_XSS"
+applicable: "blackbox"
+phase: "input"
+also_phases: ["authz"]
+tags: ["postmessage", "path-traversal", "xss", "admin-panel", "iframe", "pushstate", "shopify", "embedded-app", "CWE-79"]
+source: "https://hackerone.com/reports/662083"
+
+# ——— L3 核心 ———
+
+observation: >
+  Shopify Admin 面板的嵌入式应用框架提供 Shopify.API.pushState 方法，
+  通过 postMessage 接收 pathname 参数并拼接到 adminPath（/admin）后进行路由跳转。
+  handleRoutePushEvent 的实现为 `"".concat(adminPath).concat(pathname)`，
+  当 pathname 以 `/../` 开头时，浏览器 URL 解析会将 /admin 抵消，
+  从而加载 admin 之外的任意路径到 admin 面板的主内容区域。
+  (原文: "Shopify.API.pushState call the method handleRoutePushEvent,
+  allows you to change routes to open pages from admin panel"
+  "If we use the prefix `..` in `pathname` It will removes `admin`
+  (`/admin/../pages/xss` -> `/pages/xss`)")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  成功利用：
+  1. 创建含恶意 JS 的商店页面（/pages/xss），脚本可读取 CSRF token、cookies、document 对象
+  2. 创建触发页面（/pages/xss-play），通过 window.open 打开 /admin/themes
+  3. 向新窗口发送 postMessage: {message: 'Shopify.API.pushState', data: {pathname: "/../pages/xss"}}
+  4. Admin 面板的 AppFrameMain 被替换为攻击者控制的页面内容
+  5. 恶意 JS 在 admin session 上下文中执行，可提取 CSRF token 和 Store 配置
+  (原文: "Admin panel has been opened and script executed"
+  "Abuse the active admin session to extract data as: CSRF token. Store config.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  路径穿越加载非 admin 页面 → 攻击者控制的 HTML/JS 在 admin session 上下文执行
+  → 可窃取 CSRF token、Store 配置等敏感数据 → 可进一步利用 CSRF token 执行管理操作。
+  (原文: "CSRF token. Store config.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  审计 SPA/嵌入式应用框架中通过 postMessage 控制路由跳转的 API（如 pushState、
+  replaceState、navigate），检查 pathname 参数是否允许 `../` 路径穿越，
+  从而逃逸受限的路由前缀（如 /admin/）加载攻击者可控页面内容。
+
+reasoning_chain:
+  - "问：目标应用的嵌入式框架或 SDK 是否提供 postMessage 路由控制 API（如 pushState/navigate）？"
+  - "黑盒：在浏览器 DevTools 中搜索 window.addEventListener('message') 和 postMessage 调用。"
+  - "问：路由 API 是否将用户输入的 pathname 直接拼接到固定前缀（如 /admin/）？"
+  - "如果是 → 尝试发送 pathname: '/../attacker-controlled-path'，观察最终 URL 是否逃逸前缀。"
+  - "问：逃逸后加载的页面是否在同一 session 上下文中渲染？（在 admin iframe/主内容区域中）"
+  - "如果是 → 该页面中的 JS 是否能访问 admin session 的 cookies / CSRF token / DOM？"
+  - "问：攻击者能否在目标域名下创建可控内容的页面（如商店自定义页面、用户个人资料页）？"
+  - "如果可以 → 在可控页面中注入恶意 JS，通过 postMessage 路径穿越在 admin 上下文中触发执行。"
+
+vuln_root: >
+  路由 API 将用户提供的 pathname 直接拼接到路由前缀而未过滤 `../` 路径穿越字符，
+  且浏览器 URL 规范化会解析掉前缀——开发者假设 pathname 总是相对于 admin 的子路径。
+
+transferable_to:
+  - "任何提供 postMessage-based 路由控制 API 的 SPA 框架或嵌入式应用 SDK"
+  - "Shopify 嵌入式应用、Chrome 扩展的 content script 通信、Salesforce Lightning 组件"
+  - "管理面板中加载第三方插件/应用的 iframe 框架"
+  - "通过 window.open 或 iframe postMessage 控制子窗口导航的多窗口应用"
+
+cases:
+  - url: "https://hackerone.com/reports/662083"
+    title: "Inject page in admin panel via Shopify.API.pushState"
+    author: "tiago-danin"
+    platform: "Shopify (your-store.myshopify.com)"
+    severity: "Low"
+    bounty: "$500"
+    note: >
+      Shopify Admin 嵌入式应用 API pushState 路径穿越：pathname 以 /../ 开头
+      逃逸 /admin/ 前缀，在 Admin 面板 AppFrameMain 中加载攻击者控制的商店页面。
+      恶意 JS 可读取 CSRF token 和 document.cookie。纯结果文，无导航叙事。
+      (原文: "Shopify.API.pushState call the method handleRoutePushEvent...
+      If we use the prefix `..` in `pathname` It will removes `admin`")
+  - url: "https://hackerone.com/reports/868615"
+    title: "Inject page in admin panel via Shopify.API.pushState with protocol invalid"
+    author: "tiago-danin"
+    platform: "Shopify (your-store.myshopify.com)"
+    severity: "Low"
+    bounty: "$500"
+    note: >
+      #662083 的绕过变种：原修复过滤了 `../` 路径穿越，但未测试无效协议前缀。
+      使用 pathname: "invalid:pages/xss"（无效协议 + 路径）绕过过滤方法，
+      仍可在 Admin 面板中加载攻击者控制的商店页面执行 JS。
+      纯结果文，无导航叙事，仅说明"today I found a new payload"。
+      (原文: "Today I found a new payload, invalid protocol are not tested
+      correctly in filter method."
+      "data: {pathname: \"invalid:pages/xss\"}")
+  - url: "https://hackerone.com/reports/883867"
+    title: "Inject page in admin panel via Shopify.API.pushState [New Payload]"
+    author: "tiago-danin"
+    platform: "Shopify (your-store.myshopify.com)"
+    severity: "Low"
+    bounty: "$500"
+    note: >
+      #868615 修复的第二次绕过：前次修复过滤了无效协议前缀，但未正确处理
+      混合协议+路径穿越的组合。使用 pathname: "abc:d../pages/xss#//" 绕过过滤，
+      通过 Shopify.API.replaceState（而非 pushState）仍可在 Admin 面板中加载
+      攻击者控制页面，提取 CSRF token 和 Store 配置。纯结果文，无导航叙事。
+      (原文: "The correction for #868615, allows you to use new payload"
+      "data: {pathname: \"abc:d../pages/xss#//\"}"
+      "Abuse the active admin session to extract data as: CSRF token. Store config.")

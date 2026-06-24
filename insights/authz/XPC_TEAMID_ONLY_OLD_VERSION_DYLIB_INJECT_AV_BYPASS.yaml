@@ -1,0 +1,92 @@
+name: "XPC 服务仅验证 Team ID——下载旧版本应用注入 dylib 绕过安全扩展"
+id: "XPC_TEAMID_ONLY_OLD_VERSION_DYLIB_INJECT_AV_BYPASS"
+applicable: "whitebox"
+phase: "authz"
+also_phases: ["chain"]
+tags: ["macos", "xpc", "team-id", "dylib-proxying", "library-validation",
+       "av-bypass", "kaspersky", "system-extension", "code-injection",
+       "hardened-runtime", "entitlements", "old-version-downgrade"]
+source: "https://hackerone.com/reports/980876"
+
+# ——— L3 核心 ———
+
+observation: >
+  Kaspersky Internet Security 的 macOS 系统扩展（SEXT）通过 XPC 接收配置指令，
+  shouldAcceptNewConnection: 方法中仅验证连接进程的 Team ID 是否匹配，
+  不验证 bundle ID、最低版本号或其他代码完整性属性。
+  (原文: "The service only verifies if the Team ID is the one expected, but nothing else.
+  Unfortunately this allows someone talk to the XPC service who can inject code
+  into a custom Kaspersky process.")
+
+hypothesis: >
+  当前版本的 AV 已启用 hardened runtime 防注入，但旧版本安装器拥有
+  disable-library-validation 权限——下载旧版安装包，注入 dylib 到旧版进程中，
+  旧版进程共享相同 Team ID，即可被 XPC 服务接受。
+  (原文: "The latest version of the AV is properly hardened against injection attacks,
+  however that is not true to older versions. What an attacker can do is downloading
+  an old version of KIS and injecting code into that.")
+
+action_result: >
+  1. 从官网下载旧版 KIS DMG（kavmac20.0.0.829...），确认其中 Kaspersky Downloader.app
+     拥有 com.apple.security.cs.disable-library-validation 权限 →
+     允许加载未签名/第三方 dylib。
+  2. 用 dylib proxying 技术替换 libkl_appkit.dylib：重命名原始 dylib 为
+     libkl_appkit_orig.dylib，编译恶意 dylib 并 reexport 原始 → 修正路径 → 签名。
+  3. 运行旧版安装器 → 恶意 dylib 被加载 → 以 Kaspersky Team ID 身份连接 XPC →
+     调用 getEndpointForProtocol 获取 FileMonitorProtocol endpoint →
+     成功调用 DisableReadonlyVolumeScan 禁用扫描。
+  4. 还可以获取 ConnectionInterceptorProtocol 等其他协议 → 完全控制 AV 功能。
+  (原文: "In the POC I ask for the FileMonitorProtocol, but I could do any other
+  (e.g.: ConnectionInterceptorProtocol), there are plenty...
+  FileMonitor: disabling read-only volume scan")
+
+why_here_first: >
+  研究者首先查看系统扩展的 Info.plist 找到 XPC Mach service name，
+  然后逆向 shouldAcceptNewConnection: 方法发现仅做 Team ID 比对 →
+  自然想到用同 Team ID 的其他进程来通信，而旧版本是最容易获取的同 Team ID 目标。
+  (原文: "The Mach service name for the XPC connection can be found in the Info.plist
+  file of the system extension... The handler for the first contact is the
+  shouldAcceptNewConnection: method of the IPCService class")
+
+chaining: >
+  旧版本应用下载(Low) → dylib proxying 注入(Medium) → XPC Team ID 校验绕过(High)
+  → 完全控制安全扩展功能——禁用文件监控、网络拦截等(Critical)。
+  关键前提：供应商历史版本可公开下载，且旧版未启用 library validation。
+
+approach: >
+  逆向 macOS 安全产品的 XPC 服务 → 检查 shouldAcceptNewConnection: 是否仅做 Team ID
+  验证而缺少 bundle ID/版本/hardened runtime 检查 → 从官网下载该供应商的历史版本
+  应用（通常缺少 hardened runtime 或 library validation）→ 用 dylib proxying
+  注入代码到旧版进程 → 以合法 Team ID 连接 XPC 服务获得完全控制。
+
+reasoning_chain:
+  - "问：目标安全产品是否使用 XPC 在组件间通信？（检查 Info.plist 中的 NEMachServiceName）"
+  - "问：XPC 服务端的 shouldAcceptNewConnection: 方法做了哪些客户端验证？（反编译检查）"
+  - "如果只验证 Team ID → 问：是否有同一 Team ID 下的其他可执行文件可被注入代码？"
+  - "问：供应商的官网或 CDN 上是否能下载到历史版本的安装包？"
+  - "问：历史版本的 entitlements 是否包含 disable-library-validation 或 allow-dyld-environment-variables？"
+  - "如果历史版本可注入 → 用 dylib proxying 注入恶意代码后，以旧版进程的 Team ID 连接 XPC 是否被接受？"
+  - "问：XPC 服务暴露了哪些 protocol？（通过 getEndpointForProtocol: 枚举）各协议能执行什么操作？"
+  - "问：XPC 配置变更后，UI 是否同步更新？（如果不同步，攻击更隐蔽）"
+
+vuln_root: >
+  XPC 服务端仅以 Team ID 作为信任锚点，未验证连接进程的 bundle ID、最低版本号
+  或是否启用 hardened runtime——只要攻击者能找到同一 Team ID 下任何可注入的进程
+  （历史版本），就能完全绕过验证。
+
+transferable_to:
+  - "macOS 安全软件（杀毒、EDR、防火墙）使用 XPC 做组件间通信的产品"
+  - "macOS 系统扩展（Network Extension、Endpoint Security Extension）的 XPC 配置接口"
+  - "任何使用 Mach Service + Team ID 验证的 macOS 守护进程"
+  - "企业 MDM agent 通过 XPC 暴露管理接口的场景"
+  - "类似模式的 Windows 场景：COM 对象仅验证签名发布者而不验证版本号"
+
+cases:
+  - source: "https://hackerone.com/reports/980876"
+    title: "[Fixed] KIS for macOS is vulnerable to AV bypass due to improper client authorization on XPC service"
+    context: >
+      Kaspersky Internet Security macOS 系统扩展的 XPC 服务仅验证 Team ID，
+      攻击者下载旧版 KIS DMG（v20.0.0.829），其中安装器拥有 disable-library-validation
+      权限，通过 dylib proxying 注入代码后以合法 Team ID 连接 XPC，
+      可调用 FileMonitorProtocol.DisableReadonlyVolumeScan 等方法完全控制 AV 功能。
+      CVE-2021-26718。

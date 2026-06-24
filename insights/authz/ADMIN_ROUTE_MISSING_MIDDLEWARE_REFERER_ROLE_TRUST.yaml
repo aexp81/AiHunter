@@ -1,0 +1,87 @@
+name: "管理路由缺少鉴权中间件且 Referer 头决定管理员角色——普通用户创建管理员账户"
+id: "ADMIN_ROUTE_MISSING_MIDDLEWARE_REFERER_ROLE_TRUST"
+applicable: "both"
+phase: "authz"
+also_phases: ["auth"]
+tags: ["privilege-escalation", "missing-middleware", "referer-trust", "setup-flow", "admin-creation", "express", "nodejs", "CVE-2018-16483"]
+source: "https://hackerone.com/reports/343626"
+
+# ——— L3 核心 ———
+
+observation: >
+  审计 express-cart（Node.js 电商应用）的路由文件发现，user.js 中的所有端点
+  未像其他 admin 路由那样被 common.restrict 中间件保护。
+  进一步审查 /admin/user/insert 端点发现，它通过检查 Referer 头是否包含
+  /admin/setup 来决定新用户是否为管理员。
+  (原文: "I noticed that all the endpoints located in the user.js file are not
+  being restricted by the common.restrict middleware, as the other admin routes do."
+  以及 "let urlParts = url.parse(req.header('Referer'));
+  let isAdmin = false; if(urlParts.path === '/admin/setup'){ isAdmin = true; }")
+
+hypothesis: >
+  既然用户管理端点缺少鉴权中间件，任何已登录的普通用户都能直接调用
+  /admin/user/insert；再结合 Referer 头的 /admin/setup 检查，
+  只需伪造 Referer 就能以管理员身份创建新用户。
+  (原文推断自 PoC 构造: 将 Referer 设为 http://localhost:1111/admin/setup
+  并以 NORMAL_USER_COOKIE 发送 POST 请求)
+
+action_result: >
+  成功：以普通用户 cookie 发送 POST /admin/user/insert，
+  Referer 设为 http://localhost:1111/admin/setup，
+  请求体包含新用户凭据，服务端成功创建了管理员账户。
+  (原文: "POST /admin/user/insert HTTP/1.1...Referer: http://localhost:1111/admin/setup
+  ...Cookie: connect.sid=[NORMAL_USER_COOKIE]
+  usersName=NEWADMIN&userEmail=new@admin.com&userPassword=password")
+
+why_here_first: >
+  从代码审计入手，对比 user.js 和其他 admin 路由的中间件配置差异——
+  其他 admin 路由都有 common.restrict 保护，user.js 路由没有，
+  这个差异直接引导研究者关注这些未保护的端点。
+  (原文: "all the endpoints located in the user.js file are not being restricted
+  by the common.restrict middleware, as the other admin routes do")
+
+chaining: >
+  中间件缺失（普通用户可调用 admin 端点）+ Referer 信任（isAdmin 判断基于
+  客户端可控 header）→ 任意普通用户创建管理员 → 接管整个应用。
+  (原文: "This vulnerability would allow any registered user to create another
+  user with administrator privileges and takeover the application.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在 Node.js/Express（或类似中间件架构的框架）应用中，diff 各路由文件的中间件配置，
+  寻找缺少鉴权中间件的管理端点；然后审计"首次安装/setup"流程的角色分配逻辑，
+  检查其是否依赖客户端可控信号（Referer、URL 参数、Cookie 值）来判定管理员身份——
+  若 setup 路径在安装完成后仍可被重放或伪造引用。
+
+reasoning_chain:
+  - "白盒：diff 管理路由和普通路由的中间件/守卫配置——是否有路由文件遗漏了鉴权中间件（如 authRequired、isAdmin、restrict）？"
+  - "白盒：grep -rn 'restrict\\|isAdmin\\|authRequired\\|requireAuth' 路由目录，比对覆盖率"
+  - "问：遗漏鉴权的端点中，是否有 /user/insert、/user/create、/settings/update 等敏感操作？"
+  - "问：安装/setup 流程的角色分配逻辑是否依赖 Referer、Origin 或 URL 参数来判定管理员身份？"
+  - "问：安装完成后，setup 端点或其 Referer 检查是否仍然可被重放——即是否有 'installed' 状态锁？"
+  - "如果无状态锁 → 伪造 Referer 为 /admin/setup 并调用 /admin/user/insert，是否能创建管理员？"
+  - "黑盒：以低权限用户尝试直接 POST /admin/user/insert（或类似路径），观察是否返回 403/401 还是正常处理？"
+
+vuln_root: >
+  开发者在添加路由文件时遗漏了鉴权中间件（不一致的安全配置），
+  且 setup 流程的管理员判定逻辑依赖不可信的客户端 Referer 头而非服务端状态检查。
+
+transferable_to:
+  - "Node.js/Express 应用——新路由文件容易遗漏 app.use(authMiddleware) 保护"
+  - "Django/Flask 应用——新增 Blueprint/Router 时遗漏 @login_required 或权限装饰器"
+  - "任何有 setup/wizard 首次安装流程的 Web 应用——setup 完成后的状态锁和角色分配逻辑"
+  - "CMS 系统（WordPress、Ghost、Strapi）的安装流程——检查安装完成后 setup 端点是否仍可访问"
+  - "开源电商平台（Saleor、Medusa、Vendure）的用户管理 API——中间件覆盖率差异"
+
+cases:
+  - url: "https://hackerone.com/reports/343626"
+    title: "Privilege escalation allows any user to add an administrator"
+    author: "patrickrbc"
+    platform: "Node.js third-party modules (express-cart)"
+    severity: "Critical (CVSS 9.9, CVE-2018-16483)"
+    bounty: "无"
+    note: >
+      express-cart 1.1.5：user.js 路由未被 common.restrict 中间件保护，
+      /admin/user/insert 通过 Referer 头包含 /admin/setup 判定管理员身份，
+      任何已注册用户可伪造 Referer 创建管理员账户并接管应用。

@@ -1,0 +1,93 @@
+name: "注册邮箱追加控制字符绕过 SAML 域名强制——预占目标组织账户"
+id: "SIGNUP_EMAIL_CONTROL_CHAR_DOMAIN_ENFORCEMENT_BYPASS"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["chain"]
+tags: ["saml", "sso", "email-normalization", "control-characters", "crlf", "domain-enforcement", "signup-bypass", "hackerone", "account-takeover"]
+source: "https://hackerone.com/reports/2101076"
+
+# ——— L3 核心 ———
+
+observation: >
+  作者发现 HackerOne 的注册接口对 SAML-enabled 组织的邮箱域名有强制跳转到 SSO 的逻辑——
+  使用 @hackerone.com 域名注册时，POST /users 返回 redirect_path 到 SAML sign_in。
+  但在邮箱参数末尾追加 %0d%0a（CRLF）后，域名匹配被绕过，请求正常通过。
+  (原文: "adding a %0d%0a in the end of the email param will make the request
+  go through")
+
+hypothesis: >
+  邮箱域名检查在字符串比较时没有对控制字符做 strip/normalize，
+  导致 "email@example.com\r\n" 不匹配 "example.com" 的域名规则，
+  但后续的账户创建/邮件发送流程会自动忽略尾随控制字符，
+  实际创建的账户绑定的是原始有效邮箱。
+  (原文: "email domains enforced by HackerOne SSO are not allowed for
+  regular registration... However, adding a %0d%0a in the end of the
+  email param will make the request go through")
+
+action_result: >
+  成功：与 @jobert 合作创建了 j@hackerone.com 的账户。
+  当邮箱所有者（HackerOne 员工）点击验证邮件后，
+  攻击者可用预设密码登录该账户，并通过 "Sign in with HackerOne"
+  访问 PullRequest 平台获取 HackerOne 源代码。
+  (原文: "The following steps were followed along with @jobert to create
+  a j@hackerone.com account that will then allow access to PullRequest")
+
+  扑空路径：作者 18 个月前就创建了 0xacb@hackerone.com 账户，
+  但直到 h1-702-2023 与 jobert 讨论后才意识到可以串链到 PullRequest 访问。
+  (原文: "The 0xacb@hackerone.com was created around 18 months ago -
+  I didn't realize any impact until now after showing this behavior to
+  @jobert during h1-702-2023")
+
+why_here_first: >
+  未叙述（仅结果）——作者未说明为何首先测试注册端点的邮箱参数。
+
+chaining: >
+  邮箱域名检查绕过 → 创建目标组织域名的账户 → 等待邮箱验证（需社工/等待） →
+  通过 SSO 信任链访问第三方服务（PullRequest）→ 源代码泄露。
+  额外发现：SAML provision 时旧 session 被撤销，但 API keys 不受影响，
+  攻击者可提前生成 API key 保持持久后门访问。
+  (原文: "when SAML accounts are provisioned for any organization, the
+  previous sessions are revoked, but not API keys. So an attacker who
+  can pre-stage an account on HackerOne and generate API keys will keep
+  backdoor access")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对有 SAML/SSO 域名强制注册的应用，在注册邮箱参数中追加控制字符
+  （%0d%0a、%00、%20、%09 等）测试域名匹配逻辑是否被绕过——
+  检查注册、域名检查、邮件发送三个阶段对邮箱字符串的规范化是否一致。
+
+reasoning_chain:
+  - "问：目标应用是否对特定邮箱域名强制 SAML/SSO 登录？（注册时返回 SSO 重定向）"
+  - "问：注册端点的邮箱参数在传入域名匹配前是否做了 strip/trim/normalize？"
+  - "测试：在邮箱末尾追加 %0d%0a、%0d、%0a、%00、%20、%09 等控制字符，观察是否绕过域名匹配。"
+  - "测试：在邮箱 @ 前追加 +tag 或控制字符（如 user%0d%0a@domain.com）。"
+  - "问：绕过后创建的账户，验证邮件是否发到了原始有效邮箱？（邮件系统是否 strip 了控制字符）"
+  - "问：该邮箱域名在第三方 SSO 集成中是否有特殊权限？（如自动加入组织、访问内部服务）"
+  - "问：创建账户后是否可以预生成 API keys/tokens？这些在 SAML provision 时是否被撤销？"
+  - "问：目标是否有 'Sign in with [Platform]' 的 OAuth 信任链，可访问更多服务？"
+  - "白盒：检查域名匹配使用的是 exact match、ends_with 还是正则？是否在 strip 之前？"
+
+vuln_root: >
+  注册流程中邮箱域名强制检查使用的字符串比较没有预先规范化（strip 控制字符），
+  但后续的账户绑定和邮件发送流程会自动忽略尾随控制字符——
+  三个阶段对同一输入的解析不一致导致安全检查可被绕过。
+
+transferable_to:
+  - "任何使用 SAML/SSO 域名强制注册的 SaaS 平台（Slack、Notion、Jira 等）"
+  - "企业 SSO 入口对特定域名有自动 provision/加入组织的逻辑"
+  - "邮箱域名白名单/黑名单校验场景（如仅允许企业邮箱注册）"
+  - "OAuth 'Sign in with X' 信任链中，平台 A 的邮箱域名决定了对平台 B 的访问权限"
+  - "任何邮箱字符串在安全检查和业务逻辑之间存在规范化不一致的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/2101076"
+    title: "HackerOne SAML signup domain enforcement bypass via trailing %0d%0a"
+    author: "0xacb"
+    platform: "HackerOne"
+    bounty: "未公开"
+    note: >
+      POST /users 的 email 参数追加 %0d%0a 绕过 @hackerone.com 域名的 SAML 强制检查。
+      创建了 j@hackerone.com 账户，通过 PullRequest SSO 集成可访问 HackerOne 源代码。
+      API keys 在 SAML provision 后不被撤销，提供持久后门。

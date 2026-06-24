@@ -1,0 +1,87 @@
+name: "管理面板集成服务配置（Jabber/SMTP/LDAP）的服务器地址参数作为 SSRF 出口"
+id: "ADMIN_INTEGRATION_SERVER_CONFIG_SSRF"
+applicable: "both"
+phase: "input"
+also_phases: ["recon"]
+tags: ["ssrf", "admin-panel", "integration-config", "jabber", "xmpp", "smtp", "ldap", "port-scan", "phpbb", "CWE-918"]
+source: "https://hackerone.com/reports/1018568"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。phpBB 管理控制面板 (ACP) 的 Jabber settings 面板允许设置
+  Jabber Server 地址和端口，提交后服务端主动连接该地址。
+  (原文: "The 'Jabber settings' panel inside the Administrator Control Panel
+  can be used to access resources that would otherwise only be accessible
+  by the host machine, including resources/services hosted on the localhost interface.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：将 Jabber Server 设置为 127.0.0.1 + 任意端口，
+  服务端会尝试建立 TCP 连接，通过响应差异（connection refused / timeout / 服务 banner）
+  枚举内网端口和服务。
+
+action_result: >
+  成功：将 Jabber Server 设为 127.0.0.1、端口设为 2222（内部 sshd），服务端连接后
+  返回了 SSH 的版本 banner 信息到管理面板页面。端口关闭时返回 "Connection refused"，
+  某些服务（如 mysqld）返回 "Could not authorize on Jabber server"。
+  通过不同响应模式可区分端口开放/关闭/服务类型。
+  (原文: "I have hosted an internal sshd service on 127.0.0.1:2222 to demonstrate
+  that software type and version information is returned to the Administrator Control Panel."
+  "If the port is closed, you will see a socket error message 'Connection refused' error")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  Admin SSRF → 枚举 localhost 和内网服务端口 → 获取服务版本信息 →
+  若发现已知漏洞的内部服务可进一步利用。
+  (原文: "An attacker could use this to interact with and enumerate services and
+  resources on behalf of the host machine... This can be used to port scan and,
+  in some cases, perform service versioning/enumeration on the localhost interface
+  as well as on machines hosted on the same network as the phpbb host machine.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在应用管理面板中寻找需要配置外部服务器地址+端口的集成功能
+  （Jabber/XMPP、SMTP、LDAP/AD、Webhook、数据库备份目标等），
+  将服务器地址设为 127.0.0.1 或内网 IP、端口设为目标端口，
+  观察服务端的连接行为和错误信息差异来实现 SSRF/端口扫描。
+  核心假设：集成功能提交后服务端会主动建立 TCP 连接到用户指定地址。
+
+reasoning_chain:
+  - "问：目标管理面板中有哪些集成/连接配置功能？（XMPP/Jabber、SMTP、LDAP、数据库备份、Webhook、FTP 等）"
+  - "问：这些配置是否接受自定义的服务器地址/主机名和端口号？"
+  - "问：提交配置或测试连接时，服务端是否会主动向指定地址发起 TCP 连接？"
+  - "如果是 → 将地址设为 127.0.0.1 + 常见端口（22/3306/6379/5432/8080 等），观察响应"
+  - "问：不同状态（端口开放/关闭/服务 banner）返回的错误信息是否不同？能否利用差异进行端口扫描？"
+  - "问：服务 banner 信息是否被回显到页面中？（可泄露软件版本）"
+  - "问：是否有 URL 白名单/黑名单过滤？是否可以绕过（如 0.0.0.0、IPv6 ::1、十进制 IP）？"
+  - "扩展：SMTP 配置中的收件人/发件人字段是否存在 SMTP 注入？LDAP 配置中是否存在 LDAP 注入？"
+
+vuln_root: >
+  管理面板的集成服务配置功能在向用户指定的服务器建立连接时，
+  未限制目标地址范围（允许 localhost 和内网 IP），
+  且将连接结果（包括错误信息和服务 banner）返回给用户，
+  开发者假设只有信任的管理员会使用该功能。
+
+transferable_to:
+  - "任何带管理面板的 CMS / 论坛 / 项目管理系统中的 SMTP/XMPP/LDAP 配置功能"
+  - "CI/CD 系统中配置外部服务连接的面板（Jenkins、GitLab、TeamCity 的 LDAP/SMTP 设置）"
+  - "企业协作工具（Mattermost、Rocket.Chat、Zulip）的 XMPP/SMTP/Webhook 配置"
+  - "监控/告警系统的通知渠道配置（PagerDuty/Slack webhook/Email 通知）"
+  - "数据库管理工具（phpMyAdmin、Adminer、DBeaver Server）的连接配置"
+
+cases:
+  - url: "https://hackerone.com/reports/1018568"
+    title: "Server Side Request Forgery in 'Jabber settings' in Admin Control Panel (phpBB)"
+    author: "they"
+    platform: "phpBB (phpbb.com)"
+    severity: "Low (CVSS 3.4)"
+    bounty: "无赏金"
+    note: >
+      phpBB 3.3.1 管理面板的 Jabber Settings 配置面板允许设置任意
+      Jabber Server 地址和端口。服务端发起 TCP 连接到指定地址，
+      通过错误信息差异可进行内网端口扫描和服务版本探测。
+      需管理员权限才能访问（severity 评级低），但在多管理员
+      共享环境或管理员凭据泄露场景下有横向移动价值。
+      纯结果文，无 L3 导航叙事。

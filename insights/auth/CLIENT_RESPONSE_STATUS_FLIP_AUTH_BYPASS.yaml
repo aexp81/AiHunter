@@ -1,0 +1,161 @@
+name: "篡改登录响应的 status 字段绕过纯前端认证——直接进入管理后台"
+id: "CLIENT_RESPONSE_STATUS_FLIP_AUTH_BYPASS"
+applicable: "blackbox"
+phase: "auth"
+also_phases: []
+tags: ["auth-bypass", "client-side-auth", "response-manipulation", "admin-panel", "burp-intercept", "frontend-trust"]
+source: "https://hackerone.com/reports/1490470"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。报告者发现管理后台的登录 API 返回
+  {"status":false,"errorMessage":"Username and Password does not match."}，
+  前端根据 status 字段决定是否放行进入后台。
+  (原文: "I found that i can bypass the login page of the Admin account
+  by intercepting the respone of the login request... and change status from false to true")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  在 Burp 中拦截登录响应，将 status 从 false 改为 true 后 forward，
+  前端直接跳转到管理后台。可访问 Report（1066 条报告）、Change Password、Process Return 等功能。
+  (原文: "Intercept the response... Change status value from false to true and Forward
+  the request... Now open Report, Change Password and Process Return...")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  响应篡改 → 绕过登录 → 进入管理后台 → 查看/删除报告 + 修改密码完成 ATO。
+  (原文: "The attacker can login as an Admin by bypassing the authentication,
+  change the Admin password to takeover the Admin account,
+  View the company's reports and delete them [1066 Report]")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对管理后台/内部面板的登录 API，拦截响应并修改状态字段（status/success/authenticated）
+  为 true，测试前端是否仅依赖响应 JSON 布尔值做认证判断而未验证服务端 session/token。
+
+reasoning_chain:
+  - "问：登录失败的 API 响应中是否包含布尔状态字段（status、success、authenticated、isLoggedIn）？"
+  - "问：将该字段从 false 改为 true 后，前端是否跳转到后台/dashboard？"
+  - "如果跳转 → 问：后续 API 调用是否携带 session cookie 或 JWT？还是完全无凭证？"
+  - "如果无凭证或凭证未被后端校验 → 确认后端缺少独立的认证状态管理（纯前端信任）"
+  - "问：修改密码、查看数据、删除记录等敏感操作是否也不验证后端 session？"
+  - "扩展：是否可以直接发送 API 请求（无需经前端流程）？如果后端也放行 → 无需篡改响应"
+  - "扩展：是否存在其他需要认证的 API 端点（如 /api/Account/ChangePassword）可直接调用？"
+
+vuln_root: >
+  开发者将认证判断完全下放到前端（根据 API 响应的 status 字段决定是否放行），
+  后端在登录失败时仍不阻止后续请求，也未在管理功能 API 上做独立的 session/token 校验。
+
+transferable_to:
+  - "SPA + REST API 架构的管理后台——前端路由守卫仅依赖登录状态变量"
+  - "内部工具/admin panel 快速开发场景——后端返回成功/失败但不颁发 session token"
+  - "物联网设备 Web 管理界面——资源受限场景下常跳过服务端 session 管理"
+  - "移动 App 的本地登录判断——拦截 API 响应修改字段即可绕过"
+
+cases:
+  - url: "https://hackerone.com/reports/1490470"
+    author: "7odamoo"
+    platform: "UPS VDP (*.ups.com)"
+    severity: "Medium (CVSS 6.5)"
+    bounty: "无赏金（VDP）"
+    note: >
+      UPS 子域名管理后台：登录 POST /api/Account/Login/ 返回 {status:false}，
+      Burp 篡改为 {status:true} 后进入管理面板。
+      可查看 1066 条报告、修改密码、管理 Process Return。
+      2022-02 报告，2022-06 公开。
+  - url: "https://hackerone.com/reports/2762462"
+    author: "trev0ck"
+    platform: "MTN Group (shop.mtn.ng)"
+    severity: "Critical (CVSS 9.1)"
+    bounty: "无赏金"
+    note: >
+      MTN Nigeria 手机号 OTP 验证绕过：POST /mtn_otp/index/verification/ 返回
+      {"status":400,"success":false}，Burp 拦截响应后修改为 {"status":200,"success":true}，
+      服务端未独立校验 OTP 验证状态，攻击者可将任意手机号绑定到自己账户实现 ATO。
+      2024-10 报告，2025-03 公开。93 votes。
+  - url: "https://hackerone.com/reports/1539426"
+    author: "nayefhamouda"
+    platform: "UPS VDP (*.ups.com)"
+    severity: "High (CVSS 7.5)"
+    bounty: "无赏金（VDP）"
+    note: >
+      UPS 支持面板另一子域名：POST /api/Account/SendTempPassword/ 返回
+      {"status":false,"errorMessage":"Username does not exist."}，
+      Burp 拦截响应篡改 status 为 true 后访问 /resetPassword 路径进入管理后台。
+      可查看所有支持请求（requests）并完全控制。
+      (原文: "intercept the request... intercept the response for this request and
+      change this value... Then change the 'status' value of this request from false to true")
+      2022-04 报告，2022-06 公开。
+  - url: "https://hackerone.com/reports/1394910"
+    author: "palaziv"
+    platform: "U.S. Dept Of Defense"
+    severity: "Critical"
+    bounty: "无赏金（VDP）"
+    note: >
+      DoD 某管理面板：点击管理功能按钮后 POST 到登录端点，返回 302 + Location: /login，
+      但 302 响应体中包含完整的管理面板 HTML（4260 字节，含上传/修改/删除文件等所有功能链接）。
+      在 Burp 中将 302 改为 200 即可渲染管理面板。
+      所有管理操作（上传文件、修改记录、删除文件）均无 session cookie，完全未鉴权。
+      这是经典的 Execution After Redirect (EAR) 漏洞——
+      服务端在发送 302 重定向后未终止请求处理，仍输出了完整响应体。
+      (原文: "I noticed that even though the server sent back a 302 status code
+      with a header Location: /login the response was quite long...
+      I browsed to the URL, intercepted the response in Burp,
+      changed the status code from 302 Found to 200 OK
+      and was presented with the admin panel")
+      2021-11 报告，2021-11 公开。
+  - url: "https://hackerone.com/reports/1397564"
+    author: "palaziv"
+    platform: "U.S. Dept Of Defense（另一系统）"
+    severity: "Critical"
+    bounty: "无赏金（VDP）"
+    note: >
+      与 #1394910 相同研究者、相同手法，但在不同 DoD 系统上发现。
+      管理面板 302 重定向但响应体包含完整 admin HTML，Burp 改 302→200 进入后台。
+      所有管理操作（上传/修改/删除文件）完全无需认证。
+      上传的文件可通过另一系统上的 downloadS3File.php 下载。
+      (原文: "This is basically the same vulnerability as in #1394910, just on another system")
+      2021-11 报告，2021-11 公开。
+  - url: "https://hackerone.com/reports/1806387"
+    author: "qualw1n"
+    platform: "U.S. Department of State (speakerkit.state.gov)"
+    severity: "High (CVSS 8.2)"
+    bounty: "无赏金（VDP）"
+    note: >
+      state.gov 子域名管理后台：访问时返回 302 重定向到 spklogin 页面，
+      但响应体中包含完整页面数据。使用 Burp 的 find-and-replace 将所有 302 Found
+      改为 200 OK 后，可直接进入管理后台查看 admin 和普通用户信息，
+      执行文件上传、添加分类等管理操作，并看到 admin 密码。
+      (原文: "Using the find and replace feature on burpsuite, I told it to change
+      all requests that gave 302 found to 200 Ok, and I easily performed my operations.")
+      2022-12 报告，2023-03 公开。
+  - url: "https://hackerone.com/reports/1508661"
+    author: "amanr1337"
+    platform: "Sony (*.sony.com)"
+    severity: "High (CVSS 7.5)"
+    bounty: "无赏金"
+    note: >
+      Sony 某端点的管理后台认证可通过篡改登录响应参数绕过。
+      报告为 no-content 公开，仅有团队摘要可用。
+      (团队摘要: "The researcher reported that the authentication of a Sony endpoint
+      could be bypassed by manipulating the response to a login request.
+      By changing the value of a response parameter, the researcher bypassed the authentication
+      and was able to gain access to an admin portal.")
+      2022-03 报告，2022-09 公开。approach 完全相同：拦截登录响应 → 修改状态参数 → 进入管理后台。
+  - url: "https://hackerone.com/reports/648222"
+    author: "jarvis0x1"
+    platform: "U.S. Dept Of Defense"
+    severity: "High"
+    bounty: "无赏金（VDP）"
+    note: >
+      DoD 某管理面板：访问 mission.php/personnel.php/index.php 时返回 redirect 到登录页，
+      但响应体中包含完整的已授权页面 HTML（含大量私密信息：人员列表等）。
+      使用 Burp 拦截响应删除重定向即可查看。研究者此前在同系统上发现
+      SQLi/XSS（#512269/#512693/#512695），后来登录绕过被修复但本次发现修复不完整。
+      (原文: "When I visit some pages of the site, I get a redirect to the authorization form.
+      But in addition to the redirect, the response body also contains HTML code of auth site.")
+      2019-07 报告，2020-05 公开。Execution After Redirect (EAR) 变种。

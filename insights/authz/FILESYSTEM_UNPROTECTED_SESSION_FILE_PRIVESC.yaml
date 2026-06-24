@@ -1,0 +1,89 @@
+name: "嵌入式设备文件系统无保护——低权限账户读取会话文件劫持高权限会话提权"
+id: "FILESYSTEM_UNPROTECTED_SESSION_FILE_PRIVESC"
+applicable: "both"
+phase: "authz"
+also_phases: ["chain"]
+tags: ["embedded-device", "filesystem-permissions", "session-hijacking", "privilege-escalation", "edgeos", "ubiquiti", "cve-2017-0934"]
+source: "https://hackerone.com/reports/241044"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。报告为 no-content 公开，仅团队摘要可见。
+  EdgeOS 1.9.1 及更早版本的文件系统缺乏保护，敏感信息可被低权限用户读取。
+  (团队摘要: "EdgeOS version 1.9.1 and prior, consequence of lack of protection
+  if the file-system, exposing sensitive information")
+
+hypothesis: >
+  未叙述（仅结果）。推断：拥有 operator（只读）账户权限的攻击者可以读取
+  文件系统中存储的 admin/ubnt 用户会话文件或凭证，从而劫持高权限会话。
+  (团队摘要: "an attacker with access to an operator (read-only) account,
+  can escalate privileges to admin (root) access in the system")
+
+action_result: >
+  未叙述（仅结果）。攻击者利用 operator 账户（只读权限）访问文件系统中未保护的
+  敏感文件，成功从 operator 提权至 ubnt（admin），进而获得 root 权限。
+  报告标题提到"non-interactive Session Hijacking"，表明无需交互即可完成会话劫持。
+  CVE-2017-0934，CVSS 9.9。
+
+why_here_first: >
+  未叙述（仅结果）。嵌入式设备/网络设备通常使用简化的 Unix 文件系统，
+  多用户权限模型往往不够细粒度，低权限 shell 能读取更多文件是常见攻击面。
+
+chaining: >
+  文件系统权限不当（信息泄露）→ 会话文件/凭证读取 → 非交互式会话劫持 →
+  从 operator（只读）提权至 admin/ubnt → root 权限。
+  单独的文件可读是低危信息泄露，结合会话劫持直接升级为 Critical。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在嵌入式设备/网络设备上，以低权限 shell（operator/guest/read-only）登录后，
+  检查文件系统中高权限用户的会话文件、凭证存储、配置文件等是否可读，
+  利用读取到的会话令牌或凭证劫持高权限用户会话实现提权。
+
+reasoning_chain:
+  - "问：目标设备是否提供多级用户权限（operator/admin/root）？"
+  - "问：低权限用户（如 operator）是否有 shell 或 CLI 访问权限？"
+  - "如果有：问：文件系统中哪些目录存储会话文件、cookie、认证令牌？（/tmp, /var/run, /var/lib, /etc）"
+  - "问：这些文件/目录的权限是否允许低权限用户读取？（ls -la 检查 owner/group/other 权限位）"
+  - "如果可读：问：文件中是否包含高权限用户的会话令牌、加密密钥、SSH 密钥、密码哈希？"
+  - "问：读取到的会话令牌能否直接重放以劫持高权限用户的 Web/SSH/API 会话？"
+  - "问：设备配置文件（/config, /etc/config）是否以明文存储管理员密码？"
+  - "横向：问：同类型设备的其他固件版本是否存在同样的文件系统权限问题？"
+
+vuln_root: >
+  嵌入式设备开发者假设低权限 operator 账户的 shell 访问是安全的（仅限监控/只读操作），
+  未对文件系统中的敏感文件（会话数据、凭证）设置严格的 owner-only 读取权限，
+  导致低权限用户可直接读取高权限用户的会话信息完成提权。
+
+transferable_to:
+  - "Ubiquiti EdgeRouter / UniFi 设备及类似固件架构的网络设备"
+  - "任何提供多级用户权限但共享同一文件系统的嵌入式 Linux 设备（路由器、防火墙、IoT 网关）"
+  - "MikroTik RouterOS、Cisco IOS-XE 的 guest shell、Juniper Junos 的 shell 访问"
+  - "容器环境中挂载了宿主机敏感目录的低权限容器"
+  - "共享主机环境中不同用户间的文件隔离不当"
+
+cases:
+  - url: "https://hackerone.com/reports/241044"
+    title: "Privilege Escalation: From operator to ubnt (and root) with non-interactive Session Hijacking"
+    author: "hacknroll"
+    platform: "Ubiquiti (EdgeOS)"
+    severity: "Critical (CVSS 9.9)"
+    bounty: "有赏金（金额未公开）"
+    cve: "CVE-2017-0934"
+    note: >
+      EdgeOS 1.9.1 及更早版本文件系统保护不足，operator（只读）账户可读取敏感文件，
+      利用非交互式会话劫持从 operator 提权至 ubnt/admin/root。
+      no-content 公开，仅团队摘要可见。2017-06 报告，2017-11 公开。
+  - url: "https://hackerone.com/reports/242407"
+    title: "Privilege Escalation with Session Hijacking Having a Non-privileged Valid User"
+    author: "hacknroll"
+    platform: "Ubiquiti (EdgeOS)"
+    severity: "Critical (CVSS 9.9)"
+    bounty: "有赏金（金额未公开）"
+    cve: "CVE-2017-0935"
+    note: >
+      同一研究者、同一产品的另一报告。EdgeOS 1.9.1.1 及更早版本文件系统保护不足，
+      拥有 operator（只读）账户的攻击者可提权至 admin/root。
+      no-content 公开，仅团队摘要可见。2017-06 报告，2017-12 公开。

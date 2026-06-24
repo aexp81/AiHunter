@@ -1,0 +1,80 @@
+name: "浏览器扩展注入脚本共享页面上下文——hook 原生方法劫持扩展特权命令接口"
+id: "BROWSER_EXTENSION_SHARED_CONTEXT_NATIVE_METHOD_HOOK_HIJACK"
+applicable: "both"
+phase: "input"
+also_phases: ["chain"]
+tags: ["browser-extension", "javascript", "prototype-pollution", "command-injection", "kaspersky", "antivirus", "ie", "privilege-escalation"]
+source: "https://hackerone.com/reports/470547"
+
+# ——— L3 核心 ———
+
+observation: >
+  Kaspersky 浏览器扩展在 IE 中的注入脚本与网页共享同一个 JavaScript 执行上下文。
+  虽然 Kaspersky 保护了 WebSocket 等关键对象不被网页篡改，
+  但其他原生方法（如 String.indexOf）未受保护。
+  (原文: "this script is still running in the same context as the webpage.
+  While provisions have been made to prevent manipulation of some JavaScript objects
+  such as WebSocket, other objects have not received the same treatment.")
+
+hypothesis: >
+  如果 Kaspersky 脚本调用了未受保护的原生方法（如 String.indexOf），
+  网页可以 hook 这些方法，在调用回调中通过 this/arguments 获取
+  Kaspersky 内部命名空间的引用，从而控制其命令接口。
+  (原文: "a website can intercept String.indexOf() calls made by Kaspersky's script
+  and gain access to its namespace this way")
+
+action_result: >
+  成功通过 hook String.indexOf 获取 Kaspersky 命令接口的完整访问权，
+  可禁用 Anti-Banner 和 Private Browsing 功能、添加 URL 到黑名单等。
+  更严重的是，暴露的内部处理逻辑如有 bug 可升级为 SYSTEM 权限 RCE。
+  (原文: "webpages can get full access to Kaspersky's command interface
+  which allows disabling Anti-Banner and Private Browsing functionality...
+  bugs in this processing code will turn into Remote Code Execution vulnerabilities
+  allowing websites to execute code with the privileges of the SYSTEM user")
+
+why_here_first: >
+  研究者已经在另一个报告（470544）中发现 Kaspersky 在其他浏览器中直接注入脚本到网页的问题，
+  因此继续检查 IE 中是否有类似的攻击面，虽然 IE 中注入方式不同但仍共享上下文。
+  (原文: "Unlike with https://hackerone.com/reports/470544, when the Kaspersky add-on
+  is installed in Internet Explorer, Kaspersky doesn't inject its script directly
+  into the webpage, so the webpage cannot re-execute it. However, this script
+  is still running in the same context as the webpage.")
+
+chaining: >
+  低危的 JS 方法 hook → 获取特权扩展命名空间 → 控制安全功能开关 →
+  潜在 RCE（如果内部处理代码有漏洞，可以 SYSTEM 权限执行代码）
+
+# ——— 落地检查清单 ———
+
+approach: >
+  审计浏览器扩展（特别是安全产品）的内容脚本是否与网页共享执行上下文；
+  若共享，枚举扩展脚本调用的原生 JS 方法（String/Array/Object 原型方法），
+  通过 hook 这些方法的 getter/proxy 截获扩展内部对象引用，
+  借此控制扩展的特权命令接口。
+
+reasoning_chain:
+  - "问：目标浏览器扩展的内容脚本是否在与网页相同的 JS 上下文中执行（而非 isolated world）？"
+  - "问：扩展是否保护了所有其代码使用的原生 JS 方法（如 String.prototype, Array.prototype）？"
+  - "如果仅保护了部分（如 WebSocket）而遗漏了常用方法（indexOf, push, toString 等）→ 可 hook"
+  - "问：通过 hook 回调中的 this/arguments/closure 能否获取扩展内部命名空间或特权对象的引用？"
+  - "问：获取到的命名空间是否暴露了命令接口（如发送命令到本地 agent/daemon）？"
+  - "问：命令接口是否可禁用安全功能、修改配置、或触发以高权限运行的代码路径？"
+
+vuln_root: >
+  浏览器扩展的注入脚本与不可信网页共享同一 JS 执行上下文，
+  且未对所有被调用的原生 JS 方法做冻结/沙箱保护，
+  导致网页可通过原型方法 hook 获取扩展特权接口的引用。
+
+transferable_to:
+  - "杀毒软件/安全产品的浏览器扩展（Kaspersky, Norton, Avast 等）"
+  - "密码管理器扩展（如果使用内容脚本注入而非 isolated world）"
+  - "企业 DLP/代理扩展（监控/过滤网络内容的扩展）"
+  - "广告拦截器扩展（如果在 main world 注入辅助脚本）"
+  - "任何在网页上下文中注入 JS 且与本地高权限进程通信的扩展"
+
+cases:
+  - url: "https://hackerone.com/reports/470547"
+    note: >
+      Kaspersky Internet Security 19.0，Medium，CVE-2019-15685。
+      IE 扩展注入的脚本共享网页上下文，hook String.indexOf 获取命令接口。
+      可禁用 Anti-Banner/Private Browsing，潜在 SYSTEM RCE。

@@ -1,0 +1,75 @@
+name: "API 分页参数绕过订阅付费墙——免费用户获取全量付费搜索结果"
+id: "PREMIUM_PAYWALL_API_PAGINATION_BYPASS"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["paywall-bypass", "access-control", "pagination", "premium-feature", "graphql", "api-abuse", "linkedin"]
+source: "https://hackerone.com/reports/3235855"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。LinkedIn 的 "Active Hiring" 高级搜索过滤器在 UI 上限制免费用户
+  只能看到前几条结果后显示升级提示（upsell prompt），但底层 GraphQL API
+  /voyager/api/graphql 在 start 分页参数非 0 时不验证订阅状态。
+  (原文团队摘要: "the underlying API endpoint fails to validate premium subscription
+  status when the start parameter in the GraphQL query is modified to values other than 0")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  通过递增 start 参数偏移量，免费用户可逐页获取全部付费搜索结果。
+  此外还可通过 URL 拼接 &page=2 直接访问下一页无需任何 API 操作知识。
+  (原文团队摘要: "allowing attackers to bypass the premium paywall by incrementally
+  increasing the pagination offset... users can append pagination parameters
+  like &page=2 directly to search URLs")
+
+why_here_first: "未叙述（仅结果）"
+chaining: "N/A — 单步即可获取付费数据"
+
+approach: >
+  对含付费墙/订阅限制的搜索/列表 API，在 UI 层看到 upsell 截断后，
+  直接修改底层 API 的分页参数（start/offset/page/cursor）跳过首页结果，
+  检查后端是否仅在首页请求时验证订阅状态而在翻页时遗漏权限校验。
+
+reasoning_chain:
+  - "问：目标产品是否有按订阅等级分层的功能（Premium/Pro/Enterprise-only 搜索/过滤/导出）？"
+  - "问：免费账户访问该功能时，UI 是否显示部分结果后截断并要求升级？"
+  - "问：前端截断意味着 API 实际返回了数据还是仅返回 upsell 提示？"
+  - "问：将 API 的分页/偏移参数（start/offset/page/cursor/after）从 0 改为其他值后，是否返回了被付费墙隐藏的后续结果？"
+  - "如果返回 → 问：递增偏移量是否能遍历全部结果？是否有总数上限？"
+  - "扩展：URL 中是否可以直接拼接分页参数（如 &page=2）绕过 JS 层的 upsell 拦截？"
+  - "扩展：其他付费功能（导出、高级过滤器、批量操作）的 API 是否有同样的分页遗漏？"
+
+vuln_root: >
+  开发者在 API 网关/中间件层仅对首页请求（start=0 或无 offset）
+  执行订阅等级校验，翻页请求假设用户已通过首页验证，遗漏权限重校验。
+
+transferable_to:
+  - "职业社交平台（LinkedIn、Indeed）的高级搜索过滤器"
+  - "SaaS 产品的按量/按级分层 API（搜索/导出/报表）"
+  - "内容平台的付费精选/推荐列表"
+  - "电商平台的卖家数据分析工具（付费版）"
+  - "任何在 API 层实现前端 paywall 但未统一鉴权的分页端点"
+
+cases:
+  - url: "https://hackerone.com/reports/3235855"
+    author: "minex627"
+    platform: "LinkedIn (www.linkedin.com)"
+    severity: "Medium (CVSS 4.3)"
+    bounty: "有赏金（具体金额未公开）"
+    note: >
+      LinkedIn "Active Hiring" 付费过滤器：GraphQL API /voyager/api/graphql
+      修改 start 参数或 URL 拼接 &page=2 即可绕过 Premium paywall 获取全部搜索结果。
+      2025-07 报告，2026-02 公开。96 votes。
+  - url: "https://hackerone.com/reports/1166993"
+    title: "Ability to use premium templates as free user (Stripo)"
+    author: "20kilograma"
+    platform: "Stripo Inc (stripo.email)"
+    severity: "High (researcher-rated)"
+    bounty: "无赏金"
+    note: >
+      免费用户直接访问 /templates/ 页面选择付费模板 → 点击 "use in editor" →
+      登录后模板直接保存到自己账户。服务端未在模板使用端点校验用户订阅等级，
+      付费墙仅为前端 UI 层限制。
+      纯结果文，无导航叙事。2021-04 报告，2022-03 公开。15 votes。

@@ -1,0 +1,73 @@
+name: "GraphQL mutation aliasing 触发逐条串行执行导致资源耗尽 DoS"
+id: "GRAPHQL_MUTATION_ALIAS_RESOURCE_EXHAUSTION_DOS"
+applicable: "blackbox"
+phase: "input"
+also_phases: ["logic"]
+tags: ["graphql", "dos", "resource-exhaustion", "mutation-aliasing", "rate-limit-bypass", "hackerone"]
+source: "https://hackerone.com/reports/3287208"
+
+# ——— L3 核心 ———
+
+observation: >
+  GraphQL 的 verifyAccountRecoveryPhoneNumber mutation 每次调用约增加 8 秒处理时间，
+  且 API 不限制单个请求中 mutation alias 的数量。
+  (原文: "Each additional alias adds approximately 8 seconds to the server's response time")
+
+hypothesis: >
+  通过在单个 GraphQL 请求中使用多个 alias 重复调用同一个昂贵 mutation，
+  服务端会串行逐条处理，导致线性增长的响应时间和资源耗尽。
+  (原文: "the API does not limit the number of mutation aliases in a single GraphQL request.
+  When the same mutation is repeated with different aliases, the server executes each one
+  separately, performing expensive backend operations multiple times")
+
+action_result: >
+  3 个 alias 导致响应时间超过 20 秒。
+  (原文: "the response time will exceed 20 seconds because each alias (verify1, verify2, verify3)
+  adds approximately 8 seconds of processing time")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: "N/A — 单步 DoS"
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对 GraphQL 端点发送含多个 mutation alias 的单个请求，
+  找到执行成本高的 mutation（涉及外部调用/验证/计算），
+  利用串行执行特性实现单请求资源耗尽。
+
+reasoning_chain:
+  - "问：目标 GraphQL 端点是否限制了单个请求中 mutation/query alias 的数量？"
+  - "如果未限制 → 问：有哪些 mutation 执行成本较高（涉及短信/邮件发送、密码验证、外部 API 调用）？"
+  - "如果存在昂贵 mutation → 构造含 N 个 alias 的请求，观察响应时间是否线性增长"
+  - "问：是否有 query complexity / depth limit 等 GraphQL 安全配置？"
+  - "如果无 → 单个请求即可实现 DoS，不触发传统 rate limiting"
+
+vuln_root: >
+  GraphQL 规范允许 mutation aliasing，服务端未限制单请求中 alias 数量，
+  且昂贵操作（如电话验证）未做执行次数限流。
+
+transferable_to:
+  - "任何暴露 GraphQL 端点且未限制 alias/batching 数量的应用"
+  - "包含昂贵操作的 GraphQL mutation（2FA 验证、密码哈希、短信/邮件发送）"
+  - "传统 rate limiting 按请求数计数而非按 mutation 数计数的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/3287208"
+    note: >
+      HackerOne 自身 GraphQL API，verifyAccountRecoveryPhoneNumber mutation，
+      $12,500 赏金。每个 alias 增加 ~8 秒处理时间。
+  - url: "https://hackerone.com/reports/2166697"
+    author: "0x999"
+    platform: "HackerOne"
+    severity: "Low (CVSS 3.8)"
+    bounty: "$500"
+    note: >
+      用 GraphQL query named-based batching（mutation aliasing）在单个请求中
+      批量创建 ~75 个报告，配合 Turbo Intruder 单包攻击 100 轮可在 40 秒内
+      创建 ~6400+ 报告，绕过平台 500 报告的限制。不是 DoS 而是 spam/abuse，
+      但核心 approach 相同——利用 GraphQL 允许单请求多 alias 绕过 per-request 限制。
+      (原文: "By taking advantage of query named based batching in graphql a malicious actor
+      has the ability to create many reports in bulk(up to ~75+ reports in 1 request),
+      in combination with turbo intruder this can be abused to create ~6400+ reports
+      using ~100 requests in roughly 40 seconds")

@@ -1,0 +1,23 @@
+id: WRITABLE_LOAD_PATH_HIJACK
+name: "高权限进程的加载路径落在低权限可写目录（源码/构建审计）"
+applicable: whitebox
+category: local
+cwe: CWE-427
+
+trigger:
+  - "审计以 SYSTEM/root 运行的服务、安装器、SUID 程序的代码或构建配置"
+  - "代码中有 LoadLibrary / dlopen / CreateProcess / exec 加载外部文件"
+
+reasoning_chain:
+  - "执行规则：以下每条必须逐一执行，命令必须实际运行，不允许跳过"
+  - "问：进程用什么搜索路径加载库/可执行？是否依赖相对路径或 PATH？"
+  - "白盒：grep -rniE 'LoadLibrary[^W]|dlopen|CreateProcess|ShellExecute|execvp?\\(' 源码，看路径是否绝对且固定"
+  - "问：构建期是否硬编码了配置目录（OpenSSL OPENSSLDIR / 引擎路径）？Unix 路径搬到 Windows 是否变成可创建目录？"
+  - "白盒：strings <binary> | grep -iE 'openssldir|/usr/local/ssl|c:\\\\\\\\usr'；查构建脚本里的 --openssldir"
+  - "问：Windows 服务 ImagePath 注册时是否加引号？包含空格的未引用路径=截断劫持点"
+  - "白盒：reg query 'HKLM\\SYSTEM\\CurrentControlSet\\Services\\<svc>' /v ImagePath；sc qc <svc>"
+  - "问：打包时服务文件权限是否被设成全局可写？"
+  - "白盒：dpkg -c pkg.deb / rpm -qlvp pkg.rpm 看 unit/init 脚本权限位是否 0666/0777"
+  - "问（macOS XPC）：服务端 shouldAcceptNewConnection 只校验 Team ID 吗？同 Team ID 旧版本是否带 disable-library-validation？"
+  - "白盒：codesign -d --entitlements - <app>；otool -l 查 LC_LOAD_DYLIB；反编译看连接校验"
+  - "如果：加载路径可写 + 无签名校验 → 植入同名文件，确认高权限加载"

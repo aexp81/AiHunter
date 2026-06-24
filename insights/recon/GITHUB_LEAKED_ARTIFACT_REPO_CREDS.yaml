@@ -1,0 +1,60 @@
+name: "GitHub 公开仓库泄露制品仓库凭据——读取内部依赖包并可推送恶意版本实现供应链攻击"
+id: "GITHUB_LEAKED_ARTIFACT_REPO_CREDS"
+applicable: "blackbox"
+phase: "recon"
+also_phases: ["supply-chain"]
+tags: ["github-recon", "credential-leak", "jfrog", "artifactory", "supply-chain", "artifact-poisoning", "snapchat"]
+source: "https://hackerone.com/reports/911606"
+
+observation: >
+  Snapchat 员工在个人公开 GitHub 仓库中提交了包含 JFrog Artifactory 凭据的配置文件。
+  (原文团队摘要: "valid jFrog credentials which were committed to a public Github repository of a Snap employee")
+
+hypothesis: "未叙述（仅结果）"
+action_result: >
+  使用泄露的凭据登录 snapchat.jfrog.io，获得读取内部库和推送恶意更新的权限。
+  (原文: "access to internal Snap libraries/artifacts along with the ability to push updates to existing artifacts")
+
+why_here_first: "未叙述（仅结果）"
+chaining: "GitHub OSINT → 凭据发现 → 制品仓库读写 → 供应链投毒"
+
+approach: >
+  通过 GitHub 搜索/commit 历史回溯发现目标公司员工泄露的制品仓库凭据
+  （JFrog/Nexus/.npmrc），验证后评估读写权限，写入权限使供应链攻击成为可能。
+
+reasoning_chain:
+  - "问：目标公司员工的 GitHub 公开仓库中是否有包含凭据的配置文件？"
+  - "搜索 dork：'org:company jfrog' / 'artifactory password' / 'npmrc _auth'"
+  - "工具：truffleHog / gitleaks 扫描完整 commit 历史"
+  - "如果发现凭据 → 验证是否有效，评估读取/推送权限"
+  - "如果可推送 → 供应链攻击风险（覆盖已有 artifact）"
+
+vuln_root: "开发人员误提交制品仓库凭据到公开 git 仓库，凭据具有读写权限。"
+
+transferable_to:
+  - "任何使用 JFrog Artifactory/Nexus/npm registry 的公司"
+  - "员工个人 GitHub 仓库中的 .npmrc/gradle.properties/.jfrog/ 文件"
+
+cases:
+  - url: "https://hackerone.com/reports/911606"
+    note: "Snapchat JFrog Artifactory 凭据泄露，$15,000。"
+  - url: "https://hackerone.com/reports/2735646"
+    title: "User API Key leakage in Github commit leads to unauthorized access to sql.telemetry.mozilla.org"
+    author: "anhchangmutrang"
+    platform: "Mozilla"
+    severity: "High (CVSS 7.5)"
+    note: >
+      no-content 公开。Mozilla 员工在公开 GitHub 仓库中泄露了 sql.telemetry.mozilla.org
+      的 API token，攻击者借此访问含机密数据的 Redash 仪表盘。团队摘要：
+      "A Mozilla employee's API token for sql.telemetry.mozilla.org was leaked
+      in one of our Github repos." approach 相同：GitHub commit 历史中搜索泄露的凭据。
+  - url: "https://hackerone.com/reports/1561448"
+    title: "Postgres Admin Username and Password in Plain text"
+    platform: "UPchieve"
+    severity: "Informative (closed)"
+    bounty: "N/A"
+    note: >
+      GitLab 公开仓库 commit 中包含 Postgres 管理员明文密码。
+      报告被标记为 Informative（可能凭据已失效或仓库已是公开设计）。
+      (原文: "Gitlab commit contains password in plain text" 指向
+      https://gitlab.com/upchieve/subway/-/commit/e0e039496321...)

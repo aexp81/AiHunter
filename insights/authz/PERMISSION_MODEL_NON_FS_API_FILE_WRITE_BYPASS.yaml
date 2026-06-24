@@ -1,0 +1,79 @@
+name: "权限模型仅拦截 fs 模块——非 fs 模块 API 内部执行文件写入绕过沙箱"
+id: "PERMISSION_MODEL_NON_FS_API_FILE_WRITE_BYPASS"
+applicable: "whitebox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["permission-model", "sandbox-bypass", "node.js", "process-report", "file-write", "non-fs-api", "path-misvalidation", "CVE-2026-48617"]
+source: "https://hackerone.com/reports/3692858"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。Node.js 权限模型（--permission + --allow-fs-write）
+  在 node:fs 模块的 API 上执行路径权限检查，但 process.report.writeReport()
+  是 process 模块的 API，其内部执行文件写入时未通过权限模型的路径校验。
+  (原文团队摘要: "A flaw in Node.js Permission Model enforcement allows Bypass
+  via `process.report.writeReport()` Path Misvalidation.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：权限模型的文件系统拦截点仅覆盖 node:fs 模块的调用路径，
+  但 process.report.writeReport() 通过 C++ 层直接执行文件写入，
+  不经过 fs 模块的权限检查钩子，导致即使没有 --allow-fs-write 也能写入文件。
+
+action_result: >
+  未叙述（仅结果）。CVE-2026-48617 已分配，影响 Node.js v22, v24, v26。
+  确认 process.report.writeReport() 可绕过权限模型的文件写入限制。
+  (原文团队摘要: "This can lead to confidentiality impact or bypass of the
+  intended security boundary under affected configurations.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  process.report.writeReport() 可向指定路径写入诊断报告文件（JSON 格式），
+  内容包含环境变量、命令行参数、系统信息等——写入任意路径可覆盖配置文件
+  或向可控目录写入攻击载荷，进而突破沙箱边界。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  当目标运行时/沙箱的权限模型在 fs 模块（或文件系统 API 层）设置拦截点时，
+  枚举所有非 fs 模块但内部执行文件 I/O 的 API（如 process.report.writeReport()、
+  v8.writeHeapSnapshot()、worker_threads 日志输出、child_process 的 stdio 重定向等），
+  测试这些 API 是否绕过了权限模型的文件系统检查——
+  关键在于发现"权限检查仅覆盖 fs 模块入口，遗漏了其他模块的内部文件操作"的覆盖缺口。
+
+reasoning_chain:
+  - "问：目标运行时的权限模型在哪一层拦截文件系统操作？（JS 层 fs 模块？C++ 层 libuv？syscall 层？）"
+  - "问：除 fs 模块外，还有哪些 API 可以执行文件写入？（process.report、v8.writeHeapSnapshot、console 重定向、crash dump、trace event 输出等）"
+  - "问：这些非 fs 模块 API 的文件写入路径是否经过与 fs 模块相同的权限检查？"
+  - "如果未经过 → 问：能否通过这些 API 向 --allow-fs-write 未授权的路径写入文件？"
+  - "问：写入的文件内容是否包含可被利用的信息？（环境变量、堆内存快照、进程诊断数据）"
+  - "问：写入路径是否完全由用户控制？还是仅能写入固定目录？"
+  - "扩展：同一权限模型中，非 fs 模块的文件读取操作（如 require()、import()）是否也存在类似绕过？"
+  - "扩展：Deno、Bun 等其他 JS 运行时的权限模型是否覆盖了所有文件 I/O 入口？"
+
+vuln_root: >
+  权限模型的文件系统拦截点仅覆盖 node:fs 模块的入口函数，
+  但 process.report.writeReport() 等非 fs 模块 API 通过内部 C++ 调用直接执行文件 I/O，
+  不经过 fs 模块的权限检查钩子，破坏了"所有文件操作都经过权限验证"的安全假设。
+
+transferable_to:
+  - "Node.js --permission 模型的其他非 fs 文件 I/O API（v8.writeHeapSnapshot()、trace events、worker_threads stdio）"
+  - "Deno 的 --allow-write 权限模型——Deno.diagnostics 或其他诊断 API 是否绕过写权限？"
+  - "Bun 运行时的文件系统权限机制（如有）"
+  - "Electron 沙箱中 renderer 进程通过 IPC 触发 main 进程文件写入的场景"
+  - "容器 seccomp 配置——特定系统调用（如 memfd_create + write）是否绕过文件路径限制？"
+  - "任何通过 API 层（而非 syscall 层）实现文件系统权限控制的沙箱方案"
+
+cases:
+  - url: "https://hackerone.com/reports/3692858"
+    author: "suul"
+    platform: "Node.js"
+    severity: "Low (CVSS 1.8)"
+    cve: "CVE-2026-48617"
+    bounty: "无赏金"
+    note: >
+      Node.js v22/v24/v26 的 --permission 权限模型中，
+      process.report.writeReport() 可绕过 --allow-fs-write 限制向任意路径写入诊断报告。
+      该 API 的路径参数未经过权限模型的路径验证逻辑。
+      no-content 公开，仅团队摘要可见。2026-04 报告，2026-06 公开。

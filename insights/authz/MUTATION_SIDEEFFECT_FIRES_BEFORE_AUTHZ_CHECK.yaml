@@ -1,0 +1,110 @@
+name: "GraphQL mutation 的副作用（通知邮件）在鉴权失败前已触发——跨组织 IDOR 泄露用户 PII"
+id: "MUTATION_SIDEEFFECT_FIRES_BEFORE_AUTHZ_CHECK"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["graphql", "idor", "pii-leak", "email-notification", "side-effect", "cross-org", "shopify-plus", "race"]
+source: "https://hackerone.com/reports/1084638"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。报告者在 Shopify Plus 管理后台测试
+  UpdateOrganizationUserRole GraphQL mutation 时，发现请求中的 user ID
+  参数（Base64 编码的 GID）可被篡改为另一组织的用户 ID。
+  (原文: "Base64-decode the id value and change the user to 34071632
+  then send the request again")
+
+hypothesis: >
+  未叙述（仅结果）。推断：mutation 执行过程中，通知邮件的发送可能
+  先于组织归属验证，即使 mutation 最终因跨组织鉴权失败而报错，
+  邮件通知（包含目标用户 PII）可能已经发出。
+
+action_result: >
+  成功：修改 UpdateOrganizationUserRole mutation 的 user ID 为跨组织用户 →
+  请求响应返回错误 → 但攻击者收到一封包含目标用户 first name、last name
+  和 email address 的通知邮件。
+  (原文: "The request will fail, but you should receive an email containing
+  Anatoly information (first name, last name and email address).")
+
+why_here_first: >
+  未叙述（仅结果）。h1-2102 live hacking event 背景下测试 Shopify Plus 新功能。
+
+chaining: "N/A — 独立信息泄露漏洞，但可迭代枚举大量用户 PII。"
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在 GraphQL mutation 操作（角色变更、邀请、转移等）中替换目标用户/资源 ID
+  为跨组织/跨租户的 ID，即使 mutation 主操作失败，
+  检查副作用（通知邮件、审计日志、Webhook 回调、Slack 通知等）
+  是否在鉴权检查之前已触发并泄露了目标信息。
+
+reasoning_chain:
+  - "问：目标系统的 mutation 操作（角色变更、邀请、移除、转移）是否发送通知邮件或触发 Webhook？"
+  - "问：mutation 请求中的目标用户/资源 ID 是否可被替换为其他租户/组织的 ID？"
+  - "黑盒：替换 ID 后发送请求，即使响应返回 error/unauthorized，检查邮箱是否收到通知邮件。"
+  - "问：通知邮件中是否包含目标用户的 PII（姓名、邮箱、角色等）？"
+  - "问：是否可批量枚举 ID 来大规模收集跨组织用户 PII？"
+  - "扩展：检查其他 mutation 的副作用（Slack 通知、audit log、活动流）是否有类似泄露。"
+
+vuln_root: >
+  mutation 执行流程中，副作用操作（发送通知邮件）的执行时机先于
+  跨租户/跨组织的鉴权检查。开发者假设"mutation 失败=什么都没发生"，
+  但实际上副作用已在失败前触发并泄露了敏感信息。
+
+transferable_to:
+  - "任何 SaaS 多租户系统中有'角色变更/邀请/转移'等 mutation 并发送通知的场景"
+  - "GraphQL API 中 mutation 的 side-effect（邮件、Webhook、审计日志）"
+  - "REST API 中 PATCH/PUT 操作触发异步通知的场景"
+  - "企业管理后台中用户管理、权限分配等操作"
+
+cases:
+  - url: "https://hackerone.com/reports/1084638"
+    title: "Improper Access Control at Shopify Plus UpdateOrganizationUserRole — cross-org PII leak via notification email"
+    platform: "Shopify Plus"
+    severity: "Medium (CVSS 5.3)"
+    bounty: "有赏金（h1-2102 live event）"
+    note: >
+      触发点：UpdateOrganizationUserRole mutation。
+      替换 Base64 编码的 user GID 为跨组织用户 ID，
+      mutation 返回错误但通知邮件已发出，泄露目标用户姓名和邮箱。
+  - url: "https://hackerone.com/reports/1102652"
+    author: "ngalog"
+    platform: "Shopify"
+    severity: "Low (CVSS 3.8)"
+    bounty: "有赏金"
+    note: >
+      Settings-only staff 调用 staffOrderNotificationSubscriptionCreate mutation，
+      响应返回 "Access denied for staffOrderNotificationSubscription field. Required access:
+      read_notification_settings"，看似失败，但实际上 mutation 已执行——
+      订单通知邮箱已被成功添加到 /admin/settings/notifications。
+      鉴权错误消息掩盖了写入操作的实际成功。纯结果文，无导航叙事。
+      (原文: "you would think this means a dead end, but reality is you have already added
+      the order notification to the settings")
+  - url: "https://hackerone.com/reports/1102660"
+    author: "ngalog"
+    platform: "Shopify"
+    severity: "Low (CVSS 2.7)"
+    bounty: "有赏金"
+    note: >
+      同一研究者发现 staffOrderNotificationSubscriptionDelete mutation 同样可被
+      仅有 Settings 权限的 staff 调用成功——通过传入订单通知 GID 即可删除
+      本应受 Order 权限保护的通知订阅。与 1102652 同属一组，
+      说明 Shopify staffOrderNotification 相关 mutation 的权限校验系统性缺失。
+      纯结果文，无导航叙事。
+      (原文: "The staff order notification should be under the control of staff members
+      with Order permission but I found that the staff member with just Settings permission
+      can also delete the order notifications using the GID")
+  - url: "https://hackerone.com/reports/245340"
+    title: "Bypassing Access control, changing owner's name in a private leaderboard"
+    platform: "WakaTime"
+    severity: "Medium"
+    bounty: "无赏金"
+    note: >
+      触发点：私有 leaderboard 成员编辑功能。
+      报告者先将自身降级为成员，再尝试编辑新 owner 的名称 →
+      API 返回 forbidden 错误 → 但再次点击编辑按钮时发现名称已被修改，
+      说明 mutation 已在鉴权拒绝前完成提交。纯结果文，无导航叙事。
+      (原文: "when i tried to edit the name... I got the below forbidden error
+      But when I clicked on edit button again I saw the pop up saying 'Enter new name for testing'")

@@ -1,0 +1,22 @@
+id: PRIVILEGED_FILE_OP_TOCTOU
+name: "高权限进程对低权限可控路径做文件操作的竞态"
+applicable: blackbox
+category: local
+cwe: CWE-367
+# 覆盖 insight: LOGROTATE_RACE_SYMLINK / SUID_COLOCATED_TOCTOU / INTEGRITY_CHECK_DRIVER_TOCTOU /
+#   AV_QUARANTINE_DIR_JUNCTION / ANTIRANSOMWARE_RENAME_GAP / PATH_CANONICALIZE_VS_LITERAL
+
+trigger:
+  - "root/SYSTEM 进程（logrotate/cron/安装器/AV/SUID 程序）对低权限用户拥有的目录或文件做操作"
+  - "存在'先校验后使用'的文件操作（校验签名/路径后再写入或执行）"
+
+# 执行规则：以下每条必须逐一执行
+reasoning_chain:
+  - "问：哪些 root 定时/触发任务会碰我可控的路径？（cat /etc/logrotate.d/*、systemctl list-timers、crontab）"
+  - "问：我是否拥有这些路径所在的目录？（拥有目录即可换 inode / 插符号链接，即便不拥有文件）"
+  - "问：校验(check)与使用(use)之间是否存在时间窗口？校验时持有文件锁(flock/fcntl)吗？"
+  - "问：能否在窗口内把目标替换为指向任意位置的符号链接/硬链接（Linux）或目录联接 junction（Windows）？"
+  - "问：保护/监控类服务（AV/防勒索/完整性校验）拦截了哪些操作？有没有遗漏 Rename/move 这类整目录操作？"
+  - "如果有窗口 → 循环触发 + 调节延迟稳定命中（参考 logrotten / 硬链接 swap 手法）"
+  - "问：把 root 写入重定向到哪里能落地提权？（/etc/cron.d、/etc/profile.d、authorized_keys、ExecStart）"
+  - "验证：竞态命中后确认 root 在攻击者控制的目标上完成了写/删/执行"

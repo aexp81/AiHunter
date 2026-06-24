@@ -1,0 +1,87 @@
+name: "postMessage targetOrigin 由 URL 参数控制——OAuth token 跨窗口泄露"
+id: "POSTMESSAGE_TARGETORIGIN_WILDCARD_OAUTH_TOKEN_LEAK"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["chain"]
+tags: ["postmessage", "targetorigin", "oauth", "token-leak", "cross-origin", "iframe", "window-opener", "playstation"]
+source: "https://hackerone.com/reports/826394"
+
+# ——— L3 核心 ———
+
+observation: >
+  分析 PlayStation Network 认证流程时，发现 Web 应用使用 postMessage 在窗口/iframe
+  之间交换 authorization token。在负责发送 token 的 response.html 页面中，
+  targetOrigin 的值直接来自 URL GET 参数 targetOrigin，而 requestID 前缀决定
+  使用 window.parent 还是 window.opener 发送消息。
+  (原文: "The web application utilizes postMessage function to exchange authorization tokens
+  between windows/frames... targetOrigin is controlled by user via GET parameter with the
+  same name")
+
+hypothesis: >
+  如果 requestID 以 "window" 开头，token 通过 window.opener.postMessage 发送
+  给打开该窗口的页面，且 targetOrigin 设为 "*"（通配符），则任何域的恶意页面
+  都能通过 window.open 打开授权 URL 并监听 message 事件来窃取 token。
+  (原文: "if the authorization endpoint is opened from a malicious page via window.open
+  and target origin is set to * (wildcard), the token will be sent back to malicious page")
+
+action_result: >
+  构造 PoC：恶意页面通过 window.open 打开 OAuth 授权端点，
+  requestID 修改为 "window_request_..." 前缀（触发 window.opener 模式），
+  targetOrigin 设为 "*"。如果用户已登录 PSN 且有对应 scope 权限，
+  授权端点自动重定向到 response.html，该页面将 token 通过 postMessage
+  发送给 window.opener（即恶意页面）。攻击成功窃取 access_token。
+  (原文: "Click on start button, after the window is opened, navigate back and
+  you will see access token in the box")
+
+why_here_first: >
+  研究者对 PSN 认证流程做了系统性分析，关注 token 在窗口间如何传递。
+  (原文: "After some analysis on how playstation network authentication work,
+  I came across a certain pattern of how authorization tokens are handled")
+
+chaining: >
+  单独看是 token 泄露，但 token 携带广泛的 scope 权限（account.get,
+  account.profile.get, social_get_graph, ugc, activity_feed 等），
+  可直接冒充受害者执行敏感操作。不同端点（my.playstation.com vs
+  social.playstation.com）使用相同代码库，扩大了攻击面。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  审计 OAuth/SSO 认证流程中的 postMessage 回调页面，检查 targetOrigin 是否由
+  URL 参数控制、是否可被设为通配符 "*"；同时检查 requestID/frameType 参数
+  是否可切换消息发送目标（window.parent vs window.opener），
+  组合利用可跨域窃取 authorization token。
+
+reasoning_chain:
+  - "问：目标 Web 应用的 OAuth/SSO 认证流程是否使用 iframe 或弹窗 + postMessage 传递 token？"
+  - "问：负责发送 token 的回调页面（如 response.html, callback.html）的 JS 源码中，postMessage 的 targetOrigin 从哪里取值？"
+  - "如果 targetOrigin 来自 URL 参数（如 ?targetOrigin=https://legit.com）→ 问：能否将其改为 * 或攻击者域名？"
+  - "问：回调页面的 JS 是否有条件分支（如 requestID 前缀）切换 window.parent.postMessage 和 window.opener.postMessage？"
+  - "如果可切换到 window.opener 模式 → 构造恶意页面用 window.open 打开授权 URL，监听 message 事件。"
+  - "问：授权端点是否支持 prompt=none（静默授权）？若用户已登录则自动重定向，无需交互。"
+  - "问：窃取的 token 携带哪些 scope？能否访问敏感信息或执行写操作？"
+  - "扩展：同一代码库是否部署在多个子域/端点？（每个端点可能有不同的 scope 范围）"
+
+vuln_root: >
+  开发者假设 postMessage 的 targetOrigin 由服务端控制，但实际上该值通过 URL 参数传递，
+  攻击者可将其设为通配符 "*"，使 token 发送给任意来源的窗口。
+  同时 requestID 前缀可切换消息发送目标，进一步扩大攻击面。
+
+transferable_to:
+  - "任何使用 postMessage 在窗口/iframe 间传递 OAuth token 的 Web 应用"
+  - "SSO 认证流程中的回调页面（如 SAML、OIDC 的 response.html）"
+  - "第三方登录集成（社交登录按钮用 popup + postMessage 返回 token）"
+  - "嵌入式支付/认证 widget（iframe 内完成认证后 postMessage 通知父页面）"
+  - "Electron 应用中的 webview 认证回调（webview 与主进程间的消息传递）"
+
+cases:
+  - url: "https://hackerone.com/reports/826394"
+    author: "nnez"
+    platform: "PlayStation Network (my.playstation.com)"
+    bounty: "$1,000"
+    severity: "High"
+    note: >
+      PSN OAuth 授权流程 response.html 页面中 postMessage 的 targetOrigin
+      由 URL 参数控制，requestID 前缀可切换为 window.opener 模式，
+      攻击者构造恶意页面窃取 authorization token。
+      同一代码库影响 my.playstation.com 和 social.playstation.com。

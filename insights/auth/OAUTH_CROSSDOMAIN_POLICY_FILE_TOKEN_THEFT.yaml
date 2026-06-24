@@ -1,0 +1,82 @@
+name: "跨域策略文件（crossdomain.xml）层级继承——父目录通配符授权子目录 OAuth 端点数据窃取"
+id: "OAUTH_CROSSDOMAIN_POLICY_FILE_TOKEN_THEFT"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["recon"]
+tags: ["crossdomain.xml", "flash", "cors-policy", "cross-origin", "oauth", "token-theft", "policy-file", "silverlight", "clientaccesspolicy"]
+source: "https://hackerone.com/reports/136582"
+
+# ——— L3 核心 ———
+
+observation: >
+  api.vimeo.com 的 crossdomain.xml 文件（/oauth/crossdomain.xml）设置了
+  allow-access-from domain="*"，而 OAuth 授权端点
+  /oauth/authorize 位于其子目录中。
+  (原文: "The vulnerability comes from the crossdomain file
+  api.vimeo.com/oauth/crossdomain.xml which is set to
+  'allow-access-from domain=\"*\"'.")
+
+hypothesis: >
+  Flash 策略文件对其所在目录及所有子目录生效；
+  若在 /oauth/ 下放了 allow-access-from domain="*"，
+  则任意域名的 SWF 可以跨域读取 /oauth/authorize 页面的完整响应，
+  其中包含 OAuth token，从而绕过用户授权直接获取 App 权限。
+  (原文: "A URL policy file applies only to the directory from which it is loaded
+  and to its child directories."
+  以及 "In that case, flash will never check
+  https://api.vimeo.com/oauth/authorize/crossdomain.xml because
+  api.vimeo.com/oauth/crossdomain.xml is enough for him to allow
+  the cross domain request on https://api.vimeo.com/oauth/authorize")
+
+action_result: >
+  构造恶意 SWF 先调用 Security.loadPolicyFile("https://api.vimeo.com/oauth/crossdomain.xml")，
+  再跨域请求 /oauth/authorize → 成功读取包含 OAuth token 的响应 →
+  无需用户交互即可完成 App 授权流程，获得受害者账户的完整 App 权限。
+  (原文: "a call to 'Security.loadPolicyFile(\"https://api.vimeo.com/oauth/crossdomain.xml\")'
+  will allow any domain to read the source code of
+  https://api.vimeo.com/oauth/authorize.
+  From there, an attacker can steal the Token of the user and do all
+  the authorization process (Obtaining Authentication credentials via redirect)
+  without the need of user interaction.")
+
+why_here_first: >
+  未叙述（仅结果）——报告未说明为何先检查 crossdomain.xml 文件，
+  但可推断：API 子域名常部署 crossdomain.xml 以支持旧版 Flash 客户端，
+  且 /oauth/ 目录层级天然与授权端点共享路径前缀。
+
+chaining: >
+  crossdomain.xml 策略文件通配符 →
+  恶意 SWF 跨域读取 /oauth/authorize →
+  窃取 OAuth token →
+  无用户交互完成 App 授权 →
+  获得受害者账户完整权限。
+  (原文: "an attacker can steal the Token of the user and do all the
+  authorization process ... without the need of user interaction.")
+
+approach: >
+  在目标 API 域名上检查各层级的 crossdomain.xml / clientaccesspolicy.xml 文件，
+  若父目录配置 allow-access-from domain="*" 且子目录存在敏感端点（OAuth、API token、
+  用户数据），则任意域名可通过 Flash/Silverlight 跨域读取子目录响应。
+  即使 Flash 已废弃，同一原理适用于任何"策略文件层级继承"机制
+  （如旧版 CORS 预检缓存、服务端 proxy 配置继承）。
+
+reasoning_chain:
+  - "问：目标 API 域名是否存在 crossdomain.xml 或 clientaccesspolicy.xml 文件？"
+  - "问：策略文件中是否使用 allow-access-from domain=\"*\" 或过宽的域名通配？"
+  - "问：策略文件所在目录的子目录中是否有敏感端点（OAuth authorize、token exchange、用户数据 API）？"
+  - "如果策略文件在 /api/ 或 /oauth/ → 其下所有子路径都可被跨域读取"
+  - "问：是否存在其他形式的跨域策略继承机制（CORS 预检缓存、proxy 路径级配置）表现出相同的父→子目录继承行为？"
+  - "问：master crossdomain.xml (根目录) 的 permitted-cross-domain-policies 是否设为 by-content-type 或 all？（如果是 none 则子目录策略文件无效）"
+
+vuln_root: "跨域策略文件放置在包含敏感子目录的路径上，且使用通配符允许任意域名访问——开发者假设不同子目录的跨域策略是隔离的，但实际上策略文件对子目录具有继承效果。"
+
+transferable_to:
+  - "仍保留 crossdomain.xml 的旧版企业应用（银行、ERP 的 Flash 组件未清理）"
+  - "使用 clientaccesspolicy.xml 的 Silverlight 遗留系统"
+  - "任何 proxy/网关层面按路径前缀配置跨域规则的系统（如 nginx 对 /api/* 统一配置 CORS）"
+  - "CDN/API Gateway 的路径级 CORS 配置继承（父路径配置被子路径继承）"
+  - "OAuth API 部署在与公开 API 相同路径前缀下的架构"
+
+cases:
+  - url: "https://hackerone.com/reports/136582"
+    note: "Vimeo api.vimeo.com/oauth/crossdomain.xml 设置 domain=\"*\"，任意域名 SWF 可跨域读取 /oauth/authorize 的 OAuth token，无用户交互完成 App 授权，获得受害者账户完整权限。"

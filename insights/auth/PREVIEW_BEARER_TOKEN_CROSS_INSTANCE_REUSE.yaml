@@ -1,0 +1,77 @@
+name: "预览/共享链接的 bearer token 未绑定目标实例——跨店铺复用 token 绕过密码保护"
+id: "PREVIEW_BEARER_TOKEN_CROSS_INSTANCE_REUSE"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["authz"]
+tags: ["bearer-token", "preview-url", "password-protection", "cross-tenant", "token-binding", "shopify", "development-store"]
+source: "https://hackerone.com/reports/961929"
+
+# ——— L3 核心 ———
+
+observation: >
+  Shopify 新开发店铺（2020-08-17 起）的预览 URL 需要密码保护，但预览 token（_bt= 参数）
+  在不同店铺之间是通用的。从自己店铺获取的 _bt= token 可以直接附加到另一个店铺的预览 URL 上。
+  (原文: "I have found a way to bypass the password page of a shopify preview URL
+  for new development stores created as of August 17, 2020")
+
+hypothesis: >
+  未叙述（仅结果）。推断思路：既然预览 URL 通过 _bt= 参数授权访问，
+  那么这个 token 是否仅对生成它的店铺有效？
+  如果 token 只验证"是否有效"而不验证"是否属于目标店铺"，
+  就可以用自己店铺的 token 访问别人的店铺。
+
+action_result: >
+  成功：从自己的开发店铺获取 _bt= token（通过 Online Store > Themes > View your store），
+  将该 token 附加到另一个新标准开发店铺的预览 URL 后，
+  直接绕过密码认证页面访问了店铺内容。
+  (原文: "Open a preview url that was generated from another store...
+  Paste the ?_bt=<some-long-token> query parameter you copied from step #4
+  at the end of the preview url... You should have bypassed the password
+  authentication and be able to see the store content")
+
+why_here_first: >
+  未叙述（仅结果）。推断：研究者注意到新旧开发店铺在预览 URL 的密码保护行为上
+  有差异（新店铺增加了密码页），由此好奇新增保护是否完整覆盖了 _bt= token 路径。
+
+chaining: >
+  N/A — 单步绕过。但可与社工结合：获取目标店铺预览 URL（无 token）后，
+  用自己店铺的有效 token 绕过密码保护访问商店内容。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  当目标应用提供"预览链接/共享链接/临时访问 URL"且该 URL 附带 bearer token
+  或签名参数时，测试该 token 是否与目标资源（店铺/项目/文档/仓库）绑定。
+  用合法账户 A 生成的 token 替换到资源 B 的 URL 上，检查是否仍可访问。
+  特别关注：平台近期新增的访问保护（如新增密码页），新保护可能未覆盖旧的 token 验证路径。
+
+reasoning_chain:
+  - "问：目标系统是否有预览/共享/临时访问链接功能？"
+  - "问：这些链接中的 token/签名参数是什么格式？（JWT？opaque？HMAC？）"
+  - "问：用账户 A 生成的 token 能否拼接到账户 B 的资源 URL 上？"
+  - "如果可以访问 → token 未绑定目标资源 → 跨租户/跨实例信息泄露"
+  - "问：平台是否近期新增了访问控制（如密码页/审批流）？新控制是否覆盖了 token 绕过路径？"
+  - "扩展：token 是否有过期？无过期则可持久访问。"
+  - "扩展：token 权限范围是否受限？（只读 vs 可编辑）"
+
+vuln_root: >
+  预览/共享 token 仅验证"token 是否有效"，未验证"token 是否属于当前请求的目标资源"，
+  导致跨实例/跨租户复用 token 绕过访问控制。
+
+transferable_to:
+  - "SaaS 平台的项目/文档/仓库预览共享链接"
+  - "电商平台的店铺预览 URL"
+  - "CMS 的草稿/未发布内容预览链接"
+  - "CI/CD 平台的构建报告/artifacts 临时共享 URL"
+  - "任何通过 URL 参数 token 授予临时访问权限的功能"
+
+cases:
+  - url: "https://hackerone.com/reports/961929"
+    title: "Ability to see password protected content by bypassing the password page of shopify preview URL"
+    author: "saltymermaid"
+    platform: "Shopify (development stores)"
+    severity: "Medium (CVSS 6.4)"
+    bounty: "$1,500"
+    note: >
+      新开发店铺（2020-08-17 起）的预览 URL 需要密码，
+      但 _bt= token 未绑定店铺——从自己店铺的 token 可以绕过其他店铺的密码页。

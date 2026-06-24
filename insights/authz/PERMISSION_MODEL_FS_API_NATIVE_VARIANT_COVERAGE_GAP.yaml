@@ -1,0 +1,94 @@
+name: "权限模型 fs 模块内 .native() 变体绕过——同一 API 的 C++ 原生绑定跳过 JS 层权限钩子"
+id: "PERMISSION_MODEL_FS_API_NATIVE_VARIANT_COVERAGE_GAP"
+applicable: "whitebox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["permission-model", "sandbox-bypass", "node.js", "fs-native-binding", "realpathSync", "file-existence", "path-enumeration", "CVE-2026-21715"]
+source: "https://hackerone.com/reports/3480841"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。Node.js 权限模型（--permission + --allow-fs-read）
+  在 fs.realpathSync() 上正确执行读权限检查，
+  但 fs.realpathSync.native() 使用 libuv 原生绑定直接执行系统调用，
+  未通过 JS 层的权限检查钩子，导致受限进程仍可探测文件存在性、解析 symlink 目标、枚举路径。
+  (原文团队摘要: "A flaw in Node.js Permission Model filesystem enforcement
+  leaves fs.realpathSync.native() without the required read permission checks,
+  while all comparable filesystem functions correctly enforce them.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：权限模型的 fs 模块拦截点覆盖了 JS 层的 realpathSync 入口，
+  但 .native() 变体通过独立的 C++ binding 路径调用 libuv 的 uv_fs_realpath，
+  不经过与主入口相同的权限检查分支，导致覆盖缺口。
+
+action_result: >
+  未叙述（仅结果）。CVE-2026-21715 已分配，影响 Node.js 20.x, 22.x, 24.x, 25.x。
+  确认在 --permission + 受限 --allow-fs-read 下，
+  fs.realpathSync.native() 可检测文件存在、解析 symlink 目标、
+  枚举超出授权范围的文件系统路径。
+  (原文团队摘要: "code running under --permission with restricted --allow-fs-read
+  can still use fs.realpathSync.native() to check file existence, resolve symlink targets,
+  and enumerate filesystem paths outside of permitted directories.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  文件存在性探测 + symlink 目标解析 → 情报收集，用于后续定向攻击；
+  枚举敏感路径（如 /etc/shadow、/root/.ssh/）确认目标存在后，
+  可结合其他权限模型绕过（如 fd-based 写、non-fs API 写）升级为读写。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  当目标运行时/沙箱的权限模型在 JS 层对 fs 模块 API 设置权限检查钩子时，
+  枚举同一 API 的所有实现变体（sync/async/callback/promises/.native()），
+  测试每个变体是否都经过相同的权限检查路径——
+  关键在于发现".native() 等原生绑定变体走独立的 C++ 调用路径，跳过 JS 层拦截"的覆盖缺口。
+
+reasoning_chain:
+  - "问：目标运行时的权限模型在哪一层对 fs API 设置拦截？（JS wrapper 层？C++ binding 层？libuv 层？）"
+  - "问：fs 模块中有哪些 API 提供了多个实现变体？（如 realpathSync vs realpathSync.native、mkdtemp vs mkdtempSync）"
+  - "白盒：grep -rn '\\.native' --include='*.js' --include='*.cc' lib/fs.js src/node_file.cc | grep -i 'realpath\\|readdir\\|stat\\|lstat\\|access'"
+  - "问：.native() 变体的调用路径是否经过与主 API 相同的权限检查函数？"
+  - "如果不经过 → 问：通过 .native() 变体能获得什么信息？（文件存在性、路径解析、元数据）"
+  - "问：即使 .native() 只能做只读信息泄露，泄露的信息是否有助于后续攻击？（路径枚举→定向利用）"
+  - "扩展：其他 fs API 是否也有 .native() 或 C++ 直接绑定的变体未被权限模型覆盖？"
+  - "扩展：Deno、Bun 等运行时的 fs API 是否有类似的多变体实现遗漏？"
+
+vuln_root: >
+  权限模型仅在 JS 层 API 入口设置检查钩子，
+  但同一功能的 .native() 变体通过独立的 C++ binding 直接调用 libuv，
+  不经过 JS 层的权限拦截点，破坏了"所有 fs 操作都经过权限验证"的安全假设。
+
+transferable_to:
+  - "Node.js --permission 模型的其他 .native() 变体（如 readdirSync.native 如果存在）"
+  - "Node.js 内部的 binding 直接暴露到用户空间的场景（如 process.binding('fs')）"
+  - "Deno 的 --allow-read 权限模型——是否有 Deno.realPathSync 的原生变体绕过？"
+  - "Bun 的 fs 兼容层——原生实现是否绕过权限检查？"
+  - "任何在 FFI/native binding 层面提供同一 API 多实现路径的沙箱方案"
+
+cases:
+  - url: "https://hackerone.com/reports/3480841"
+    author: "stif"
+    platform: "Node.js"
+    severity: "Low (CVSS 3.3)"
+    cve: "CVE-2026-21715"
+    bounty: "无赏金"
+    note: >
+      Node.js 20.x/22.x/24.x/25.x 的 --permission 权限模型中，
+      fs.realpathSync.native() 未经过读权限检查，
+      受限进程可检测文件存在性、解析 symlink 目标、枚举授权范围外的路径。
+      no-content 公开，仅团队摘要可见。2025-12 报告，2026-03 公开。
+  - url: "https://hackerone.com/reports/1966492"
+    author: "cjihrig"
+    platform: "Node.js"
+    severity: "Medium (CVSS 4.4)"
+    cve: "CVE-2023-30583"
+    bounty: "无赏金"
+    note: >
+      Node.js --experimental-permission 权限模型中，
+      fs.openAsBlob() 是新增的 fs 模块 API，未被接入权限检查系统，
+      受限进程可通过该 API 读取任意文件内容。
+      (原文: "fs.openAsBlob() does not appear to be limited by the permission system.")
+      full-content 公开。2023-04 报告。内部团队成员提交。

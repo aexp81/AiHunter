@@ -77,3 +77,25 @@ cases:
     note: >
       受害者限制：目标账户必须尚未合并 Shopify ID，且未开启 2FA。
       攻击者需有 Shopify Partner 账户（创建 dev store）和目标店铺的 POS staff 权限。
+  - url: "https://hackerone.com/reports/2885269"
+    title: "Shopify Partners Invitation Process Allows Privilege Escalation Without Email Verification"
+    platform: "Shopify"
+    severity: "Medium"
+    bounty: "$3,500"
+    note: >
+      Shopify Partners 邀请流程变更后不再要求邮件验证——攻击者用受害者 email
+      创建账户（无需验证）→ 等待/观察到该 email 被邀请为 Owner →
+      用攻击者控制的账户接受邀请 → 提权为 Owner。
+      纯结果文，无 L3 思考过程叙述。本质仍为"email 验证状态在流程间未一致校验"。
+  - url: "https://hackerone.com/reports/892904"
+    title: "Ability to link a Google account to another staff account/store owner that isn't linked yet"
+    author: "imgnotfound"
+    platform: "Shopify"
+    severity: "Critical"
+    note: >
+      同一 POS GraphQL proxy (pos-channel.shopifycloud.com/graphql-proxy/admin) 的
+      StaffMemberUpdate mutation，将未关联 Google 账户的 staff/store owner 的 email
+      修改为攻击者的 Google Apps email，然后通过 Google Apps SSO 登录直接关联账户。
+      与 #867513 使用完全相同的端点和 mutation，approach 一致：
+      POS API 修改 email 无验证 + SSO 自动关联未绑定账户。
+      额外提到：结合 XSS 可将此攻击扩展到 store owner 级别。

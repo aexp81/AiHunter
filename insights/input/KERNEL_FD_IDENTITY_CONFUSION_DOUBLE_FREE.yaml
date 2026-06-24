@@ -1,0 +1,72 @@
+name: "内核 syscall 用 fd 数字而非 file 指针标识对象——close+reopen 制造 double-free"
+id: "KERNEL_FD_IDENTITY_CONFUSION_DOUBLE_FREE"
+applicable: "whitebox"
+phase: "input"
+also_phases: ["chain"]
+tags: ["kernel", "freebsd", "double-free", "use-after-free", "fd-reuse", "privilege-escalation", "ps5", "syscall", "netcontrol", "netevent"]
+source: "https://hackerone.com/reports/3320669"
+
+observation: >
+  sys_netcontrol syscall 的 netevent 子系统在存储 socket 引用时保存的是 fd 数字而非 file 指针。
+  清除 netevent 时通过 fd 匹配来查找要移除的 socket。但 fd 可被用户 close+reopen
+  指向不同的 socket，导致 fdrop() 作用于错误的对象。
+  (原文: "The bug here is that when clearing a socket from a netevent, the comparison
+  between the stored socket and the input socket is done using the fd.")
+  (原文: "However, the fd is not static and can be changed by the user to point to
+  a different socket.")
+
+hypothesis: >
+  如果 close 原始 socket 后重新打开一个新 socket（复用了同一 fd 编号），
+  再调用 netevent clear，就能让 fdrop() 作用于从未持有该引用的新 socket，
+  造成 double-free；同时原始 socket 的引用被泄露。
+  (原文: "If this is done, an extra fdrop() is called on a socket that never had
+  that reference taken, and the reference from the original socket is leaked.")
+
+action_result: >
+  PoC 展示：创建 s1 → 添加到 netevent → close s1 → 创建 s2（fd 复用）→
+  清除 netevent → s2 被 double fdrop，引用计数归零后仍可通过 fd 表访问。
+  在 PS4 上通过 fcntl(F_SETFL) 可二次释放导致崩溃/panic。
+  在 PS5 上 fget() 会 hang。
+  (原文: "s2 will have fdrop() called on it twice, despite it never having been
+  actually added to netevent. A reference to the original s1 file will also be leaked.")
+  (原文: "On PS4, calling fcntl(F_SETFL) will cause file to get freed again...
+  Doing this enough times will cause a crash/panic at some point.")
+
+why_here_first: >
+  未叙述（仅结果）。推测：审计 netcontrol syscall 时注意到 netevent 结构体
+  存储的是 socket_fd（整数）而非 file 指针本身，意识到 fd 可被用户空间重新分配。
+
+chaining: >
+  Double-free → use-after-free（fd 表仍持有已释放的 file 结构体引用）
+  → 内存损坏 → 内核代码执行。
+  (原文: "The double put of a file pointer can lead to a use-after-free...
+  Can be used by an attacker for memory corruption, potentially leading to
+  kernel code execution.")
+
+approach: >
+  审计内核代码中用 fd 数字（而非 file 指针/结构体引用）标识对象的场景。
+  当内核子系统通过 getsock_cap()/fget() 获取引用并存储 fd 数字时，
+  用户空间可以 close 原 fd 后 open 新对象复用同一 fd 号，导致后续的
+  fdrop() 作用于错误对象——double-free + 引用泄露。
+
+reasoning_chain:
+  - "问：目标内核 syscall/ioctl 在存储 file/socket 引用时，保存的是 fd 数字还是 file 指针？"
+  - "如果保存的是 fd 数字 → fd 可被用户空间 close+reopen 重新分配到不同对象"
+  - "问：后续释放/清除操作是否通过 fd 匹配来查找要操作的对象？"
+  - "如果是 → close 原对象并 open 新对象复用同一 fd → 清除操作的 fdrop() 作用于错误对象"
+  - "问：这种 double-free 后 fd 表是否仍持有已释放对象的引用（dangling pointer）？"
+  - "问：能否通过 heap spray 在释放后的内存中放置可控数据实现代码执行？"
+
+vuln_root: >
+  内核子系统用 fd 数字标识 file/socket 对象，假设 fd 在存储期间始终指向同一对象，
+  但 fd 到 file 的映射完全由用户空间控制。
+
+transferable_to:
+  - "PS5/PS4 内核的 netcontrol 及其他使用 fd 标识符的自定义 syscall"
+  - "FreeBSD/Linux 内核中任何将 fd 整数存入内核结构而非保持 file 指针引用的代码"
+  - "内核驱动中的 ioctl handler——如果内部用 fd 号做查找而非直接持有引用"
+  - "用户态进程间通信中基于 fd 号传递资源的场景（如 Android Binder fd 传递）"
+
+cases:
+  - url: "https://hackerone.com/reports/3320669"
+    note: "PS5 sys_netcontrol netevent double fdrop → UAF → 提权，$10,000，by slidybat。"

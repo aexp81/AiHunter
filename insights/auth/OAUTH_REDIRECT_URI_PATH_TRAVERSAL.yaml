@@ -102,3 +102,14 @@ cases:
       Bug 1：GitHub 接受 redirect_uri 中的 /../ 路径穿越（绕过子目录限制）。
       Bug 2：token endpoint 无论提交何种 redirect_uri 都返回有效 token。
       这两个 bug 的发现顺序是先找到路径穿越，再验证 token endpoint 是否有配套验证。
+  - url: "https://hackerone.com/reports/1861974"
+    title: "Stealing Users OAuth authorization code via redirect_uri"
+    platform: "pixiv (booth.pm)"
+    severity: "High"
+    bounty: "$2,000"
+    note: >
+      pixiv OAuth 授权端点的 redirect_uri 参数接受路径穿越（/../../../../ja/items/XXX），
+      可将用户重定向到攻击者在 booth.pm 上创建的商品页面。
+      攻击者在商品页面启用 Google Analytics，当受害者被重定向时，
+      authorization code 通过 query string 泄露到 GA 实时报告中。
+      纯结果文，无扑空/思考过程叙述。

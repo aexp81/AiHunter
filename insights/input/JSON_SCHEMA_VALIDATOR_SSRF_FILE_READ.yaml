@@ -1,0 +1,43 @@
+name: "导入归档中 JSON Schema 验证器的 $ref 解析触发 open-uri 读取本地文件"
+id: "JSON_SCHEMA_VALIDATOR_SSRF_FILE_READ"
+applicable: "whitebox"
+phase: "input"
+also_phases: ["chain"]
+tags: ["json-schema", "ssrf", "file-read", "open-uri", "import-export", "gitlab", "ruby"]
+source: "https://hackerone.com/reports/1132378"
+
+observation: >
+  GitLab 项目导入使用 JSON Schema 验证器校验归档中的 JSON 配置文件，
+  底层调用 open-uri 解析 schema reference。
+  (原文: "A mis-usage of json schema validator could be used by an attacker to read any file
+  in GitLab server...the root cause of the issue here is 'open-uri'. It's an SSRF issue at the same time.")
+
+hypothesis: "未叙述（仅结果）"
+action_result: >
+  在归档 JSON 中注入 "$ref": "file:///etc/passwd"，验证器在 resolve schema reference
+  阶段读取本地文件内容并在错误消息中泄露约 250 字节数据。
+  (原文: "The issue allows the attacker to leak ~250 bytes of data of any file.")
+
+why_here_first: "未叙述（仅结果）"
+chaining: "AFR → 读取 secrets.yml/database.yml → 进一步利用"
+
+approach: >
+  在导入功能的 JSON 配置中注入 $ref 指向 file:// 路径，利用 JSON Schema
+  验证器的 reference resolver（底层 open-uri）读取服务器本地文件。
+
+reasoning_chain:
+  - "问：导入功能是否使用 JSON Schema 验证用户提交的结构化数据？"
+  - "白盒：grep -rn 'json_schemer\\|jsonschema\\|JSON::Validator' --include='*.rb' --include='*.py'"
+  - "问：Schema resolver 是否限制了 URI scheme？是否允许 file://？"
+  - "如果允许 → 在归档 JSON 中注入 $ref: file:///etc/passwd 测试"
+  - "问：验证失败的错误消息是否包含文件内容片段？"
+
+vuln_root: "JSON Schema 验证器的 reference resolver 未限制 URI scheme，open-uri 允许读取本地文件。"
+
+transferable_to:
+  - "任何使用 JSON Schema/YAML 解析器做验证且未禁用外部引用解析的导入功能"
+  - "open-uri 在 Ruby 中默认支持 file:// 协议"
+
+cases:
+  - url: "https://hackerone.com/reports/1132378"
+    note: "GitLab 项目导入 JSON Schema $ref SSRF/AFR，$16,000。"

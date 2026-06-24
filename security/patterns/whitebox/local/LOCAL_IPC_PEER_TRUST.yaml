@@ -1,0 +1,21 @@
+id: LOCAL_IPC_PEER_TRUST
+name: "本地 IPC/socket/RPC 的调用方身份认定缺陷（源码审计）"
+applicable: whitebox
+category: local
+cwe: CWE-287
+
+trigger:
+  - "审计 root daemon 监听 AF_UNIX socket / named pipe / localhost RPC 的代码"
+  - "代码用 peer credential 或客户端认证做授权决策"
+
+reasoning_chain:
+  - "执行规则：以下每条必须逐一执行，命令必须实际运行，不允许跳过"
+  - "问：服务端如何获取调用方身份？SO_PEERCRED / getpeereid / 还是仅靠应用层认证？"
+  - "白盒：grep -rniE 'SO_PEERCRED|getpeereid|ucred|GetNamedPipeClientProcessId' 找身份获取点"
+  - "问：取到的 peer credential 是否被拼接成字符串再 split 解析？分隔符可否被 socket 文件名/remoteAddr 注入？"
+  - "白盒：grep -rniE 'RemoteAddr|peer.*\\+|split\\([\\\";,:]|sprintf.*uid' 看序列化→反序列化身份混淆（dirty_sock 类）"
+  - "问：本地 RPC 端口是否只认证 client→server（Digest/Basic）而无服务端身份校验？非特权用户能否抢占该端口？"
+  - "白盒：看监听 bind 的端口号(>1024 任意用户可绑)与是否启用 TLS mutual auth"
+  - "问：哪些端点需要 root/admin？授权注解是否真覆盖了所有敏感端点？"
+  - "白盒：grep -rniE 'requireRoot|admin.*only|access.*control|@RolesAllowed' 对照端点清单"
+  - "如果：身份可注入/端口可抢占/无服务端认证 → 构造 PoC 调高权限端点验证"

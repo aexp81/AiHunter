@@ -1,0 +1,102 @@
+name: "完整性校验与驱动安装的时间窗——替换待安装驱动文件实现内核代码执行"
+id: "INTEGRITY_CHECK_DRIVER_INSTALL_TOCTOU_LPE"
+applicable: "whitebox"
+phase: "logic"
+also_phases: ["chain"]
+tags: ["toctou", "race-condition", "kernel-driver", "steam", "privilege-escalation", "windows", "file-replacement", "time-of-check-time-of-use"]
+source: "https://hackerone.com/reports/852091"
+
+# ——— L3 核心 ———
+
+observation: >
+  Steam 启动时校验安装目录下所有文件的完整性并重新下载被修改的文件，
+  但 Remote Play 功能首次使用时才安装内核驱动
+  （SteamStreamingMicrophone.sys 和 SteamStreamingSpeakers.sys）。
+  (原文: "On Steam starting, it will check all installed files' Integrity,
+  and re-download the modified file(s)... Before the first time Steam stream
+  to SteamLink (Remote Play feature), it makes SteamServices to install 2
+  kernel-mode drivers")
+
+hypothesis: >
+  如果在 Steam 启动完成完整性校验之后、首次触发 Remote Play 驱动安装之前，
+  替换驱动文件为恶意驱动，则安装的将是攻击者的内核驱动。
+  (原文: "we can assume that if SteamStreamingMicrophone or SteamStreamingSpeakers
+  was modified after steam starting and before being installed (the first time
+  streaming), the 'modified' driver will be installed instead of the original one.
+  This means an arbitrary kernel-mode driver can be installed from Steam.")
+
+action_result: >
+  成功：攻击者在完整性校验通过后替换驱动文件为自制的 fake driver，
+  首次触发 Remote Play 时 SteamServices 安装了被替换的恶意内核驱动。
+  (原文: "an arbitrary kernel-mode driver can be installed from Steam")
+
+why_here_first: >
+  研究者注意到完整性校验和驱动安装是两个分离的步骤，且存在时间窗口：
+  校验发生在 Steam 启动时，而安装发生在首次流式传输时。
+  (原文: "On Steam starting, it will check all installed files' Integrity...
+  Before the first time Steam stream to SteamLink... it makes SteamServices
+  to install 2 kernel-mode drivers")
+
+chaining: >
+  Steam 启动时完整性校验通过 → 攻击者替换驱动文件为恶意驱动 →
+  用户首次使用 Remote Play → SteamServices 安装被替换的内核驱动 →
+  恶意代码在内核模式执行。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  审计桌面应用中"完整性校验"与"特权安装/加载"操作之间的时间窗口（TOCTOU），
+  检查校验通过后到实际加载/安装之间是否存在文件被替换的机会窗口。
+
+reasoning_chain:
+  - "问：目标桌面应用是否有文件完整性校验机制（启动时校验、定期校验、签名验证）？"
+  - "问：校验之后是否有延迟执行的特权操作（驱动安装、DLL 加载、插件加载）——即校验和使用不在同一时刻？"
+  - "如果存在时间窗口 → 问：校验通过后的文件路径是否对当前用户可写？"
+  - "如果可写 → 在校验通过后、特权操作执行前替换文件，观察是否加载了替换后的文件"
+  - "问：特权操作执行时是否有第二次完整性/签名校验？"
+  - "如果没有 → 替换文件为恶意 payload（内核驱动→内核代码执行、DLL→用户态提权）"
+  - "扩展：检查应用更新机制中类似的 TOCTOU——下载校验后安装前是否有替换窗口"
+
+vuln_root: >
+  开发者假设文件完整性校验通过后文件内容不会改变（校验和使用之间没有
+  原子性保证），实际存在 TOCTOU 窗口允许文件被替换。
+
+transferable_to:
+  - "任何桌面应用在启动时校验文件完整性但延迟加载驱动/DLL/插件的场景"
+  - "游戏平台、反作弊系统的驱动安装流程"
+  - "软件更新机制——下载并校验后、安装前的文件替换窗口"
+  - "企业安全软件（EDR/AV）的驱动更新流程"
+  - "容器运行时的镜像校验-使用 TOCTOU（校验层哈希后加载前替换）"
+
+cases:
+  - url: "https://hackerone.com/reports/852091"
+    author: "hydraskyteam"
+    platform: "Valve Steam (Windows)"
+    severity: "Medium (CVSS 4.7)"
+    bounty: "有赏金"
+    note: >
+      Steam 启动时校验安装目录文件完整性，Remote Play 首次使用时通过 SteamServices
+      安装 SteamStreamingMicrophone.sys 和 SteamStreamingSpeakers.sys 内核驱动。
+      在两者之间替换驱动文件为恶意驱动即可实现内核代码执行。
+      (原文: "if SteamStreamingMicrophone or SteamStreamingSpeakers was modified
+      after steam starting and before being installed (the first time streaming),
+      the 'modified' driver will be installed instead of the original one")
+  - url: "https://hackerone.com/reports/768110"
+    title: "Race condition (TOCTOU) in NordVPN can result in local privilege escalation"
+    author: "hexgold"
+    platform: "NordVPN (Windows)"
+    severity: "Medium (CVSS 4.5)"
+    bounty: "有赏金"
+    note: >
+      NordVPN 6.26.8.0 修复了前一个 LPE（移除 engine 选项白名单），但未验证
+      ServerDomain 参数（WCF 模型的 DomainName 字段），攻击者可控制 OpenVPN
+      配置文件路径。NordVPN 服务先校验配置文件内容再启动 OpenVPN，
+      在校验和启动之间存在 TOCTOU 窗口——利用 NTFS Opportunistic Lock
+      （James Forshaw 的 BaitAndSwitch 工具）检测文件读取并在校验后替换为
+      含 engine 指令的恶意配置，加载任意 DLL 实现 SYSTEM 权限代码执行。
+      (原文: "NordVPN 6.26.8.0 mitigates a different local privilege escalation
+      vulnerability by removing the engine option from the whitelist...
+      A time-of-check-time-of-use (TOCTOU) race condition exists in the way
+      OpenVPN configuration files are validated/used... NTFS opportunistic locks
+      can be used to exploit this issue by detecting that a process is accessing
+      a certain file. When this occurs, the file can be swapped for another file.")

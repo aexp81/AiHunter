@@ -1,0 +1,65 @@
+name: "项目导入 JSON 中注入 CarrierWave remote_*_url 属性触发 SSRF"
+id: "PROJECT_IMPORT_CARRIERWAVE_REMOTE_URL_SSRF"
+applicable: "whitebox"
+phase: "chain"
+also_phases: ["input"]
+tags: ["gitlab", "project-import", "ssrf", "carrierwave", "mount_uploader", "attribute-cleaner-bypass", "orm-hidden-attribute", "cloud-metadata", "redis-rce"]
+source: "https://hackerone.com/reports/826361"
+
+observation: >
+  Note model 使用了 CarrierWave 的 mount_uploader :attachment，框架自动生成
+  remote_attachment_url= 方法；而项目导入的 AttributeCleaner 未将此隐含属性列入清理列表。
+  (原文: "The Note model has an `attachment` which is provided by a CarrierWave
+  uploader...As this attribute isn't removed by the `AttributeCleaner` on
+  project import, it can be set in the `project.json`")
+
+hypothesis: >
+  在 project.json 的 note 节点添加 remote_attachment_url 字段，导入时
+  CarrierWave 会自动从指定 URL 下载文件并附加到 note 上，从而触发 SSRF。
+  (原文: "it can be set in the `project.json` for a note and will be set when
+  the note is created, downloading the file")
+
+action_result: >
+  成功在 gitlab.com 上通过项目导入让服务端请求外部 URL（命中 postbin），
+  下载的文件作为 note attachment 可在导入后的项目中查看。
+  (原文: "Example of project import on gitlab.com hitting postbin")
+
+why_here_first: >
+  研究者检查了 mount_uploader 产生的隐含属性，发现 AttributeCleaner 的
+  清理范围未覆盖 CarrierWave 自动生成的 remote_*_url= setter。
+  (原文: "One of the features this provides is the ability to download and
+  attach a file via a url...remote_attachment_url= which can be used to perform
+  this action")
+
+chaining: >
+  project.json 注入 remote_attachment_url → SSRF（服务端请求任意 URL）
+  → 读取云元数据 / 访问内网服务 → 结合 remote_attachment_request_header=
+  设置自定义 header（如 Metadata-Flavor: Google）→ 可升级至 RCE（Redis/GCP）。
+  (原文: "As `remote_attachment_request_header=` is also available...the payload
+  could be set via a header" 和 "access `http://metadata.google.internal/`")
+
+approach: >
+  审计使用 ORM 文件上传框架（如 CarrierWave、ActiveStorage、Shrine）的 model，
+  检查框架自动生成的 remote_*_url= / remote_*_request_header= 等"幽灵属性"
+  是否在导入/批量赋值的属性清理列表中。未清理则通过导入 JSON 注入这些属性
+  触发 SSRF，结合 request_header 属性可设置自定义 HTTP 头以绕过元数据服务限制。
+
+reasoning_chain:
+  - "问：目标代码中有哪些 model 使用了 mount_uploader / has_one_attached 等文件上传声明？"
+  - "白盒：grep -rn 'mount_uploader\\|has_one_attached\\|shrine' --include='*.rb'"
+  - "问：这些 model 是否参与导入/批量赋值流程？对应的 AttributeCleaner 或 strong_params 是否排除了 remote_*_url= ？"
+  - "如果未排除 → 问：CarrierWave uploader 是否有 download_whitelist / allowed_schemes 限制？"
+  - "问：是否也存在 remote_*_request_header= 属性可用于注入自定义 HTTP 头？"
+  - "如果可注入 header → 测试 Metadata-Flavor / X-Forwarded-For 等用于云元数据或内网穿透"
+
+vuln_root: "ORM 文件上传框架隐式创建的 remote_*_url= 方法未被导入属性清理逻辑覆盖——开发者不知道 mount_uploader 会产生这些 setter。"
+
+transferable_to:
+  - "任何使用 CarrierWave + 项目/数据导入功能的 Rails 应用"
+  - "使用 ActiveStorage / Shrine 等文件上传 gem 且有批量属性赋值的应用"
+  - "从 JSON/XML 反序列化创建 model 实例的 API（import/seed/migration 功能）"
+  - "有 GCP/AWS 元数据服务且未通过 IMDSv2/IP 限制防护的云环境"
+
+cases:
+  - url: "https://hackerone.com/reports/826361"
+    note: "GitLab project import SSRF via CarrierWave remote_attachment_url on Note, $10,000, high, by vakzz。"

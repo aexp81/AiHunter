@@ -1,0 +1,58 @@
+name: "通过 PATCH 覆写资源标识符克隆管理员受限资源——撤销后仍可持续使用"
+id: "RESOURCE_ID_OVERWRITE_CLONE_RESTRICTED_AGENT"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["ai-agent", "sid-overwrite", "resource-clone", "privilege-persistence", "patch-api", "admin-bypass", "dust"]
+source: "https://hackerone.com/reports/3114554"
+
+observation: >
+  未叙述（仅结果）。报告者发现成员可以通过编辑自己创建的 agent 的 sid，
+  将其改为管理员管理的 agent（如 gemini-pro）的 sid。
+  (原文: "Edit this new agent, and change the sid to the sid of gemini-pro, which is: gemini-pro.")
+
+hypothesis: >
+  未叙述（仅结果）。如果成员可以通过 PATCH 请求覆写 agent 的 sid 为管理员
+  受限 agent 的标识符，那么即使管理员禁用原始 agent，克隆版本可能仍然有效。
+
+action_result: >
+  成功：成员创建新 agent → 通过 PATCH 请求将 sid 改为 gemini-pro →
+  管理员在后台禁用 gemini-pro → 成员仍可通过克隆的 agent 继续调用 gemini-pro。
+  且成员账户无法删除该克隆 agent。
+  (原文: "Although the admin disables gemini-pro, we can still use this cloned agent
+  to call gemini-pro." "Now i cant even delete this agent on member account")
+
+why_here_first: >
+  未叙述（仅结果）
+
+chaining: >
+  资源标识符覆写 → 克隆受限资源 → 管理员撤销后仍持续访问 → 
+  完全破坏管理员的资源管控机制。
+
+approach: >
+  在 AI agent / chatbot / 自动化平台中，成员可编辑自己资源的配置时，
+  尝试将资源标识符（sid/slug/name）覆写为管理员受限资源的标识符，
+  测试是否能克隆该资源并在原资源被禁用后持续使用。
+
+reasoning_chain:
+  - "问：平台是否允许成员创建自己的 agent/bot/自动化资源？"
+  - "问：创建或编辑资源时，是否可以自定义资源标识符（sid、slug、name 等）？"
+  - "问：将自己资源的标识符改为管理员受限资源的标识符，服务端是否校验所有权？"
+  - "如果不校验 → 问：克隆后的资源是否真正继承了原资源的能力（调用底层模型、访问数据源等）？"
+  - "问：管理员禁用或删除原始资源后，通过克隆标识符创建的副本是否仍然可用？"
+  - "如果仍可用 → 确认资源标识符覆写导致权限持久化绕过"
+
+vuln_root: >
+  资源配置 PATCH 端点未校验标识符字段的唯一性和所有权——
+  成员可将自己的资源标识符覆写为管理员受限资源的标识符，
+  后端按标识符解析时克隆了受限资源的能力。
+
+transferable_to:
+  - "AI agent 平台（如 Dust、GPT Builder、Coze）的 agent 配置编辑"
+  - "SaaS 平台的模板/配置/工作流克隆功能"
+  - "任何允许用户编辑资源 slug/sid 且后端按标识符解析的系统"
+  - "自动化平台中 bot/workflow 的配置导入/覆写"
+
+cases:
+  - url: "https://hackerone.com/reports/3114554"
+    note: "Dust AI 平台成员通过 PATCH 覆写 agent sid 为 gemini-pro 克隆管理员受限 agent，禁用后仍可使用。Medium。"

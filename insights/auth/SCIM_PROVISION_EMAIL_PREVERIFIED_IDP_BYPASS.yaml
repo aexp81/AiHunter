@@ -1,0 +1,86 @@
+name: "SCIM 用户预配创建已验证邮箱——绕过 IDP 邮箱域名检查访问内部服务"
+id: "SCIM_PROVISION_EMAIL_PREVERIFIED_IDP_BYPASS"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["chain"]
+tags: ["scim", "email-verification", "idp", "gitlab", "saml-sso", "domain-check", "internal-access", "provisioning"]
+source: "https://hackerone.com/reports/565883"
+
+# ——— L3 核心 ———
+
+observation: >
+  GitLab 的 SCIM (System for Cross-domain Identity Management) 预配功能
+  允许 Gold 级 Group 所有者通过 API 创建用户，创建时 email 直接被标记为已验证。
+  (原文: "the new SCIM provisioning function allows any group owner in gitlab
+  to create any user with verified email address")
+
+hypothesis: >
+  如果 SCIM 创建的用户 email 被标记为已验证，则攻击者可以创建
+  email 为 @gitlab.com 的用户，绕过依赖 GitLab 作为 IDP 且检查 email 域名
+  的内部服务的访问控制。
+  (原文: "I can create user with email address ngalog@gitlab.com, and gitlab.com
+  will think ngalog@gitlab.com is verified already")
+
+action_result: >
+  成功：升级 Group 为 Gold 计划 → 设置 SAML SSO → 创建 SCIM token →
+  通过 SCIM API POST /api/scim/v2/groups/GROUP/Users 创建 email 为
+  目标域名（如 @gitlab.com）的用户 → 通过 SAML SSO 登录该用户 →
+  email 显示为已验证状态 → 可访问检查 @gitlab.com 域名的内部服务。
+  (原文: "Use the same SCIM token to issue the request below ...
+  open a new private window and use ... to login using the externalId
+  specified in the POST JSON body ... bypassed the email verification process")
+  无扑空叙述。
+
+why_here_first: >
+  报告者之前已收集了一份 GitLab 内部使用 GitLab.com 作为 IDP 并检查
+  @gitlab.com 域名的服务列表，说明他有意寻找可绕过邮箱域名验证的途径。
+  SCIM 是新功能（相对于传统注册流程），新功能的安全边界往往不完善。
+  (原文: "I used to have a list of internal services/sites of gitlab uses
+  gitlab.com to sign in and check if the signed in user has @gitlab.com
+  as their email domain")
+
+chaining: >
+  SCIM 创建已验证邮箱本身是低危（只影响 SAML Group 内）。
+  关键跳跃：GitLab 内部服务依赖 IDP 的邮箱域名检查作为唯一访问控制手段——
+  绕过邮箱验证意味着可以冒充 @gitlab.com 员工身份访问所有此类内部服务。
+  (原文: "exposure of those services would bring a high security impact
+  to gitlab infrastructure")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  检查用户预配协议（SCIM / LDAP / JIT provisioning）创建用户时
+  是否自动将 email 标记为已验证，绕过正常的邮件确认流程；
+  然后检查平台作为 IDP 时，下游服务是否仅依赖 email 域名做访问控制。
+
+reasoning_chain:
+  - "问：目标平台是否支持 SCIM、LDAP、JIT（Just-In-Time）等自动化用户预配？"
+  - "问：通过预配接口创建的用户，其 email 验证状态是怎样的？是否跳过了邮件确认流程？"
+  - "黑盒：使用 SCIM API 创建一个用户（email 设为测试域名），检查用户 profile 中 email 是否显示为 verified。"
+  - "问：目标平台是否作为 Identity Provider（IDP）被其他服务（内部或第三方）使用？"
+  - "问：依赖此 IDP 的下游服务是否通过 email 域名（如 @company.com）做访问控制？"
+  - "如果 SCIM 创建用户 email 自动 verified + 下游服务仅靠域名检查：构造 @company.com email 的 SCIM 用户，尝试通过 SSO 访问下游服务。"
+  - "扩展：检查 SAML assertion 中的 email 字段是否来自用户 profile（可被 SCIM 预设），还是有独立的验证链。"
+  - "扩展：Group owner 权限是否可以通过试用/免费升级获得？（降低攻击门槛）"
+
+vuln_root: >
+  开发者假设 SCIM 预配来自受信任的企业 IdP，因此隐式信任 SCIM 提供的 email
+  并标记为已验证。但 SCIM token 可由任意 Group owner 创建，
+  攻击者可自行建组并利用 SCIM 创建任意 email 的已验证用户。
+
+transferable_to:
+  - "任何支持 SCIM provisioning 的 SaaS 平台（Okta、Azure AD、OneLogin 等作为 SP 时）"
+  - "支持 LDAP/JIT provisioning 的平台——是否同样自动 verify email"
+  - "企业平台作为 IDP 时，下游服务依赖 email 域名做授权的场景"
+  - "多租户 SaaS 中 Group/Organization 级别的用户创建功能——是否可创建任意域名 email"
+
+cases:
+  - url: "https://hackerone.com/reports/565883"
+    title: "Bypass Email Verification -- Able to Access Internal Gitlab Services that use Login with Gitlab"
+    platform: "GitLab"
+    severity: "Medium"
+    cve: "CVE-2019-5473"
+    note: >
+      通过 Gold 级 Group 的 SCIM API 创建 @gitlab.com email 的用户，
+      email 自动标记为 verified，可绕过依赖 GitLab IDP 且检查邮箱域名的内部服务。
+      报告者之前已收集过这类内部服务列表。

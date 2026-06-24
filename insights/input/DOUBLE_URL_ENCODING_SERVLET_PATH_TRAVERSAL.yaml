@@ -1,0 +1,69 @@
+name: "Java Servlet 双重 URL 编码路径穿越——中间件解码差异绕过前置过滤"
+id: "DOUBLE_URL_ENCODING_SERVLET_PATH_TRAVERSAL"
+applicable: "blackbox"
+phase: "input"
+also_phases: ["chain"]
+tags: ["path-traversal", "double-encoding", "java-servlet", "url-decoding", "lfi", "windows"]
+source: "https://hackerone.com/reports/497771"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。研究者发现 /gwtmain/ 路径下的 Java servlet
+  在请求路径中接受双重 URL 编码的 ..%252f（%25 = %，%252f 被 servlet 解码为 %2f 再解码为 /）。
+  (原文: 'GET /gwtmain//..%252f..%252f..%252f...windows/System32/drivers/etc/hosts')
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  通过 ..%252f 穿越成功读取 c:/windows/System32/drivers/etc/hosts。
+  进一步测试读取 Users/Administrator/NTUser.dat 成功，证明以管理员权限运行。
+  (原文: "The system will return 200 ok and respond with content of
+  Users/Administrator/NTUser.dat which should be accessible only from administrator account.
+  It proves the critical impact an possibility of the RCE")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  LFI 以 admin 权限运行 → 可读取系统敏感文件（注册表、日志、凭据）→ 潜在 RCE。
+  (原文: "it can lead to the full compromise of the resource, in case attacker
+  will reach sensitive files such as logs/credentials/registry tree")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对 Java Web 应用（servlet、Spring、GWT 等）的路径参数，
+  使用双重 URL 编码（%252f = / 和 %252e = .）测试路径穿越，
+  绕过前置反代/WAF 的单层 URL 解码过滤。
+
+reasoning_chain:
+  - "问：目标是否为 Java Web 应用？（技术指纹：X-Powered-By、Server header、URL 模式如 /gwt/、/servlet/、.do、.action）"
+  - "问：正常 ../ 路径穿越是否被前置过滤器/WAF 拦截（403/400）？"
+  - "黑盒测试：将 ../ 替换为 ..%252f（双重编码），发送请求，观察响应码是否从 403 变为 200。"
+  - "如果 200 → 问：响应内容是否为目标文件的实际内容？（尝试读 /etc/passwd 或 windows/System32/drivers/etc/hosts）"
+  - "扩展：尝试其他编码变体——%2e%2e%2f（单层编码）、%2e%2e/ （混合）、..%c0%af（UTF-8 overlong）、..%ef%bc%8f（全角斜杠）"
+  - "扩展：尝试在双重编码穿越后读取应用配置文件（WEB-INF/web.xml、application.properties）以获取凭据。"
+  - "问：应用进程的运行权限是什么？（尝试读取 /root/.ssh/id_rsa 或 Users/Administrator/NTUser.dat 判断是否为 root/admin）"
+
+vuln_root: >
+  前置组件（反代/WAF/安全过滤器）对 URL 只做一次解码后判定为安全，
+  但后端 Java servlet 容器会再做一次解码，导致双重编码的 %252f 在后端被解析为 /，
+  实现路径穿越。两层解码之间的语义差异是漏洞本质。
+
+transferable_to:
+  - "任何经过反向代理（Nginx、Apache、IIS）+ Java servlet 容器（Tomcat、Jetty、WebSphere）的架构"
+  - "GWT（Google Web Toolkit）应用——/gwtmain/ 等 URL 模式"
+  - "Spring Boot 应用 behind Nginx/Apache——URL 解码层次不一致"
+  - "政府/国防系统——常使用老旧 Java 中间件，双重编码绕过有效"
+  - "任何存在前置过滤+后端再解码双层 URL 处理的架构"
+
+cases:
+  - url: "https://hackerone.com/reports/497771"
+    author: "sp1d3rs"
+    platform: "U.S. Dept Of Defense"
+    severity: "High"
+    bounty: "无赏金（VDP）"
+    note: >
+      DoD 系统 Java servlet（/gwtmain/）：..%252f 双重编码穿越读取系统文件，
+      以 Windows Administrator 权限运行。
+      2019-02 报告，2019-10 公开。

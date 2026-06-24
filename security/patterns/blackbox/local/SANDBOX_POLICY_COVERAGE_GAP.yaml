@@ -1,0 +1,22 @@
+id: SANDBOX_POLICY_COVERAGE_GAP
+name: "沙箱/权限模型的 API 变体或通道覆盖盲区"
+applicable: blackbox
+category: local
+cwe: CWE-862
+# 覆盖 insight: PERMISSION_MODEL_FD_VS_PATH / CHANNEL_TYPE_COVERAGE_GAP / BUILTIN_NORMALIZER_OVERWRITE /
+#   FS_API_NATIVE_VARIANT / NON_FS_API_FILE_WRITE / PATH_FORMAT_PREFIX_ASSUMPTION (Node.js Permission Model 家族)
+
+trigger:
+  - "目标是带沙箱/权限模型的运行时（Node --allow-fs-*/--allow-net、Deno、seccomp 包装）"
+  - "策略按 API 或路径形态做白/黑名单，可枚举多条等效路径"
+
+# 执行规则：以下每条必须逐一执行（核心：穷举所有能达成同一效果的旁路）
+reasoning_chain:
+  - "问：策略想拦住什么效果（读敏感文件/写文件/出网）？拦截点在哪一层（syscall / 库 API / DNS）？"
+  - "问：达成同一效果有几种 API？path-based(fs.chmod) 与 fd-based(fchmod/fchown/futimes/ftruncate) 都被拦了吗？"
+  - "测：用只读 open() 拿 fd，再走 fd-based 修改操作，是否被拦？（fchmod 把只读文件改可写绕后续限制）"
+  - "问：出网只拦 TCP 吗？AF_UNIX/UDS、named pipe、UDP、第三方库 socketPath 选项是否漏网？"
+  - "测：禁网状态下用 UDS 连本地特权服务（/var/run/docker.sock、mysql.sock、redis.sock）是否放行"
+  - "问：路径规范化用的工具函数是否 JS 层可被用户代码覆写？把 normalize 换成恒等函数后 ../ 穿越是否生效？"
+  - "问：路径形态变体是否绕过前缀假设？（UNC \\\\?\\、//server/share、相对 vs 绝对、native binding 变体）"
+  - "验证：从沙箱内读到 --allow-fs-read 范围外的文件 / 写文件 / 触达特权服务即确认覆盖盲区"

@@ -1,0 +1,63 @@
+name: "Vendored/Fork 协议栈中的已知 CVE 未回移——旧漏洞新目标"
+id: "KNOWN_CVE_VENDORED_PROTOCOL_STACK"
+applicable: "whitebox"
+phase: "input"
+also_phases: ["chain"]
+tags: ["cve-reuse", "vendored-code", "freebsd", "kernel", "buffer-overflow", "pppoe", "firmware", "ps4", "ps5", "protocol-stack"]
+source: "https://hackerone.com/reports/2177925"
+
+observation: >
+  PS4/PS5 的内核使用了 FreeBSD 的 sppp（PPPoE）协议栈代码，
+  该代码仍然包含 2006 年已在上游修复的 CVE-2006-4304 漏洞。
+  (原文: "For some reason, the PS4/PS5 is vulnerable to CVE-2006-4304")
+
+hypothesis: >
+  既然 PS4/PS5 基于 FreeBSD 内核的 fork，且 sppp 代码中
+  option length 未校验（p[1] 未验证是否 ≤ len），
+  通过恶意 PPPoE 服务器发送畸形 LCP/IPCP options 可触发堆溢出。
+  (原文: "at [1] the length of p[1] is not validated to be smaller or equal to len.
+  As such, at [2] the call bcopy() will copy with a size potentially larger than both the source and the destination.")
+
+action_result: >
+  构造恶意 PPPoE 服务器，发送包含无效 option length 的 IPCP 包：
+  1) 触发堆缓冲区越界写和越界读；
+  2) 越界读取的内存数据（含指针）通过 CONF_REJ 响应泄露回攻击者；
+  3) LCP header 的 len 字段可控制 malloc 分配大小，实现大 mbuf 复制到小 buf 的精确溢出；
+  4) PAP 认证中存在整数下溢（len 0-5 时 len-6 为负数），可绕过长度校验用 memcmp oracle 逐字节泄露内存。
+  (原文: "By doing so, it is possible to trigger a copy from a bigger mbuf to a smaller buf,
+  thus allowing to overwrite adjacent allocations with controllable data"
+  以及 "an attacker might be able to use this as a an oracle to leak the out-of-bounds data")
+
+why_here_first: >
+  PS4/PS5 基于 FreeBSD fork，FreeBSD 历史安全公告中的已修复 CVE
+  是审计 fork 代码的高优先级起点。
+  (原文: 引用了 "FreeBSD-SA-06:18.ppp.asc" 安全公告)
+
+chaining: >
+  heapdump overread 泄露指针（绕过 KASLR） →
+  堆溢出覆写相邻分配实现内核上下文 RCE。
+  (原文: "A malicious PPPoE server can cause denial-of-service or potentially remote code execution in kernel context")
+
+approach: >
+  识别目标固件/OS 中 vendored 或 fork 的开源协议栈（如 FreeBSD sppp、lwIP、OpenSSL），
+  检索上游已修复但 fork 版本可能未回移的历史 CVE，直接验证。
+
+reasoning_chain:
+  - "问：目标设备/OS 基于哪个开源项目的 fork？（FreeBSD、Linux、OpenBSD）"
+  - "问：fork 版本对应上游哪个时间点的快照？之后的安全补丁是否已 backport？"
+  - "问：上游安全公告中有哪些影响相关子系统（网络协议栈、文件系统、加密库）的 CVE？"
+  - "如果 CVE 补丁未应用 → 直接用公开的 PoC 或根据 diff 构造验证"
+  - "问：漏洞是否可从网络远程触发（如 PPPoE/DHCP/DNS），还是需要本地访问？"
+  - "如果远程可触发 → 评估通过信息泄露绕过 ASLR 后链接到 RCE 的可行性"
+
+vuln_root: "设备厂商 fork 了开源协议栈代码后未持续回移上游安全补丁，导致多年前已修复的漏洞在新设备上仍然可利用。"
+
+transferable_to:
+  - "IoT 设备固件中 vendored 的 lwIP、uIP、FreeBSD 网络栈"
+  - "游戏主机、路由器、嵌入式设备中基于 BSD/Linux fork 的内核"
+  - "商业产品中嵌入的 OpenSSL/LibreSSL 旧版本"
+  - "工控/SCADA 系统中 vendored 的协议解析库"
+
+cases:
+  - url: "https://hackerone.com/reports/2177925"
+    note: "PS4/PS5 FreeBSD sppp 协议栈 CVE-2006-4304 未修复，堆溢出+信息泄露可达内核 RCE，$12,500。"

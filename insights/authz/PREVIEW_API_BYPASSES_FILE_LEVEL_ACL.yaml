@@ -1,0 +1,88 @@
+name: "文件预览/缩略图 API 绕过 tag-based 文件访问控制规则——通过派生内容端点读取受保护文件"
+id: "PREVIEW_API_BYPASSES_FILE_LEVEL_ACL"
+applicable: "blackbox"
+phase: "authz"
+also_phases: []
+tags: ["access-control", "file-acl", "preview-api", "thumbnail", "nextcloud", "file-sharing", "tag-based-acl", "CVE-2018-3762", "derivative-content"]
+source: "https://hackerone.com/reports/358339"
+
+# ——— L3 核心 ———
+
+observation: >
+  Nextcloud 使用 Files access control + Files automated tagging 实现基于标签的文件 ACL，
+  管理员配置规则拒绝非 admin 组用户访问带有 "Secret" 标签的文件。
+  但非特权用户通过 WebDAV SEARCH 仍可列出所有共享文件的完整路径和 MIME 类型，
+  且通过 /apps/files/api/v1/thumbnail/ 端点可获取被 ACL 保护的图片文件的完整预览。
+  (原文: "The unauthorized attacker can list all files recursively for an unlimited depth,
+  even if explicitly denied by Files access control rules."
+  以及 "The unauthorized attacker can view the contents of all denied image files
+  up to their maximum resolution.")
+
+hypothesis: >
+  文件级 ACL 规则只在主文件下载端点（文件直接访问）和 UI 文件列表中实施，
+  但 WebDAV SEARCH 和 preview/thumbnail API 作为辅助端点，
+  未在处理请求时检查文件的 ACL 标签。
+  (原文未直接叙述假设，由攻击步骤推断)
+
+action_result: >
+  成功：
+  1. 管理员创建 invisible collaborative tag "Secret"
+  2. Files automated tagging 为 admin 组用户的文件自动添加 "Secret" 标签
+  3. Files access control 拒绝非 admin 组用户访问带 "Secret" 标签的文件
+  4. 管理员共享文件夹（只读）给非特权用户
+  5. 非特权用户通过 WebDAV SEARCH 成功列出所有文件路径
+  6. 通过 /apps/files/api/v1/thumbnail/1212/750/<path> 成功获取受保护图片的完整预览
+  7. 若管理员曾在 Web 界面浏览过受保护文本文件（生成缩略图），
+     非特权用户同样可通过 thumbnail API（4096x4096 分辨率）读取文本内容
+  (原文: "curl -u user 'https://test.frp.lv/index.php/apps/files/api/v1/thumbnail/1212/750/
+  Secret_Folder/Secret_Subfolder/Secret_Picture.jpeg'")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  WebDAV SEARCH 列出文件路径 → preview/thumbnail API 读取文件内容 →
+  图片文件无需管理员操作即可读取，文本文件需管理员先浏览（生成缩略图预渲染）。
+  攻击者可控制预览分辨率（最大 4096x4096），最大化信息获取。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对实现了文件级访问控制（tag-based ACL、folder-level ACL、sharing permission）的文件共享/协作系统，
+  测试派生内容 API（preview、thumbnail、search、export、转码预览）是否遵循同一 ACL 规则——
+  关键在于派生内容端点常被视为"辅助功能"而遗漏主文件 ACL 的一致性校验。
+
+reasoning_chain:
+  - "问：目标系统是否有文件级/标签级访问控制（ACL/RBAC/sharing permission）？"
+  - "问：系统是否提供 preview/thumbnail/search/export 等派生内容 API？"
+  - "问：用受限用户调用 preview/thumbnail API（直接构造路径）时，是否能获取被 ACL 保护的文件的预览？"
+  - "黑盒：curl -u restricted_user 'https://target/preview_api/<protected_file_path>' > output"
+  - "问：WebDAV SEARCH 或全局搜索 API 是否泄露被 ACL 保护的文件路径/元数据？"
+  - "问：预览分辨率是否可控？（高分辨率预览可能等同于原文件内容）"
+  - "如果派生端点返回了受保护文件内容 → ACL 未在派生端点实施"
+  - "问：文本文件的缩略图是否在管理员浏览后被服务端预渲染并缓存？如果是，攻击窗口更大"
+
+vuln_root: >
+  文件 ACL 仅在主文件访问路径实施，派生内容 API（preview/thumbnail）作为独立端点
+  未继承或校验主文件的访问控制规则——开发者假设"预览只是文件的一种展示形式"
+  而忽略了预览本身包含文件原始内容。
+
+transferable_to:
+  - "Nextcloud/ownCloud 及其派生产品（Seafile 等自托管文件共享）"
+  - "SharePoint/OneDrive 的文档预览 API（/preview 端点）"
+  - "Google Drive/Dropbox 第三方集成的缩略图 API"
+  - "Confluence/Wiki 系统的附件预览功能"
+  - "CMS（WordPress 媒体库/Drupal 文件管理）的图片处理端点"
+  - "任何有 ACL + preview/thumbnail 分离端点的文件管理系统"
+
+cases:
+  - url: "https://hackerone.com/reports/358339"
+    title: "File access control rules not enforced on image files"
+    author: "reinism"
+    platform: "Nextcloud"
+    severity: "Low (CVSS 3.5)"
+    bounty: "有赏金"
+    cve: "CVE-2018-3762"
+    note: >
+      Files access control 通过 invisible tag + automated tagging 拒绝非 admin 用户访问，
+      但 WebDAV SEARCH 泄露文件路径，thumbnail API 返回受保护图片的完整预览（攻击者控制分辨率），
+      文本文件缩略图在管理员浏览后也可读取。

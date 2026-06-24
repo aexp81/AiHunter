@@ -1,0 +1,97 @@
+name: "插件角色的权限控制用黑名单而非白名单——黑名单外的角色可被低权限用户利用提权"
+id: "PLUGIN_ROLE_BLACKLIST_META_CAP_PRIVESC"
+applicable: "both"
+phase: "authz"
+also_phases: ["chain"]
+tags: ["wordpress", "woocommerce", "blacklist", "meta-capability", "role-assignment", "privilege-escalation", "edit-users", "shop-manager", "stored-xss-chain"]
+source: "https://hackerone.com/reports/403039"
+
+# ——— L3 核心 ———
+
+observation: >
+  报告者审计 WooCommerce 源码时注意到 shop_manager 角色被授予了 WordPress 核心的
+  edit_users 权限，而 WooCommerce 通过 map_meta_cap 过滤器使用黑名单方式限制
+  shop_manager 不能编辑/提升/删除 administrator 角色的用户。
+  (原文: "WooCommerce disallows it if the target for the modification is an admin."
+  以及代码: "if ( user_can( $args[0], 'administrator' ) && ! current_user_can( 'administrator' ) )
+  { $caps[] = 'do_not_allow'; }")
+
+hypothesis: >
+  黑名单只禁止了对 administrator 的操作，但 shop_manager 仍可将任意用户设为
+  非 admin 的其他角色（如 editor）。如果 editor 角色拥有 shop_manager 不具备的
+  危险权限（如 unfiltered_html），攻击者就可以通过角色切换间接获得更高权限。
+  (原文: "this 'blacklist' kind of approach is insufficient.
+  The consequence is that a Shop manager can modify any user
+  and can assign any user role that is not admin.")
+
+action_result: >
+  成功：
+  1. 以 shop_manager 身份登录
+  2. 将一个普通用户（如 customer）的角色改为 editor
+  3. 修改该用户的密码
+  4. 以 editor 身份登录——editor 拥有 unfiltered_html 权限
+  5. 创建包含 JavaScript payload 的文章 → Stored XSS
+  6. 利用 Stored XSS 获取 admin session → 提权至管理员
+  另外，如果安装了第三方插件（如 BackWPup），shop_manager 还可以将用户设为
+  插件自定义角色（如 BackWpUp Admin），直接获得备份下载等高敏感权限。
+  (原文: "simply login as a Shop manager, set the user role of a random user to editor,
+  change their password and then log into WordPress as that user.
+  Then create a Post with your JavaScript Payload.")
+
+why_here_first: >
+  报告者从 WooCommerce 的角色定义代码入手，发现 shop_manager 获得了 edit_users
+  这一核心权限，然后追踪了 map_meta_cap 过滤器中的权限限制逻辑，
+  识别出它采用的是黑名单（仅拦截 administrator）而非白名单模式。
+  (原文: "When the Shopmanager role is defined for the first time, it receives the following
+  WordPress core privileges: ... 'edit_users' => true ... Most interestingly is the following privilege")
+
+chaining: >
+  shop_manager 的 edit_users 权限 + 黑名单仅拦截 admin →
+  将用户改为 editor → editor 拥有 unfiltered_html →
+  创建 Stored XSS payload → 管理员触发 XSS → 获取 admin session。
+  或：将用户改为第三方插件的特权角色（如 BackWpUp Admin）→ 直接获得备份下载权限。
+  (原文: "Stored XSS is a very reliable way to escalate your privileges to Admin")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  审计 CMS 插件/主题的角色权限控制时，检查是否通过黑名单（仅禁止特定角色）
+  而非白名单（仅允许特定操作）来限制低权限角色的用户管理操作。
+  特别关注：低权限角色是否拥有 edit_users / promote_user 等元能力，
+  以及 map_meta_cap 过滤器中是否只拦截了 administrator 角色。
+
+reasoning_chain:
+  - "问：目标插件为自定义角色授予了哪些 WordPress 核心权限？是否包含 edit_users / delete_users / promote_user？"
+  - "如果包含 → 问：插件是否通过 map_meta_cap 过滤器限制了该角色的用户管理操作？"
+  - "如果有过滤 → 问：过滤逻辑是黑名单（仅拦截 administrator）还是白名单（仅允许操作特定角色）？"
+  - "如果是黑名单 → 问：系统中是否存在黑名单外但拥有危险权限的角色（如 editor 的 unfiltered_html、第三方插件自定义角色）？"
+  - "如果存在 → 构造 PoC：以低权限角色将用户设为黑名单外的特权角色，验证权限提升链是否可行"
+  - "扩展：其他插件是否注册了自定义角色？这些角色是否在黑名单考虑范围之外？"
+  - "扩展：同一插件的其他 meta capability 检查是否也用了类似的黑名单模式？"
+
+vuln_root: >
+  开发者假设「禁止操作 administrator」就足以防止提权，忽略了其他角色
+  （特别是 editor 和第三方插件自定义角色）可能拥有当前角色不具备的危险权限。
+  黑名单永远面临「遗漏」风险——正确做法是白名单：仅允许操作指定范围内的角色。
+
+transferable_to:
+  - "WordPress 生态中所有为自定义角色授予 edit_users 的插件（电商、会员、多站点管理）"
+  - "任何使用黑名单限制角色/权限的 CMS 插件（Drupal module、Joomla extension 等）"
+  - "SaaS 平台中 '组织管理员' 可修改用户角色但用黑名单排除 '超级管理员' 的场景"
+  - "RBAC 系统中中间层角色拥有 '编辑用户' 权限、通过策略排除顶层角色的设计"
+  - "第三方插件/集成引入新角色后，原有的黑名单是否自动覆盖新角色"
+
+cases:
+  - url: "https://hackerone.com/reports/403039"
+    author: "simonscannell"
+    platform: "WooCommerce (Automattic)"
+    severity: "High"
+    bounty: "有赏金（金额未公开）"
+    note: >
+      WooCommerce 的 wc_modify_map_meta_cap() 在 edit_user / remove_user / promote_user /
+      delete_user 操作时，仅检查目标用户是否为 administrator——如果不是则放行。
+      shop_manager 拥有 edit_users 权限，可以将 customer 改为 editor
+      （拥有 unfiltered_html），再通过 Stored XSS 提权至 admin。
+      此外，如果安装了 BackWPup 等插件，shop_manager 可将用户设为
+      BackWpUp Admin 角色，直接获得备份下载权限。
+      2018-08 报告，2019-12 公开。

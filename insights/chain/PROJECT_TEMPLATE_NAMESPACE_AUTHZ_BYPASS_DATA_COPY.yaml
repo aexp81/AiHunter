@@ -1,0 +1,88 @@
+name: "项目模板功能绕过命名空间校验 + Guest 权限不过滤 + 导出无鉴权组合窃取私有项目数据"
+id: "PROJECT_TEMPLATE_NAMESPACE_AUTHZ_BYPASS_DATA_COPY"
+applicable: "whitebox"
+phase: "chain"
+also_phases: ["authz"]
+tags: ["gitlab", "project-template", "namespace-bypass", "authorization-chain", "export-import", "toctou", "access-level", "ee-prepend", "code-review"]
+source: "https://hackerone.com/reports/689314"
+
+# ——— L3 核心 ———
+
+observation: >
+  GitLab EE 的 Project Template 功能在创建项目时的验证逻辑
+  validate_namespace_used_with_template 中，当项目创建在 User namespace（非 Group）时
+  直接 return nil 跳过了全部鉴权检查。
+  (原文: "the validate_namespace_used_with_template method returns a nil value when the
+  project is not being created for a group (return unless project.group). This means that
+  if a group_with_project_templates_id is given for a project that is created in a User
+  namespace, the authorization / validation logic is never executed")
+
+hypothesis: >
+  如果将项目创建到个人命名空间而非 Group，同时提供 use_custom_template=true、
+  template_name=目标项目名、group_with_project_templates_id=目标 Group ID，
+  可以绕过模板归属校验。加上 ProjectsFinder 不检查用户访问级别（仅查 visibility），
+  以及导出 Job 不做鉴权校验，三个低危漏洞组合可窃取完整私有项目数据。
+  (原文: "I've found a three minor vulnerabilities which, when combined, allow an attacker
+  to copy private repositories, confidential issues, private snippets, and then some")
+
+action_result: >
+  成功复制了 gitlab-com/finance（公开项目但限制了 Repository/Issues/MR 访问权限）的
+  全部数据，包括仓库代码、保密 issue、私有 snippet、MR 等。
+  (原文: "Come back in a couple minutes and find the repository, confidential issues,
+  private snippets, merge requests, CI pipelines, and more being copied to the
+  attacker's project")
+  (原文: "Redacted copy of gitlab-com/finance" 附截图)
+
+why_here_first: >
+  研究者从 EE 的 ProjectsController 开始阅读代码，追踪 use_custom_template 和
+  group_with_project_templates_id 参数的完整数据流，经过 CreateService →
+  CreateFromTemplateService → GitlabProjectsImportService → ProjectExportWorker，
+  在每一层发现一个独立的鉴权缺陷并将它们组合。
+  (原文: "I'll go through the code path to explain the vulnerabilities and how they are combined.
+  Let's start at the ProjectsController of EE...")
+  (原文: "This is where the [first/second/third] vulnerability can be found")
+
+chaining: >
+  三环链：
+  1. 命名空间校验绕过 — 创建项目到 User namespace 跳过 validate_namespace_used_with_template
+  2. ProjectsFinder 不检查访问级别 — 只要项目 visibility=public，即使 Repository/Issues 设为
+     Only Project Members 也会返回该项目作为模板
+  3. 导出 Job 无鉴权 — ProjectExportWorker 假定调用者已鉴权，不在 Sidekiq 层重新校验，
+     且存在 TOCTOU（用户可在排队期间离开项目）
+
+# ——— 落地检查清单 ———
+
+approach: >
+  审计"模板/复制/fork/导入"类功能的完整代码路径，逐层检查鉴权逻辑：
+  (1) 入口层校验是否有条件短路（如 namespace 类型不同则跳过），
+  (2) 资源查询层是否检查用户对资源的具体访问级别（而非仅 visibility），
+  (3) 异步 Job 层是否重新校验权限。三个单独的低危缺陷组合成高危。
+
+reasoning_chain:
+  - "问：目标应用中有哪些功能允许基于已有资源创建新资源？（模板、fork、复制、导入）"
+  - "问：创建流程中的鉴权校验是否覆盖了所有命名空间/项目类型？（Group vs User namespace）"
+  - "白盒：检查 validate/authorize 方法是否有 return unless / return if 的短路条件"
+  - "如果有短路 → 问：能否通过选择不同的 namespace 类型绕过校验？"
+  - "问：资源查询（Finder/Scope）是否区分 visibility 和 access_level？"
+  - "白盒：检查 ProjectsFinder 的 init_collection 是否有 min_access_level 过滤"
+  - "如果仅检查 visibility → 公开项目中限制了子功能访问的场景可被绕过"
+  - "问：异步 Job（Sidekiq/Celery/后台任务）是否重新校验用户权限？是否存在 TOCTOU？"
+  - "如果 Job 假定已鉴权 → 三个缺陷组合：绕过入口 → 查询到不该访问的资源 → 无鉴权导出"
+
+vuln_root: >
+  鉴权逻辑分散在多层（Controller 校验、Finder 查询、异步 Job），
+  每层独立看似低危但组合后形成完整绕过：入口层 namespace 类型短路 +
+  查询层不检查 access_level + Job 层不重新鉴权。
+
+transferable_to:
+  - "任何提供'基于模板创建'功能的 SaaS 平台——Notion、Confluence、GitHub Template Repos"
+  - "Ruby on Rails prepend/override 模式中 EE 层与 CE 层的鉴权逻辑不一致"
+  - "Sidekiq/Celery 等异步 Job 假定调用者已鉴权的场景——TOCTOU 风险"
+  - "资源 visibility 与子功能 access_level 分离的权限模型"
+
+cases:
+  - url: "https://hackerone.com/reports/689314"
+    note: >
+      GitLab EE，Project Template 三环鉴权绕过，$12,000 赏金。
+      研究者 jobert 通过代码审计逐层发现三个独立缺陷并组合。
+      成功复制 gitlab-com/finance 的完整私有数据。

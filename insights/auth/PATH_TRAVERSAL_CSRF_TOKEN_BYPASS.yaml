@@ -1,0 +1,81 @@
+name: "路径遍历绕过管理控制台 CSRF 保护——提权"
+id: "PATH_TRAVERSAL_CSRF_TOKEN_BYPASS"
+applicable: "both"
+phase: "auth"
+also_phases: ["input"]
+tags: ["path-traversal", "csrf-bypass", "management-console", "privilege-escalation", "github-enterprise", "CVE-2022-23732"]
+source: "https://hackerone.com/reports/1497169"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。GitHub Enterprise Server (GHES) 有独立的管理控制台 (management console)，
+  该控制台具备 CSRF 保护机制。但存在路径遍历漏洞可绕过该保护。
+  (原文团队摘要: "A path traversal vulnerability was identified in GitHub Enterprise Server
+  management console that allowed the bypass of CSRF protections.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：管理控制台的 CSRF token 验证可能仅在特定 URL 路径上执行，
+  或 CSRF 中间件依赖路径匹配来决定是否验证 token。
+  路径遍历可以使请求到达目标端点但绕过 CSRF 检查的路径模式。
+
+action_result: >
+  未叙述（仅结果）。根据摘要：
+  利用路径遍历绕过 CSRF 保护后，可对管理控制台执行跨站请求伪造攻击，
+  潜在导致权限提升。攻击前提是目标用户需要当前已登录管理控制台。
+  (原文团队摘要: "This could potentially lead to privilege escalation.
+  To exploit this vulnerability, an attacker would need to target a user that
+  was actively logged into the management console.")
+
+  CVE-2022-23732，影响 GHES < 3.5 全版本。
+  修复版本：3.1.19, 3.2.11, 3.3.6, 3.4.1。
+  赏金 $10,000。
+
+why_here_first: >
+  未叙述（仅结果）。推断：管理控制台是高价值目标（管理员权限），
+  CSRF 保护是关键防线。研究者可能在测试管理控制台 URL 处理时发现路径遍历可绕过中间件的路由匹配。
+
+chaining: >
+  路径遍历 → 绕过 CSRF 保护 → CSRF 攻击管理控制台 → 权限提升。
+  需要目标管理员当前已登录 management console（社会工程学 / watering hole 场景）。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对有 CSRF 保护的管理后台/控制台，尝试使用路径遍历（如 /safe-path/../admin-action）
+  到达受保护端点，测试 CSRF token 验证是否因路径解析差异而被绕过。
+
+reasoning_chain:
+  - "问：目标应用是否有独立的管理控制台/管理后台（通常在独立端口或路径下）？"
+  - "问：管理控制台的 CSRF 保护是如何实现的——全局中间件？路由级别？路径前缀匹配？"
+  - "黑盒测试：对管理控制台的敏感操作（修改配置、创建用户、修改权限），移除 CSRF token 观察是否被拒绝。"
+  - "问：是否可以通过路径遍历（/public/../admin/action、/api/v1/..%2Fadmin/action）到达管理端点？"
+  - "问：路径遍历后，CSRF 中间件是否仍然验证 token？（中间件可能基于原始路径匹配，而不是解析后的路径）"
+  - "扩展：除路径遍历外，HTTP method override（X-HTTP-Method-Override）、Content-Type 变换（application/json → multipart/form-data）是否也能绕过 CSRF 检查？"
+  - "白盒审计：搜索 CSRF 中间件代码，检查路径匹配逻辑——是否在 URL 解码/路径规范化之前进行匹配。"
+  - "白盒审计：检查 web 框架的路由器和 CSRF 中间件对路径处理的差异（如 Rack vs Rails 路由）。"
+  - "问：管理控制台的 session cookie 是否设置了 SameSite 属性？如果 SameSite=Lax/None，CSRF 更易利用。"
+
+vuln_root: >
+  CSRF 保护中间件基于请求路径模式决定是否验证 token，
+  但路径遍历导致实际路由到的端点与中间件匹配的路径不一致（路径解析差异），
+  使攻击者绕过 CSRF 检查直接触发管理控制台的敏感操作。
+
+transferable_to:
+  - "任何使用路径前缀匹配来决定 CSRF 保护范围的 Web 应用"
+  - "GitHub Enterprise Server / GitLab 自托管版本的管理控制台"
+  - "企业应用的管理后台（Jenkins、SonarQube、Grafana）如果 CSRF 保护依赖路径"
+  - "API 网关的路由规则 vs 后端的路径解析差异导致安全检查绕过"
+  - "反向代理（nginx/Apache）的 ACL 路径匹配 vs 后端应用路径解析不一致"
+
+cases:
+  - source: "https://hackerone.com/reports/1497169"
+    author: "bitquark"
+    platform: "GitHub Enterprise Server (management console)"
+    bounty: "$10,000"
+    cve: "CVE-2022-23732"
+    note: >
+      GHES 管理控制台的 CSRF 保护被路径遍历绕过，可导致权限提升。
+      需要目标管理员当前已登录 management console。
+      影响 GHES < 3.5 全版本。
+      纯结果文——报告 visibility: no-content，仅有团队摘要。

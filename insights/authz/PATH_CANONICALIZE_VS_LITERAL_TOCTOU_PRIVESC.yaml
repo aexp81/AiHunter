@@ -1,0 +1,83 @@
+name: "路径规范化 vs 字面量解释的 TOCTOU——安全策略 canonicalize 后判断可信，加载器按字面量从不可信源加载"
+id: "PATH_CANONICALIZE_VS_LITERAL_TOCTOU_PRIVESC"
+applicable: "whitebox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["toctou", "path-canonicalization", "semantic-gap", "parser-differential", "privilege-escalation", "java", "sandbox-escape", "bd-j", "ps4", "nested-jar"]
+source: "https://hackerone.com/reports/3452696"
+
+# ——— L3 核心 ———
+
+observation: >
+  PS4 BD-J 安全策略 (BdjPolicyImpl) 使用 File.getCanonicalPath() 对代码来源 URL 做路径规范化，
+  而类加载器 (JarZipFile) 则将同一路径中 .jar/ 之后的部分作为字面量 JAR entry 名称查找。
+  两个子系统对 ../../ 序列的解释完全不同。
+  (原文: "Security Policy (BdjPolicyImpl): Canonicalizes the URL path using File.getCanonicalPath(),
+  which resolves .. sequences. Class Loader (JarZipFile): Uses the URL path as a literal JAR entry name,
+  where .. are just characters")
+
+hypothesis: >
+  如果构造一个包含路径穿越的 URL（如 file:/dsm/00000.jar/../../app0/bdjstack/lib/ext/00000.jar），
+  安全策略会将其 canonicalize 为受信任的 lib/ext 路径并授予 AllPermission，
+  但类加载器会在物理光盘 JAR 中查找名为 "../../app0/bdjstack/lib/ext/00000.jar" 的嵌套 entry，
+  从而加载攻击者控制的代码。
+  (原文: "This URL triggers two different interpretations:
+  1. Security Policy Path: Canonicalizes to /app0/bdjstack/lib/ext/00000.jar → AllPermission granted
+  2. Actual Loading Path: Nested JAR entry ../../app0/bdjstack/lib/ext/00000.jar → Loads from untrusted disc content")
+
+action_result: >
+  成功：在光盘 JAR (/VP/BDMV/JAR/00000.jar) 中嵌入名为 "../../app0/bdjstack/lib/ext/00000.jar"
+  的 entry（内含攻击代码），配合 applicationId 设置在签名验证范围外（0x0000-0x3FFF），
+  实现沙箱逃逸获得 AllPermission。
+  (原文: "Result: Untrusted code obtains AllPermission...
+  Complete privilege escalation from sandboxed Blu-ray application to full system access with AllPermission")
+
+why_here_first: >
+  未叙述（仅结果）。团队摘要为纯代码流分析，无研究者导航叙事。
+
+chaining: >
+  路径 canonicalize TOCTOU → 安全策略错误授予 AllPermission → 签名验证绕过（applicationId 范围外）
+  → 沙箱逃逸获得完整系统权限。
+  (原文: "Security check sees: /app0/bdjstack/lib/ext/00000.jar (trusted);
+  Actual loading from: Entry in /VP/BDMV/JAR/00000.jar (untrusted);
+  Time-of-Check/Time-of-Use (TOCTOU) vulnerability; Untrusted code obtains AllPermission")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  审计同一路径输入被两个不同子系统（安全检查 vs 实际加载）解释的场景：
+  一方做 canonicalize/normalize（解析 ../ 等），另一方按字面量处理。
+  构造包含路径穿越序列的输入，使安全检查结果指向可信路径，而实际操作指向攻击者控制的资源。
+
+reasoning_chain:
+  - "问：系统中是否存在'先检查路径权限、再按路径加载资源'的两步流程？"
+  - "问：检查阶段和加载阶段是否使用不同的路径解析逻辑（canonicalize vs literal vs URL decode）？"
+  - "问：如果在路径中嵌入 ../ 序列，两个阶段的解析结果是否不同？"
+  - "如果不同 → 问：是否可以构造路径使检查阶段解析到可信目录，而加载阶段指向攻击者控制的资源？"
+  - "问：是否有额外的签名/完整性验证？能否通过配置参数（如 applicationId 范围）绕过？"
+  - "问：获得的权限（AllPermission / root / admin）的实际影响范围？"
+
+vuln_root: >
+  安全策略和资源加载器对同一路径输入使用了不同的解析语义——
+  File.getCanonicalPath() 解析 ../ 为路径穿越，而 JAR entry 查找将 ../ 视为字面量字符。
+
+transferable_to:
+  - "Java SecurityManager / JAAS 策略中使用 CodeSource URL 做信任判断的场景"
+  - "任何沙箱环境中'按路径判断信任等级'的安全模型（如 OSGI、Java Module System）"
+  - "嵌套归档格式（JAR-in-JAR、ZIP-in-ZIP）的路径解析差异"
+  - "Web 服务器路径规范化 vs 后端文件系统解释的不一致（类似 Apache Confusion Attacks）"
+  - "移动端/嵌入式设备中 Java ME / BD-J 沙箱的类加载安全"
+
+cases:
+  - url: "https://hackerone.com/reports/3452696"
+    title: "PS4 BD-J privilege escalation using nested JAR"
+    platform: "PlayStation (PS4)"
+    severity: "Medium"
+    bounty: "$2,500"
+    cve: "CVE-2025-64390"
+    note: >
+      PS4 BD-J 沙箱逃逸：BdjPolicyImpl 使用 File.getCanonicalPath() 将
+      file:/dsm/00000.jar/../../app0/bdjstack/lib/ext/00000.jar 解析为可信 lib/ext 路径
+      并授予 AllPermission，而 JarZipFile 将同一路径中 .jar/ 之后的部分作为字面量
+      在光盘 JAR 中查找嵌套 entry。配合 applicationId 设在签名验证范围外绕过签名检查。
+      no-content 公开但团队摘要含完整代码流分析。

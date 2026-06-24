@@ -1,0 +1,72 @@
+name: "插件/Snap RPC handler 的授权开关参数由调用方控制——恶意 dApp 设 false 跳过用户确认"
+id: "SNAP_RPC_CALLER_CONTROLLED_AUTHORIZE_BYPASS"
+applicable: "both"
+phase: "logic"
+also_phases: ["authz"]
+tags: ["metamask", "snap", "starknet", "rpc", "caller-controlled-param", "authorization-bypass", "web3", "dapp", "transaction-signing", "user-consent"]
+source: "https://hackerone.com/reports/3507241"
+
+observation: >
+  Starknet Snap 的 signMessage RPC handler 中，enableAuthorize 参数由外部调用方传入，
+  代码中当 enableAuthorize 为 false 时直接跳过用户确认弹窗。
+  (原文: "The vulnerability exists in the enableAuthorize parameter which can be controlled
+  by any website. When set to false, the confirmation dialog is not shown to the user,
+  allowing a malicious website to sign arbitrary messages or transactions without user approval")
+
+hypothesis: >
+  如果 enableAuthorize 参数由调用方（恶意网站）控制且默认行为是跳过确认，
+  则任何网站都可以在不经用户授权的情况下调用签名功能。源码注释也承认了该缺陷。
+  (原文: "// TODO: enableAuthorize should set default to true")
+
+action_result: >
+  构建 exploit HTML 页面，通过 MetaMask RPC 调用 Starknet Snap 的 signMessage 方法，
+  参数中 enableAuthorize 设为 false → 无用户确认弹窗 → 签名结果直接返回到页面。
+  (原文: "Download the html file: 'exp-starknet.html' and host it on local port 5555...
+  Click 'start PoC' button... Accept the connection request...
+  Observe that the signMessage is shown in the page without user approval")
+
+why_here_first: >
+  研究者直接审计了 Snap 的开源 RPC handler 源码，发现 enableAuthorize 参数在签名关键路径上
+  控制是否展示确认对话框，且代码注释标注了 TODO 表明开发者已知但未修复。
+  (原文: "The vulnerability exists in the following code:
+  https://github.com/Consensys/starknet-snap/blob/main/packages/starknet-snap/src/rpcs/sign-message.ts#L77")
+
+chaining: >
+  恶意 dApp 连接 MetaMask → 调用 Snap RPC 传入 enableAuthorize=false → 绕过用户确认 →
+  签署任意消息/交易 → 资产盗取。
+
+approach: >
+  审计浏览器插件/Snap/扩展的 RPC handler 源码，查找安全关键的布尔参数
+  （如 enableAuthorize/requireConfirm/skipApproval）是否由外部调用方控制
+  且默认值或可传值允许跳过用户确认/授权弹窗。
+
+reasoning_chain:
+  - "问：目标浏览器扩展/Snap 是否暴露了 RPC 接口供外部 dApp/网站调用？"
+  - "问：RPC handler 的参数列表中是否包含控制安全行为的布尔/枚举参数（authorize/confirm/approve）？"
+  - "问：该参数是否由调用方（外部网站）传入？还是由扩展内部硬编码？"
+  - "如果由调用方传入 → 问：当参数设为跳过授权的值时，handler 是否直接执行敏感操作（签名/转账）？"
+  - "问：源码注释或 TODO 中是否有开发者已知但未修复的安全备注？"
+  - "如果确认可绕过 → 构造恶意 dApp 页面，通过正常连接流程后直接调用 RPC 并传入绕过参数"
+  - "扩展：同一 Snap/扩展的其他 RPC 方法（sendTransaction/deployContract）是否有相同模式？"
+
+vuln_root: >
+  安全关键的授权开关参数（enableAuthorize）由不受信任的外部调用方控制，
+  且默认值为跳过授权（false），开发者将"是否要求用户确认"的决定权交给了调用方。
+
+transferable_to:
+  - "MetaMask Snap 生态中其他 Snap 的 RPC handler"
+  - "浏览器扩展暴露的 externally_connectable 消息接口"
+  - "Web3 钱包插件的 dApp 交互接口（WalletConnect/EIP-1193 provider）"
+  - "任何插件/SDK 的 API 设计中将安全策略参数暴露给调用方的场景"
+  - "OAuth/OIDC 中 prompt=none 等参数如果由恶意 RP 控制可能跳过用户同意"
+
+cases:
+  - url: "https://hackerone.com/reports/3507241"
+    author: "aszx87410"
+    platform: "MetaMask / Starknet Snap (Consensys)"
+    severity: "Medium"
+    bounty: "$350"
+    note: >
+      Starknet Snap signMessage RPC handler 的 enableAuthorize 参数由调用方网站控制，
+      设为 false 时跳过用户确认弹窗，恶意网站可在用户无感知的情况下签署任意消息。
+      2026-01 报告，2026-03 公开。

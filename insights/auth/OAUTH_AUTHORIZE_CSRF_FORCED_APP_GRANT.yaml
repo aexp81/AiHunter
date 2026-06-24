@@ -1,0 +1,64 @@
+name: "OAuth 授权端点无 CSRF 保护——静默强制受害者授权恶意第三方应用"
+id: "OAUTH_AUTHORIZE_CSRF_FORCED_APP_GRANT"
+applicable: "blackbox"
+phase: "auth"
+also_phases: []
+tags: ["oauth", "csrf", "authorization", "third-party-app", "account-takeover", "periscope"]
+source: "https://hackerone.com/reports/215381"
+
+# ——— L3 核心 ———
+
+observation: >
+  OAuth 授权端点 /oauthAuthorize 的 POST 请求中不包含任何 CSRF token 或 Origin 验证。
+  (原文: "It was found that the authorize endpoint does not have any protection against CSRF.
+  ...As one can see, there is no CSRF token or Origin validation.")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  构造 CSRF 页面自动提交 POST 到 /oauthAuthorize，受害者访问后静默授权攻击者的第三方应用，
+  攻击者获得 authorization code 并兑换为 access_token，随后可创建广播、发推并删除广播。
+  (原文: "Note that a real attack does not require user interaction... Exchange code for access_token
+  → Create a broadcast → Publish it")
+
+why_here_first: "未叙述（仅结果）"
+chaining: "CSRF 强制授权 → 获取 authorization code → 兑换 access_token → 全权操作受害者账户"
+
+approach: >
+  对 OAuth 授权（authorize/consent）端点发 POST 请求时，检查是否存在 CSRF 保护
+  （CSRF token / state / SameSite / Origin 校验）。缺失则可通过 CSRF 静默强制
+  受害者授权攻击者控制的第三方应用，获取完整 API 访问权限。
+
+reasoning_chain:
+  - "问：目标系统的 OAuth 授权页面（/authorize、/oauthAuthorize、/consent）的 POST 请求中是否携带 CSRF token？"
+  - "问：服务端是否校验 Origin / Referer header？"
+  - "问：Cookie 是否设置了 SameSite 属性（Lax/Strict）？如果是 None 或未设置则可跨站发送"
+  - "如果以上都缺失 → 问：攻击者能否注册自己的 OAuth 应用（client_id + redirect_uri）？"
+  - "如果可以 → 构造 CSRF 页面自动 POST 授权请求，受害者访问后 code 被发到 redirect_uri"
+  - "问：获取的 access_token 有哪些 scope？能否代表受害者执行高危操作？"
+
+vuln_root: "OAuth 授权确认端点缺少 CSRF 保护，允许跨站静默代替用户完成应用授权"
+
+transferable_to:
+  - "任何允许第三方 OAuth 应用接入的平台（社交媒体、直播、SaaS）"
+  - "OAuth 授权页面使用传统 form POST 而非 SPA 前端的系统"
+  - "开发者 API 平台的 OAuth consent 流程"
+
+cases:
+  - note: "Periscope Web OAuth /oauthAuthorize CSRF → 获取 full access token → 可代表受害者创建广播和发推，$BOUNTY（金额未公开）"
+    source: "https://hackerone.com/reports/215381"
+  - url: "https://hackerone.com/reports/850022"
+    author: "carbon61"
+    platform: "Basecamp / 37signals (launchpad.37signals.com)"
+    severity: "High (CVSS 8.1)"
+    bounty: "有赏金（金额未公开）"
+    note: >
+      37signals OAuth2 授权端点 POST /authorization 在 URL 末尾添加 .json 后缀
+      （变为 /authorization.json）时，服务端跳过 authenticity_token（CSRF token）校验。
+      攻击者构造自动提交表单 POST 到 /authorization.json，受害者访问后静默授权，
+      code 发到攻击者 redirect_uri，兑换为 access_token 后可操控受害者全部 Basecamp 数据。
+      (原文: "I found that when making a post request to authorization endpoint
+      it does not check the 'authenticity token' if you add '.json or .xml'
+      like this 'authorization.json'."
+      "Note that a real attack does not require user interaction.")
+      2020-04 报告，2020-10 公开。绕过手法（.json 后缀绕过 CSRF 校验）对 Rails 系统有额外迁移价值。

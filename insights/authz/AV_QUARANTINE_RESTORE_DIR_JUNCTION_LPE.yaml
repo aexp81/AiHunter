@@ -1,0 +1,53 @@
+- name: "杀毒软件隔离区恢复功能通过目录Junction实现任意文件写入提权"
+  id: AV_QUARANTINE_RESTORE_DIR_JUNCTION_LPE
+  applicable: both
+  source: "https://hackerone.com/reports/980500"
+  phase: authz
+  also_phases: [chain]
+  tags: [lpe, windows, directory-junction, symlink, antivirus, quarantine, privileged-file-operation, ntfs]
+
+  approach: "检查特权进程（杀毒/备份/系统服务）的'恢复文件到原始位置'操作——如果它只防了symlink但没防directory junction，可在检测后-隔离前替换文件内容，再将原目录替换为junction指向敏感目录，恢复时文件将以SYSTEM权限写入攻击者指定位置"
+
+  # L3 核心
+  observation: "Acronis True Image AV的Restore功能防住了symlink攻击，但没有检查NTFS directory junction (原文: 'The Restore file feature makes sure to stop Symlink attack successfully but it is vulnerable to Directory junction attack')"
+  hypothesis: "如果在文件被检测后但被隔离前替换其内容（攻击者控制数据），然后在恢复时将原目录替换为directory junction指向特权目录，就能以SYSTEM权限写入任意文件 (原文: 'After more testing, I was able to create or modify any file on the system with attacker controlled data')"
+  action_result: "成功利用：(1) 创建EICAR检测文件 → (2) 检测触发前替换为恶意内容(calc命令) → (3) 隔离后删除原目录 → (4) 创建junction指向Startup文件夹 → (5) 恢复时.bat被写入Startup → 任意代码执行 (原文: 'due to the Directory Junction from that folder to Startup folder, the eicar.bat file will be restored in Startup folder')"
+  why_here_first: "未叙述（仅结果）"
+  chaining: "进一步升级到SYSTEM权限：Acronis的schedul2.exe以SYSTEM权限执行adp-rest-util.exe，用同样手法覆写该exe即可获得SYSTEM代码执行 (原文: 'Acronis AV users a schedul2.exe application which executes adp-rest-util.exe with SYSTEM privileges so I tried the above demonstrated attack on adp-rest-util.exe and was able to execute attacker controlled command as SYSTEM')"
+
+  reasoning_chain:
+    - "目标产品是否有以高权限（SYSTEM/root）运行的文件恢复/还原/解压操作？"
+    - "该操作恢复文件到原始路径时，是否只检查了symlink而遗漏了directory junction（Windows）或bind mount（Linux）？"
+    - "文件被隔离/归档后、恢复前，原路径中的目录是否可被普通用户删除并替换为junction？"
+    - "文件内容在检测→隔离的时间窗口内是否可被替换（TOCTOU）？"
+    - "恢复操作产生的文件是否继承了高权限进程的写入权限，绕过了目标目录的ACL？"
+    - "是否有以SYSTEM运行的进程会加载/执行可被覆写的二进制或DLL？"
+
+  vuln_root: "开发者防御了symlink攻击但假设directory junction不构成威胁；恢复操作以SYSTEM权限写入文件时未重新验证目标路径的实际指向"
+
+  transferable_to:
+    - "任何Windows杀毒/EDR的文件隔离恢复功能"
+    - "备份/还原软件的文件恢复到原始位置功能"
+    - "Windows更新/安装程序的rollback功能"
+    - "沙箱逃逸后利用系统服务的文件恢复机制提权"
+    - "任何特权进程的'文件移动到用户可控路径'操作"
+
+  cases:
+    - source: "https://hackerone.com/reports/980500"
+      target: "Acronis True Image (Cyber Protect Home Office) AV Quarantine Restore"
+      bounty: "$250"
+      note: "Windows directory junction绕过symlink防御，EICAR检测窗口替换内容，恢复时以SYSTEM权限写入Startup文件夹或覆写adp-rest-util.exe"
+    - source: "https://hackerone.com/reports/1075449"
+      target: "Acronis True Image 更新程序 (setupapp_amd64.exe)"
+      bounty: "$250"
+      note: "更新过程中setupapp_amd64.exe以SYSTEM权限向%TEMP%\\Acronis\\DriverSetup\\inst.log写日志，攻击者预先创建symlink将该路径指向任意系统文件（如pci.sys），实现任意文件覆写。同一供应商同一产品的symlink变体。"
+    - source: "https://hackerone.com/reports/983363"
+      target: "Acronis True Image AV Quarantine 'Delete from PC' feature"
+      bounty: "$250"
+      note: >
+        隔离区'Delete from PC'功能在删除隔离副本的同时，以SYSTEM权限删除原始路径的隐藏空文件。
+        攻击者可删除隐藏空文件所在目录，用 Mount Point→\RPC Control\ + symlink
+        将路径重定向至任意系统文件（如 C:\Windows\System32\drivers\pci.sys）。
+        触发删除后，SYSTEM进程跟随symlink删除目标文件。
+        使用 James Forshaw 的 symboliclink-testing-tools 创建 symlink。
+        追加 ::$index_allocation 可删除任意目录。研究者提到可能升级为任意文件写入。

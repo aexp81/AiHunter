@@ -1,0 +1,94 @@
+name: "postMessage 接收方 origin 校验用 indexOf 子串匹配——注册近似短域名绕过 XSS"
+id: "POSTMESSAGE_ORIGIN_SUBSTRING_MATCH_XSS"
+applicable: "blackbox"
+phase: "input"
+also_phases: ["auth"]
+tags: ["postmessage", "origin-validation", "indexOf", "substring-match", "xss", "dom-xss", "admin-bar", "shopify", "javascript", "CWE-79", "CWE-346"]
+source: "https://hackerone.com/reports/387544"
+
+# ——— L3 核心 ———
+
+observation: >
+  Shopify 店铺前端在 admin bar 激活时加载的 JS 脚本安装了 message 事件监听器，
+  其 origin 校验逻辑为 `this.iframe.src.indexOf(a) < 0`（a 为 e.origin），
+  用 indexOf 做子串匹配而非精确前缀/完整匹配。由于 e.origin 不含尾部斜杠
+  （如 `https://foo.my`），该值可以是 iframe.src（如 `https://foo.myshopify.com/admin/bar`）
+  的子串，导致校验被绕过。
+  (原文: "this.iframe.src.indexOf(a)<0 ... With this.iframe.src being something like
+  https://foo.myshopify.com/admin/bar, this mostly does the job correctly. However,
+  e.origin doesn't end with a slash, meaning that for example https://foo.my is a
+  possible origin and would be accepted here.")
+
+hypothesis: >
+  攻击者只需注册一个合法的短域名（如 myshopify.co 或 foo.my），该域名是
+  目标 iframe.src 的子串，就能通过 origin 校验。接受 redirect_to_url 消息后
+  可指定跳转 URL，使用 javascript: 协议即可注入脚本。
+  (原文: "The real attackers would register myshopify.co or foo.my instead to attack
+  your shop ... Sending an redirect_to_url message allows the attacker to specify a URL
+  to redirect to, supplying a javascript: URLs here will result in script injection")
+
+action_result: >
+  研究者构造 PoC：
+  1. 注册 foo.myshopify.co 域名（或用 /etc/hosts 模拟）
+  2. 在该域名托管 exploit 页面，通过 window.open 打开目标店铺
+  3. 向新窗口发送 postMessage，action 为 redirect_to_url，url 为 javascript: payload
+  4. 店铺页面的 admin bar JS 校验 origin 时 indexOf 命中（子串匹配），接受消息
+  5. 执行 redirect_to_url 打开 javascript: URL → 成功在店铺上下文执行 JS
+  仅受浏览器弹窗阻拦器限制（用户允许弹窗则完全成功）。
+  (原文: "Your shop will open in a new tab. Note a message from the pop-up blocker...
+  If you are careless enough to allow that pop-up ... JavaScript code has been successfully
+  injected into your shop front")
+
+why_here_first: >
+  研究者此前刚报告了同一应用中另一个脚本的相同逻辑缺陷（#381192），
+  因此专门检查其他使用 postMessage 的脚本是否有同样的 origin 校验问题。
+  (原文: "This issue is very similar to https://hackerone.com/reports/381192,
+  identical logic in a different script.")
+
+chaining: >
+  JS 注入后可在店铺 admin 上下文中运行，可打开 /admin/ 页面提取 CSRF token、
+  读取店铺配置、甚至修改管理员密码实现账户接管。
+  (原文: "open https://foo.myshopify.com/admin/ in a small pop-up window and abuse
+  the active admin session to extract data from it (CSRF tokens, shop configuration)
+  or maybe even change admin password to take over the account")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  审计 Web 应用 postMessage 接收方的 origin 校验逻辑，检查是否使用
+  indexOf/includes/match 等子串匹配方式而非严格的 === 比较或
+  startsWith(origin + "/") 前缀匹配。若校验可被域名前缀/后缀子串绕过，
+  则注册近似短域名即可伪造合法 origin 发送恶意消息。
+
+reasoning_chain:
+  - "问：目标 Web 应用是否安装了 window.addEventListener('message', ...) 监听器？（搜索 JS 中的 addEventListener + message）"
+  - "问：message 事件处理函数中如何校验 event.origin？是 === 精确比较，还是 indexOf / includes / startsWith 子串匹配？"
+  - "如果是 indexOf(origin) → 问：event.origin 是否不含尾部斜杠？（浏览器 origin 格式为 https://host 无尾部斜杠）"
+  - "问：合法 origin（如 https://foo.myshopify.com）的子串域名（如 foo.my, myshopify.co）是否可注册？"
+  - "问：message handler 接受哪些 action/command？是否有 redirect_to_url、navigate、setURL 等可控导航操作？"
+  - "如果可导航 → 问：导航目标是否过滤了 javascript: 协议？"
+  - "问：是否有其他高危 action（如 set_cookie、update_config、execute）可直接利用？"
+  - "扩展：同一应用中是否有其他 JS 文件使用了相同的 origin 校验模式？（一处发现，全面扫描）"
+
+vuln_root: >
+  开发者假设 indexOf 子串匹配足以校验 postMessage origin，但 origin 的格式
+  （scheme://host，无尾部斜杠、无路径）使得攻击者可注册短域名作为合法域名的子串
+  来绕过校验。正确做法是 origin === expectedOrigin 或 url.startsWith(origin + "/")。
+
+transferable_to:
+  - "任何使用 postMessage 的 SaaS 前端框架（admin panel、embedded app、widget）"
+  - "多租户平台的商家前端（*.platform.com 模式下 origin 校验松散）"
+  - "OAuth 回调页面使用 postMessage 传递 token 时的 origin 校验"
+  - "Electron 应用的 webview-to-main 消息校验"
+  - "第三方嵌入式组件（聊天 widget、支付表单）的 parent origin 校验"
+
+cases:
+  - url: "https://hackerone.com/reports/387544"
+    author: "palant"
+    platform: "Shopify (your-store.myshopify.com)"
+    bounty: "undisclosed"
+    severity: "Medium"
+    note: >
+      admin_bar_injector JS 使用 this.iframe.src.indexOf(e.origin) < 0 校验 origin，
+      攻击者注册 myshopify.co 等子串域名即可绕过。redirect_to_url action 接受
+      javascript: URL 导致 DOM XSS。与 #381192 为同类问题。

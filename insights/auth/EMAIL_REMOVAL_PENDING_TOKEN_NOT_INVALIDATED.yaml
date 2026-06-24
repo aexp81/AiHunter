@@ -1,0 +1,66 @@
+name: "移除邮箱后待确认链接未失效——旧确认链接可重新绑定已删邮箱"
+id: "EMAIL_REMOVAL_PENDING_TOKEN_NOT_INVALIDATED"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["logic"]
+tags: ["email-verification", "token-invalidation", "access-control", "weblate", "account-security", "entity-removal"]
+source: "https://hackerone.com/reports/223434"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。报告者发现：在 Weblate 中添加新邮箱后收到确认链接，
+  然后从 authentication tab 删除该邮箱，但之前收到的确认链接仍然有效，
+  点击后可重新将已删除的邮箱绑定到账户。
+  (原文: "When attacker click on the old link recieved in the step 2 will be
+  able to login into the application and the old email id will be automatically
+  added to authentication tab in that account even the we have alredy removed
+  that email address from our account.")
+
+hypothesis: >
+  未叙述（仅结果）。隐含假设：删除邮箱时，系统应废弃所有与该邮箱关联的待处理
+  确认令牌。实际上令牌未被清理，仍可用于重新绑定。
+
+action_result: >
+  成功：(1) 添加邮箱 A 和 B，分别收到确认链接。
+  (2) 从 authentication tab 删除邮箱 A（假设旧邮箱可能被黑）。
+  (3) 攻击者点击邮箱 A 的旧确认链接 → 邮箱 A 被重新自动添加到账户。
+  (原文: "the old email id will be automatically added to authentication tab")
+
+why_here_first: "未叙述（仅结果）"
+chaining: "N/A — 单步绕过。若旧邮箱已被攻击者控制，可通过未失效的确认链接恢复对受害者账户的邮箱绑定。"
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在支持多邮箱/多认证方式的账户系统中，添加新邮箱并获取确认链接后，
+  在 UI 中删除该邮箱，然后测试之前的确认链接是否仍然有效，
+  验证实体移除操作是否同步清理了相关的待处理令牌/链接。
+
+reasoning_chain:
+  - "问：系统是否支持添加/删除多个邮箱或认证方式？"
+  - "问：添加邮箱后是否发送确认链接/验证码？保留该链接不使用。"
+  - "问：从账户设置中删除该邮箱后，之前的确认链接是否仍然有效？"
+  - "如果仍有效 → 确认漏洞：实体移除未清理关联令牌"
+  - "延伸测试：同理适用于手机号、恢复邮箱、安全密钥等可添加/删除的认证实体"
+  - "延伸测试：邀请链接、密码重置链接是否也在实体移除后仍然有效？"
+
+vuln_root: >
+  开发者假设"删除邮箱 = 解除所有关联"，但实际只删除了数据库中的邮箱记录，
+  未同步废弃该邮箱的待处理确认令牌/邀请链接/重置链接。
+
+transferable_to:
+  - "任何支持多邮箱/多认证方式管理的 Web 应用"
+  - "团队/组织成员管理中的邀请链接（移除成员后邀请链接是否失效）"
+  - "SSH Key / API Key 的待确认状态（删除后确认链接是否仍可激活）"
+  - "手机号/恢复邮箱的验证流程"
+
+cases:
+  - url: "https://hackerone.com/reports/223434"
+    title: "Improper access control when an added email address is deleted from authentication"
+    author: "h1bountyoverflow"
+    platform: "Weblate"
+    severity: "High (reporter-rated)"
+    note: >
+      Duplicate of #223339。Weblate 删除邮箱后确认链接未失效，攻击者可重新绑定已删除的邮箱。
+      无赏金（Weblate 无赏金计划）。

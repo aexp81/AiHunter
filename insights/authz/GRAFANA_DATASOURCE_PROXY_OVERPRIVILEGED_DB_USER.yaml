@@ -1,0 +1,75 @@
+name: "Grafana 数据源代理暴露过度授权数据库用户——通过代理查询接口执行管理员操作"
+id: "GRAFANA_DATASOURCE_PROXY_OVERPRIVILEGED_DB_USER"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["recon"]
+tags: ["grafana", "datasource-proxy", "influxdb", "overprivileged", "misconfiguration", "kubernetes", "infrastructure"]
+source: "https://hackerone.com/reports/802011"
+
+# ——— L3 核心 ———
+
+observation: >
+  Kubernetes test-infra 的 Grafana 实例 (velodrome.k8s.io) 的数据源代理请求
+  /api/datasources/proxy/4/query 使用了 InfluxDB admin 权限的用户，
+  而非预期的只读用户。
+  (原文: "wrong configuration causes Grafana datasource to use root user
+  (with influxdb admin priv)...in normally configuration read-only user
+  used by grafana, but in my test i found datasource user with admin perms.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：研究者注意到 datasource.sh 配置脚本中应使用只读用户，
+  但实际部署中数据源被配置为 admin 用户。
+  (原文: "refer: https://github.com/kubernetes/test-infra/blob/master/velodrome/grafana-stack/datasource.sh
+  so i think maybe other scripts make this problem.")
+
+action_result: >
+  成功：通过 Grafana 的代理查询接口执行 InfluxDB 管理命令——
+  创建 admin 用户、执行 SHOW DATABASES 确认拥有管理员权限。
+  (原文: "we can use admin perms user through proxy access Influxdb.
+  so I use this vuln, created a admin user...we found that we have admin permissions")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  过度授权数据源用户 → 通过 Grafana 代理创建 admin 用户 →
+  可执行 DROP DATABASE 造成 DoS。
+  (原文: "maybe denial of service this component, because admin
+  can drop all Influxdb database.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  发现公开的 Grafana 实例后，检查其数据源代理端点（/api/datasources/proxy/）
+  是否使用了过度授权的数据库用户。通过代理发送管理员级查询
+  （如 SHOW USERS、CREATE USER、SHOW DATABASES）来验证权限范围。
+
+reasoning_chain:
+  - "问：目标基础设施是否暴露了 Grafana 实例（公开访问或仅需匿名/Viewer 权限）？"
+  - "问：Grafana 的 /api/datasources/proxy/ 端点是否可达？"
+  - "问：通过代理端点发送的查询是否使用了比只读更高权限的数据库用户？"
+  - "验证：发送 SHOW USERS 或 SHOW GRANTS → 检查返回的用户权限级别。"
+  - "问：能否通过代理执行写操作（CREATE USER/DROP DATABASE/INSERT/DELETE）？"
+  - "如果可以 → 确认过度授权。评估影响：数据篡改/DoS/信息泄露。"
+  - "扩展：同一 Grafana 实例的其他数据源（Prometheus/MySQL/PostgreSQL）是否也有过度授权问题？"
+
+vuln_root: >
+  部署脚本或配置管理中为 Grafana 数据源指定了 admin/root 权限的数据库用户，
+  而非最小权限的只读用户。Grafana 的代理功能将此过度授权暴露给
+  所有能访问 Grafana 界面的用户。
+
+transferable_to:
+  - "任何公开的 Grafana 实例 + 后端数据库（InfluxDB/MySQL/PostgreSQL/Elasticsearch）"
+  - "Kubernetes 集群的监控 dashboard（Prometheus/Thanos + Grafana）"
+  - "DevOps 工具链中的可观测性平台"
+  - "内部/半公开的运维 dashboard 使用数据源代理的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/802011"
+    author: "lazydog"
+    platform: "Kubernetes (test-infra / velodrome.k8s.io)"
+    severity: "Low"
+    bounty: "有赏金"
+    note: >
+      K8s test-infra 的 Grafana 数据源使用 InfluxDB admin 用户而非只读用户。
+      通过 /api/datasources/proxy/ 代理创建 admin 用户、列出所有数据库。
+      2020-02 报告，2020-10 公开。6 votes。

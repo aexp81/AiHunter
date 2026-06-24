@@ -1,0 +1,52 @@
+name: "API Key 绕过组织内程序级分组权限——UI 限制了但 API 没限制"
+id: "API_KEY_IGNORES_ORG_PROGRAM_GROUP_AUTHZ"
+applicable: "blackbox"
+phase: "authz"
+also_phases: []
+tags: ["api-key", "org-program", "group-permission", "authorization-bypass", "hackerone", "v1-api"]
+source: "https://hackerone.com/reports/2965723"
+
+observation: >
+  组织内一个用户仅被分配到两个程序中的一个（低权限分组），
+  但使用该用户的 API key 可以通过 v1 API 读取到未授权程序的 policy 和 updates。
+  (原文: "In an organization with two programs, a user who is only part of one program
+  can still access the policy and updates of the unauthorized program using an API key.")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  用低权限账户生成 HackerOne API key，调用
+  /v1/hackers/programs/{unauthorized_handle}/ 端点，
+  成功获取到被限制程序的 policy 与 updates 内容。
+  (原文: "The unauthorized user is able to retrieve the policy and updates of the restricted program"
+  及 "If changes or updates occur, they are also accessible")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: "N/A — 单步信息泄露，但持续获取受限程序的 policy 变更和更新"
+
+approach: >
+  在多程序/多项目组织中，以仅有部分程序权限的低权限用户身份生成 API key/token，
+  然后通过 API（而非 UI）直接请求被限制的程序资源，
+  检查 API 层是否独立于 UI 做了程序级分组权限校验。
+
+reasoning_chain:
+  - "问：目标平台是否支持组织内多程序/多项目，并允许按分组限制用户可访问的程序？"
+  - "问：用户是否可以自行生成 API key 或 personal access token？"
+  - "问：API key 的权限范围是否与 UI 中的分组权限一致，还是默认继承组织级别权限？"
+  - "问：用 API key 直接调用受限程序的端点（policy、updates、settings），服务端是否返回数据？"
+  - "如果返回 → API 层缺少程序级分组权限校验，仅在 UI 前端做了限制"
+  - "问：可泄露的内容是否包含敏感信息（安全政策变更、漏洞修复进度、内部通知）？"
+
+vuln_root: "API 层的授权逻辑仅验证用户属于组织，未进一步检查用户是否被分配到请求的特定程序/分组。"
+
+transferable_to:
+  - "多程序/多项目的 bug bounty 平台（HackerOne、Bugcrowd 等）"
+  - "SaaS 平台的组织内多工作区/多项目权限模型"
+  - "RBAC 系统中 API token 与 UI 权限不一致的场景"
+  - "任何支持 personal access token 的多租户平台"
+  - "内部平台中 API key 默认继承过宽权限的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/2965723"
+    note: "HackerOne 组织内低权限用户通过 API key 读取未授权程序的 policy 和 updates，Medium，$2500 级别。"

@@ -1,0 +1,60 @@
+name: "WebSocket 加密协议公钥复用入口导致 MiTM 会话接管"
+id: WEBSOCKET_CRYPTO_KEY_OVERRIDE_MITM_SESSION_TAKEOVER
+approach: "逆向移动端 WebSocket 通信协议的加密实现，发现消息处理路径中复用了初始化阶段的 setReceiverPublicKey 方法——攻击者在同一网络 ARP 欺骗后，通过构造特定 CryptoType 消息即可覆盖对方公钥，完全接管加密会话"
+applicable: whitebox
+phase: logic
+also_phases: [auth]
+tags: [websocket, crypto-protocol, curve25519, mobile-app, reverse-engineering, mitm, pos]
+source: "https://hackerone.com/reports/423467"
+
+observation: |
+  逆向 Shopify PoS 应用的 Java 代码，发现 WebSocket 服务监听在 0.0.0.0:5000 而非 127.0.0.1，
+  连接字符串包含初始公钥和 nonce，通信使用 ws:// 无 TLS
+  (原文: "the device listens on 0.0.0.0:5000 but instructs clients to connect to the wifi IP address"
+   "the communications between the customer view and pos apps happens over a normal ws:// connection with no encryption outside the Curve25519 box")
+
+hypothesis: |
+  如果消息接收路径中可以重新设置 receiverPublicKey，
+  那么攻击者可在 MiTM 位置注入特定消息类型来覆盖加密密钥，从而劫持整个会话
+  (原文: "since each portion of the communication stems off of the initial QR code public key, overriding this would grant full control to the session")
+
+action_result: |
+  1. 反编译 com.shopify.pos 和 com.shopify.pos.customerview，找到 getConnectionString() 确认 WiFi IP + 公钥明文传输
+  2. 分析 receiveMessageFromServer()，发现当 cryptoType 满足特定条件时跳过解密逻辑直接执行 setReceiverPublicKey(str)
+  3. 对比 start() 方法，确认同一个 setReceiverPublicKey 被初始化和消息接收两个路径共用
+  4. 构建 WebSocket relay 服务器验证可窥探原始消息，结合 ARP 欺骗实现完整 MiTM 会话接管 → 成功
+  (原文: "I was able to build a relay server for the WebSocket and could snoop on the raw messages without any issue"
+   "the same setReceiverPublicKey(...) method is used in the start method as well as the receiveMessageFromServer method")
+
+why_here_first: |
+  研究者先通过 netstat 确认服务监听地址和端口，再逆向分析加密协议实现——
+  优先检查 0.0.0.0 绑定和 ws:// 无 TLS 这些网络层暴露面，再深入密钥交换逻辑
+  (原文: "After a decent amount more digging and research...The code actually specifically listens on all local interfaces (0.0.0.0)")
+
+chaining: |
+  ARP 欺骗（网络层） + CryptoType 消息注入覆盖公钥（协议层） → 完整会话接管：
+  可篡改购物车、修改小费金额、窃取/修改客户邮箱和电话
+  (原文: "Intercept what is being added to the cart...Change the amount a customer has tipped...View/Change customer e-mail addresses")
+
+reasoning_chain:
+  - "移动应用是否在本地开放了 WebSocket 或 HTTP 服务端口？用 netstat 确认监听地址是 127.0.0.1 还是 0.0.0.0？"
+  - "通信协议使用 wss:// 还是 ws://？是否有独立于 TLS 的加密层？"
+  - "密钥交换流程中，公钥是否在初始化后被锁定？消息处理路径中是否存在可重新设置公钥的入口？"
+  - "初始化方法（start）和消息接收方法（receiveMessageFromServer）是否共用了 setReceiverPublicKey？"
+  - "能否通过构造特定的 CryptoType 消息触发公钥覆盖，绕过正常的加密握手流程？"
+  - "在同一网络中，ARP 欺骗 + 公钥覆盖能否组合为完整的会话接管链？"
+
+vuln_root: "密钥交换协议在消息接收路径中复用了初始化阶段的公钥设置方法，且未验证密钥更新请求的合法性"
+
+transferable_to:
+  - "使用自定义加密协议的移动端 PoS / IoT 设备间通信"
+  - "基于 WebSocket 的设备配对场景（如投屏、打印机、IoT hub）"
+  - "任何通过 QR 码传递初始密钥的端到端加密协议实现"
+  - "Curve25519 / NaCl box 的非标准集成（未正确实现密钥绑定）"
+
+cases:
+  - url: "https://hackerone.com/reports/423467"
+    title: "H1514 Ability to MiTM Shopify PoS Session to Takeover Communications"
+    platform: "Shopify"
+    bounty: true
+    severity: "medium"

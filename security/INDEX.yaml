@@ -56,6 +56,14 @@ triggers:
     - authz/PERMISSION_LEVEL_CONFUSION
     - authz/AUTHZ_BRANCH_GAP
 
+  # 本地/桌面/二进制提权（有本地低权限 shell；目标是服务/安装器/客户端/沙箱运行时）
+  local_binary:
+    - local/WRITABLE_LOAD_PATH_HIJACK       # DLL/EXE/dylib/配置 搜索路径落在可写目录
+    - local/PRIVILEGED_FILE_OP_TOCTOU        # root 文件操作的符号链接/junction 竞态
+    - local/LOCAL_IPC_PEER_TRUST             # 本地 socket/RPC 身份伪造/抢占
+    - local/SANDBOX_POLICY_COVERAGE_GAP      # 沙箱/权限模型 API/通道覆盖盲区
+    - local/CLIENT_SIDE_POLICY_LOCAL_BYPASS  # 客户端强制策略本地旁路
+
 # ============================================================
 # 白盒专用触发（有源码时额外加载）
 # ============================================================
@@ -97,6 +105,14 @@ whitebox_triggers:
   authz_general:
     - whitebox/authz/AUTHZ_BRANCH_GAP
     - whitebox/authz/PERMISSION_LEVEL_CONFUSION
+
+  # 本地/桌面/二进制提权（有源码或二进制可审计时）
+  local_binary:
+    - whitebox/local/WRITABLE_LOAD_PATH_HIJACK
+    - whitebox/local/PRIVILEGED_FILE_OP_TOCTOU
+    - whitebox/local/LOCAL_IPC_PEER_TRUST
+    - whitebox/local/SANDBOX_POLICY_COVERAGE_GAP
+    - whitebox/local/MEMORY_CORRUPTION_PRIMITIVE_AUDIT   # 内核/解析器 UAF/OOB/溢出
 
   universal:
     - whitebox/universal/UNAUTH_SENSITIVE_ENDPOINT

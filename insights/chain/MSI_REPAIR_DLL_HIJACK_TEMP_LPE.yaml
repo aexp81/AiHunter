@@ -1,0 +1,36 @@
+name: "MSI修复模式在用户可写TEMP目录释放DLL后由提权进程加载——DLL劫持本地提权"
+id: MSI_REPAIR_DLL_HIJACK_TEMP_LPE
+applicable: both
+phase: chain
+also_phases: [authz]
+tags: [lpe, windows, msi, dll-hijack, temp-directory, msiexec, privilege-escalation, installer]
+source: "https://hackerone.com/reports/1071832"
+
+approach: "检查已安装软件在C:\\Windows\\Installer下的MSI文件——以普通用户执行msiexec /fa触发修复模式，观察是否在%TEMP%等用户可写目录释放DLL并随后以提权(auto-elevate)方式加载。若是，在释放后加载前替换DLL即可获得SYSTEM执行"
+
+# L3 核心
+observation: "Acronis True Image安装后在C:\\Windows\\Installer下留有1.3GB的MSI文件（该目录默认可读），普通用户可用msiexec /fa触发修复，修复过程在%TEMP%\\random_name下释放schedule.dll (原文: 'One of these 2 MSIs... when forced to repair it creates a dll in %TEMP%\\random_name and then, after some time, MsiExec.exe loads it')"
+hypothesis: "未叙述（仅结果）——报告者直接说明MsiExec.exe以自动提权方式运行且%TEMP%可写，因此可替换DLL (原文: 'Since MsiExec.exe auto-escalate privileges when executed and %TEMP% is writable by anyone, this behavior could be abused to gain nt authority\\system privileges')"
+action_result: "成功：(1) 打开%TEMP%监控新文件夹出现 → (2) 执行msiexec /fa → (3) 新文件夹出现后替换其中schedule.dll → (4) UAC弹窗选No → (5) 弹出SYSTEM权限cmd (原文: 'Replace schedule.dll inside that folder... A new cmd should pop up. Type whoami to confirm the new privileges')"
+why_here_first: "未叙述（仅结果）"
+chaining: "N/A — 单步即获SYSTEM"
+
+reasoning_chain:
+  - "目标系统上是否有大型桌面软件在C:\\Windows\\Installer留有MSI文件？"
+  - "这些MSI是否可被普通用户通过msiexec /fa触发修复模式？"
+  - "修复过程是否在%TEMP%或其他用户可写路径释放DLL/EXE？"
+  - "释放后是否有时间窗口允许替换文件，然后由提权进程加载？"
+  - "MsiExec.exe是否以auto-elevate方式运行（无需UAC确认或UAC后以SYSTEM加载DLL）？"
+
+vuln_root: "MSI修复逻辑假设%TEMP%中临时释放的DLL是安全的，因为路径是随机的——但攻击者可监控目录并在加载前替换"
+
+transferable_to:
+  - "任何在C:\\Windows\\Installer留有MSI的桌面软件（杀毒/备份/VPN等）"
+  - "企业软件的自动更新/修复机制使用msiexec的场景"
+  - "SCCM/Intune等MDM推送的MSI包触发修复时的DLL劫持"
+
+cases:
+  - source: "https://hackerone.com/reports/1071832"
+    target: "Acronis True Image (Cyber Protect Home Office)"
+    bounty: "$250"
+    note: "msiexec /fa触发修复，%TEMP%\\random下释放schedule.dll，替换后获得SYSTEM权限cmd"

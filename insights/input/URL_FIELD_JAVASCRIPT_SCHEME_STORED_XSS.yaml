@@ -1,0 +1,74 @@
+name: "URL 输入字段缺少 scheme 白名单校验——javascript: 伪协议注入 Stored XSS"
+id: "URL_FIELD_JAVASCRIPT_SCHEME_STORED_XSS"
+applicable: "blackbox"
+phase: "input"
+also_phases: []
+tags: ["xss", "stored-xss", "javascript-uri", "pseudo-protocol", "url-validation", "custom-domain", "admin-panel"]
+source: "https://hackerone.com/reports/245172"
+
+# ——— L3 核心 ———
+
+observation: >
+  Custom Domain 和 Demo Domain 输入字段接受任意字符串，
+  未限制为 http(s):// 开头的合法 URL，javascript: 伪协议可直接输入保存。
+  (原文: "I discovered a Stored XSS attack vector in the Custom Domain field")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  在 Custom Domain 字段填入 javascript:alert(document.domain)，
+  Demo Domain 填入 javascript:alert(document.domain); （加分号绕过相同值检查），
+  保存后点击 "View Website" 按钮触发 XSS；
+  在 /sites/<siteid>/published 页面点击 demo site 链接触发第二处 Stored XSS。
+  (原文: "Fill the Custom Domain field by the javascript:alert(document.domain)
+  and Demo domain javascript:alert(document.domain); (it cannot be the same
+  so we bypass the check by adding ;)")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  Stored XSS（javascript: 伪协议）→ 需要用户点击按钮交互触发 →
+  可对其他管理员执行 Stored XSS 攻击。
+  (原文: "Anyone who gain access here, can conduct stored XSS attack
+  against other admins.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在所有接受 URL 的输入字段（如自定义域名、回调 URL、网站 URL、外部链接等）
+  中测试 javascript: 伪协议，检查服务端是否仅接受 http(s):// scheme
+  并在渲染时通过 <a href> 或按钮跳转触发 XSS。
+
+reasoning_chain:
+  - "问：应用中有哪些字段接受 URL 输入？（自定义域名、网站链接、回调 URL、外部资源地址等）"
+  - "问：这些字段是否验证 URL scheme？尝试输入 javascript:alert(1) 并保存。"
+  - "如果保存成功：问：该 URL 是否被用于 <a href>、window.open()、或按钮跳转等场景？"
+  - "如果是 <a href> 且用户可点击：确认 Stored XSS 可利用。"
+  - "问：是否有相同值检查或其他客户端校验？（可通过追加字符如 ; 或 # 绕过）"
+  - "问：该字段的 XSS 影响范围？是否对管理员/其他用户可见？"
+
+vuln_root: >
+  开发者在 URL 输入字段仅检查格式（如非空或域名合法性），
+  未限制 URL scheme 为 http(s)://，允许 javascript: 等危险伪协议通过，
+  渲染为 <a href> 时浏览器会执行 JS。
+
+transferable_to:
+  - "CMS / 建站平台的自定义域名、网站链接字段"
+  - "OAuth/SSO 配置中的回调 URL 字段"
+  - "用户资料中的个人网站、社交媒体链接字段"
+  - "富文本编辑器中的超链接插入功能"
+  - "管理后台中外部服务 URL 配置（Webhook URL、API endpoint 等）"
+  - "邮件模板中的退订链接 / CTA 按钮 URL"
+
+cases:
+  - url: "https://hackerone.com/reports/245172"
+    title: "Double Stored Cross-Site scripting in the admin panel (GSA Bounty / Federalist)"
+    author: "sp1d3rs"
+    platform: "GSA Bounty (Federalist / 18F)"
+    bounty: "有奖金（金额未公开）"
+    severity: "Medium"
+    note: >
+      Federalist 控制面板的 Custom Domain 和 Demo Domain 字段
+      接受 javascript: 伪协议，保存后通过 "View Website" 按钮和
+      published 页面的 demo site 链接触发两处 Stored XSS。
+      L1 结果文，无导航叙事。

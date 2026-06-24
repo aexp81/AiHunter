@@ -1,0 +1,48 @@
+name: "编译时硬编码的库配置搜索路径位于用户可创建目录——植入配置文件加载恶意引擎DLL提权"
+id: OPENSSL_HARDCODED_CONFDIR_ENGINE_LOAD_LPE
+applicable: both
+phase: chain
+also_phases: [authz, recon]
+tags: [lpe, windows, openssl, config-injection, dll-hijack, hardcoded-path, curl, build-config, engine-load]
+source: "https://hackerone.com/reports/608577"
+
+approach: "审查目标二进制的编译参数（如OpenSSL的OPENSSLDIR）——如果硬编码的配置目录（如c:\\usr\\local\\ssl）在Windows上可被低权限用户创建，就能植入自定义openssl.cnf指定加载恶意Engine DLL，在任何用户执行该二进制时触发代码执行"
+
+# L3 核心
+observation: "curl Windows二进制使用的OpenSSL库将OPENSSLDIR编译为c:\\usr\\local\\ssl，curl启动时会从该路径加载openssl.cnf (原文: 'The curl windows binaries are built with OpenSSL libraries and have an insecure path for the OPENSSLDIR build parameter. This path is set to c:\\usr\\local\\ssl')"
+hypothesis: "Windows下默认低权限用户可在c:\\下创建目录，因此可创建c:\\usr\\local\\ssl\\openssl.cnf并通过OpenSSL Engine机制指定加载任意DLL (原文: 'By default on windows, low privileged users have the authority to create folders under c:\\')"
+action_result: "成功：(1) 创建c:\\usr\\local\\ssl\\ → (2) 写入openssl.cnf指定engine dynamic_path=c:\\stage\\calc.dll → (3) 编译恶意Engine DLL (DllMain中执行calc) → (4) 任何用户执行curl.exe时DLL被加载并以该用户权限执行calc (原文: 'Every time curl is executed this library will be loaded and the code executed with the full authority of the account executing it')"
+why_here_first: "未叙述（仅结果）——但可推断：检查编译参数中的路径是否在目标OS上可被低权限用户控制是已知的LPE审计模式"
+chaining: "N/A — 单步即获目标用户权限执行；如果管理员/SYSTEM账户使用curl则直接提权"
+
+reasoning_chain:
+  - "目标Windows二进制是否链接了OpenSSL/GnuTLS等库？编译时的配置目录（OPENSSLDIR等）设置为何值？"
+  - "该路径在Windows上是否默认不存在且可被低权限用户创建（如c:\\开头的非系统目录）？"
+  - "该库是否在启动时无条件加载配置文件（如openssl.cnf）？"
+  - "配置文件是否支持加载外部引擎/模块（OpenSSL Engine, provider等）？"
+  - "是否有高权限用户/服务/计划任务会执行该二进制（如运维脚本中的curl、cron中的wget）？"
+
+vuln_root: "编译OpenSSL时的OPENSSLDIR路径适用于Unix（/usr/local/ssl是root目录），在Windows上变为c:\\usr\\local\\ssl但未调整——Windows下c:\\可由任何用户创建子目录"
+
+transferable_to:
+  - "任何在Windows上分发的使用OpenSSL的二进制（wget, git, python, ruby, node等）"
+  - "企业内部编译的工具使用默认OPENSSLDIR的场景"
+  - "Docker for Windows / WSL中OpenSSL路径跨越信任边界的场景"
+  - "同理可审查其他库的编译时配置路径（如libcurl的CURL_CA_BUNDLE, GnuTLS的trust store等）"
+
+cases:
+  - source: "https://hackerone.com/reports/608577"
+    target: "curl Windows二进制 (curl-7.65.1_1-win64)"
+    bounty: "N/A (curl 无赏金项目但分配 CVE-2019-5443)"
+    cve: "CVE-2019-5443"
+    note: "OPENSSLDIR=c:\\usr\\local\\ssl，低权限用户创建目录并植入openssl.cnf加载恶意Engine DLL"
+  - source: "https://hackerone.com/reports/162955"
+    target: "Slack Windows Desktop Client 2.1.1 (slack.exe)"
+    bounty: "有赏金（金额未公开）"
+    note: >
+      slack.exe 链接的 OpenSSL 将 OPENSSLDIR 编译为 c:\usr\local\ssl，
+      启动时尝试加载 C:\usr\local\ssl\openssl.cnf。
+      低权限用户可创建该目录结构并植入 openssl.cnf 指定加载恶意 Engine DLL，
+      当其他用户（Slack 开机自启动）运行 slack.exe 时以其权限执行任意代码。
+      (原文: "slack.exe tries to load its OpenSSL configuration from the non-existing
+      file C:\usr\local\ssl\openssl.cnf")

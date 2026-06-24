@@ -1,0 +1,102 @@
+name: "SAML 响应移除 Signature 标签后整个签名校验被跳过——伪造断言登录任意账户"
+id: "SAML_MISSING_SIGNATURE_TAG_AUTH_BYPASS"
+applicable: "both"
+phase: "auth"
+also_phases: []
+tags: ["saml", "sso", "signature-bypass", "authentication-bypass", "onelogin", "wordpress", "uber", "xml-signature"]
+source: "https://hackerone.com/reports/136169"
+
+# ——— L3 核心 ———
+
+observation: >
+  作者查看 OneLogin WordPress 插件的 SAML 响应验证代码，发现签名检查位于
+  if (!empty($signedElements)) 条件块内——仅当 XML 中存在 <ds:Signature> 标签时
+  才执行签名验证。
+  (原文: "The cryptographical signature check is inside a code block that is
+  executed only if the XML response contains a <ds:Signature /> tag...
+  If the tag is left out, then the plugin accepts any 'authentication OK'
+  response without checking if it's coming from a trusted source.")
+
+hypothesis: >
+  如果从 SAML Response XML 中完全移除 <ds:Signature> 元素，
+  签名校验代码块将被跳过，插件将接受任何伪造的 SAML 断言。
+  攻击者可构造包含任意 username/email/role 的 SAML Response，
+  无需 IdP 私钥即可通过认证。
+  (原文: "If the tag is left out, then the plugin accepts any
+  'authentication OK' response without checking if it's coming from
+  a trusted source.")
+
+action_result: >
+  成功：在两个 Uber WordPress 站点上验证。
+  1. eng.uber.com — 成功创建 subscriber 级别账户（未猜到 admin 角色名）
+  2. newsroom.uber.com — 成功获得 administrator 权限（角色名为 "administrator"）
+  PoC: 取一个合法 SAML Response XML → 移除 <ds:Signature> 标签 →
+  修改 NameID、Username、memberOf 等属性 → POST 到 WP 的 SAML ACS 端点。
+  WordPress 设置了认证 cookie 并重定向到前台。
+  (原文: "I tried this on two sites. On eng.uber.com I couldn't guess
+  a correct role name... On newsroom.uber.com the role name apparently
+  was simply 'administrator' so I got that privilege on the system.")
+
+  扑空路径：eng.uber.com 上无法猜到正确角色名，只获得 subscriber 权限 →
+  转向 newsroom.uber.com，角色名为常见的 "administrator"，成功提权。
+
+why_here_first: >
+  作者原本只想检查 WP-OneLogin 插件是否存储了敏感信息可用于攻击其他
+  OneLogin 集成站点。审计插件代码时意外发现签名校验逻辑缺陷。
+  (原文: "my intention was just to check if WP-OneLogin stores any
+  sensitive info that could be used to attack OneLogin on your other websites")
+
+chaining: >
+  认证绕过 → WordPress 管理员权限 → 可上传插件/主题实现 RCE。
+  如果开启了 user provisioning（本例中已开启），攻击者甚至可以自动创建新用户。
+  角色猜测：需要猜到 WordPress role 名称（administrator/editor/author/subscriber）。
+  (原文: "If the username doesn't already exist in the WordPress database,
+  then the plugin will create a new user (if the provisioning setting is on,
+  which it was on the two sites I tested)")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对使用 SAML SSO 的应用，拦截合法 SAML Response，完全移除 <ds:Signature>
+  元素及其子元素后重新提交，检查 SP 是否仍接受该响应——
+  测试签名校验是否以"签名元素存在"为前提条件而非强制执行。
+
+reasoning_chain:
+  - "问：目标是否使用 SAML SSO？查找 /saml/acs、/sso/saml、onelogin_saml.php?acs 等端点。"
+  - "问：使用的是哪个 SAML library/plugin？（OneLogin、SimpleSAMLphp、ruby-saml 等——各有历史漏洞）"
+  - "拦截：用 Burp 捕获一个合法的 SAML Response（或从 IdP 获取一个 sample）。"
+  - "Base64 解码 SAMLResponse 参数，检查 XML 结构。"
+  - "修改1：完全移除 <ds:Signature> 元素（包括所有子标签），修改 NameID/attributes 为目标用户。"
+  - "重新 Base64 编码后提交到 ACS 端点——如果登录成功 → 签名校验被跳过。"
+  - "修改2：保留 <ds:Signature> 但修改 assertion 内容——测试签名是否真正验证了 assertion 完整性。"
+  - "问：SP 是否检查 assertion 中的 AudienceRestriction？（参见 SAML_AUDIENCE_RESTRICTION_BYPASS）"
+  - "问：SP 是否检查 assertion 的 NotBefore/NotOnOrAfter 时间有效性？"
+  - "白盒：搜索 isValid() / validateSignature() 函数，检查签名校验是否被 if (signedElements) 条件包裹。"
+  - "问：如果成功绕过认证，用户 provisioning 是否开启？（可自动创建新管理员账户）"
+
+vuln_root: >
+  SAML SP 的签名验证逻辑以"签名元素是否存在"作为执行条件
+  （if !empty(signedElements)），而非将"必须存在有效签名"作为强制前提——
+  攻击者移除整个 <ds:Signature> 标签后，校验逻辑被完全跳过，
+  伪造的 SAML 断言被直接信任。
+
+transferable_to:
+  - "使用 OneLogin SAML SDK/plugin 的任何 WordPress 站点（插件级漏洞）"
+  - "使用其他 SAML library 但类似实现模式的应用——签名校验以签名元素存在为前提"
+  - "SimpleSAMLphp、python-saml、ruby-saml 等 SAML library 的早期版本"
+  - "SAML SSO 集成的企业应用（Jira、Confluence、Jenkins、Grafana 等）"
+  - "云平台的 SAML 集成（AWS、GCP、Azure）"
+  - "任何自研 SAML SP 实现（开发者往往参考有缺陷的代码示例）"
+
+cases:
+  - url: "https://hackerone.com/reports/136169"
+    title: "OneLogin authentication bypass on WordPress sites"
+    author: "Jouko Pynnönen (jouko)"
+    platform: "Uber (eng.uber.com, newsroom.uber.com)"
+    bounty: "$10,000"
+    note: >
+      OneLogin WP 插件的 Response.php isValid() 中，签名校验在
+      if (!empty($signedElements)) 内——移除 <ds:Signature> 标签后整个校验被跳过。
+      newsroom.uber.com 上获得 administrator 权限（角色名猜测成功），
+      eng.uber.com 上仅获得 subscriber（角色名猜测失败）。
+      User provisioning 开启，伪造 SAML response 可直接创建新用户。

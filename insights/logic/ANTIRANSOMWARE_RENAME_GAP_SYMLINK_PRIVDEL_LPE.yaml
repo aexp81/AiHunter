@@ -1,0 +1,54 @@
+name: "文件保护服务只拦修改不拦重命名：重命名父目录+符号链接→特权删除任意文件"
+id: "ANTIRANSOMWARE_RENAME_GAP_SYMLINK_PRIVDEL_LPE"
+applicable: "whitebox"
+phase: "logic"
+also_phases: [chain]
+tags: [lpe, symlink, rename-gap, file-protection, antiransomware, windows, toctou]
+source: "https://hackerone.com/reports/1003007"
+
+observation: >
+  Acronis AntiRansomware Protection 监控了备份 .tib 文件及其所在文件夹的所有修改操作，
+  但漏掉了对父文件夹的 Rename 操作
+  (原文: "The issue is that it monitors all modification operations on the file
+  and folder except Rename operation on the folder containing the .tib file.")
+hypothesis: >
+  如果 Rename 不被拦截，攻击者可以先重命名受保护目录，再在原路径放置符号链接，
+  骗过保护服务发起特权操作
+  (原文: "If we rename the folder which contains the .tib file and create new folder
+  of same name, we are able to write into the new folder without AntiRansomware
+  protection blocking the write and Acronis True Image will assume its the same folder
+  and read content from it which totally breaks the aim of Active AntiRansomware protection")
+action_result: >
+  重命名 backup_acronis → not_backup_acronis，然后用 CreateSymlink 在原路径建立
+  指向 C:\Windows\System32\drivers\pci.sys 的符号链接，通过 UI 触发"Delete entirely"
+  操作 → Acronis 以 SYSTEM 权限跟随符号链接删除了 pci.sys
+  (原文: "Acronis True Image will try to delete the poc_full_b1_s1_v1.tib file from
+  backup_acronis folder but because of the symlink the operation will be performed on
+  C:\Windows\System32\drivers\pci.sys resulting in its deletion.")
+why_here_first: >
+  未叙述（仅结果）
+chaining: >
+  单独的备份保护绕过（低危）→ 结合符号链接攻击 → 提升为 SYSTEM 权限删除任意文件（LPE）；
+  删除 pci.sys 等关键驱动可导致 DoS/蓝屏
+
+approach: "枚举文件保护/完整性监控服务拦截的操作类型，寻找遗漏的操作（如 Rename），通过重命名+符号链接将特权文件操作重定向到任意目标"
+
+reasoning_chain:
+  - "问：目标系统有没有以 SYSTEM/root 权限运行的文件保护/完整性监控服务？"
+  - "问：该服务拦截了哪些文件操作（Create/Write/Delete/Rename/Move）？有没有遗漏的操作类型？"
+  - "如果 Rename 未拦截：问：能否重命名受保护目录，然后在原路径创建符号链接？"
+  - "问：受保护服务后续的特权操作（Delete/Write）会不会跟随符号链接作用到任意文件？"
+  - "问：被删除/覆盖的目标文件能否造成 LPE 或 DoS（如系统驱动、配置文件）？"
+
+vuln_root: "文件保护服务假设'拦截修改'足以保护文件，但忽略了 Rename 操作可以移走整个受保护目录从而打断保护链"
+
+transferable_to:
+  - "任何以高权限运行文件保护/完整性监控的产品（DLP、AntiRansomware、备份软件）"
+  - "Windows 服务以 SYSTEM 执行文件删除/写入且跟随符号链接的场景"
+  - "Linux 下 inotify 监控不覆盖 rename 的守护进程"
+
+cases:
+  - url: "https://hackerone.com/reports/1003007"
+    note: >
+      Acronis True Image 2021 AntiRansomware Protection 不拦截备份文件夹的 Rename 操作，
+      攻击者重命名后放置符号链接，通过 UI 删除备份触发 SYSTEM 权限跟随符号链接删除任意系统文件

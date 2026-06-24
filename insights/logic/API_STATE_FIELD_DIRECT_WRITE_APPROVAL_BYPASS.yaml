@@ -1,0 +1,118 @@
+name: "API 可直接写入服务端控制的审批/状态字段——绕过工作流审核"
+id: "API_STATE_FIELD_DIRECT_WRITE_APPROVAL_BYPASS"
+applicable: "blackbox"
+phase: "logic"
+also_phases: ["authz"]
+tags: ["api", "mass-assignment", "state-field", "approval-bypass", "workflow", "ads", "reddit", "patch"]
+source: "https://hackerone.com/reports/1543159"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。报告者直接展示了通过 PATCH 请求修改 admin_approval 和
+  effective_status 字段绕过审核的过程，未说明发现思路。
+
+hypothesis: >
+  未叙述（仅结果）。推断思路：广告/内容发布系统中，审核状态字段
+  （admin_approval、effective_status）虽然在 UI 上不可编辑，
+  但 API 的 PATCH/PUT 端点可能未将其标记为只读——
+  直接在请求体中设置这些字段可能绕过审核流程。
+
+action_result: >
+  成功：通过 PATCH /api/v2.0/accounts/{account_id}/ads/{ad_id} 请求，
+  将 configured_status 设为 ACTIVE、effective_status 设为 ACTIVE、
+  admin_approval 设为 APPROVED，成功绕过 Reddit 广告审核流程并收到确认邮件。
+  无付款详情也无需管理员审批即可激活广告。
+  无扑空叙述（报告直接给出成功路径）。
+  (原文: "changing the value of admin_approval to APPROVED and effective_status
+  to ACTIVE , the ads is approved and thus we receive the confirmation email
+  from reddit ads that our ads is approved")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  N/A — 单步绕过：直接通过 API 设置审批状态字段，
+  无需支付、无需人工审核即可投放广告。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对需要审批/审核的工作流（广告投放、内容发布、账户认证），
+  拦截 API 请求并在 PATCH/PUT 请求体中添加服务端控制的状态字段
+  （如 admin_approval、effective_status、is_verified、review_status），
+  测试后端是否接受客户端对这些字段的直接赋值。
+
+reasoning_chain:
+  - "问：目标系统是否有需要审批/审核的工作流？（广告审核、内容发布、账户认证、KYC等）"
+  - "问：在正常流程中，哪些字段由服务端/管理员控制？（查看 API 响应中的状态字段如 status、approval、review_state 等）"
+  - "问：这些服务端控制的字段是否出现在 PATCH/PUT 请求体中？如果没有，手动添加这些字段试试。"
+  - "问：API 是否接受了客户端设置的值？（检查响应中字段是否被更新为提交的值）"
+  - "如果接受 → 确认缺少 mass-assignment 保护 / allowlist 过滤"
+  - "问：状态变更后，系统是否真的跳过了审核流程？（检查是否收到审批通过通知、内容是否上线等）"
+  - "扩展：是否还有其他可写字段？（如 is_admin、payment_verified、account_type 等）"
+
+vuln_root: >
+  API 端点未对请求体字段做白名单过滤（allowlist），
+  允许客户端直接写入本应由服务端/管理员控制的审批状态字段，
+  从而绕过工作流中的人工审核和支付验证步骤。
+
+transferable_to:
+  - "广告平台的广告审核流程（Google Ads、Facebook Ads、LinkedIn Ads 等自有/第三方广告系统）"
+  - "内容平台的发布审核（博客、评论、商品上架）"
+  - "金融平台的 KYC/AML 审核流程"
+  - "SaaS 中的账户升级/认证审核"
+  - "任何有 pending → approved 工作流且通过 REST API 暴露状态字段的系统"
+
+cases:
+  - url: "https://hackerone.com/reports/1543159"
+    title: "Able to approve admin approval and change effective status without adding payment details"
+    platform: "Reddit (ads.reddit.com)"
+    severity: "High"
+    bounty: "$5,000"
+    note: >
+      PATCH /api/v2.0/accounts/{id}/ads/{id} 请求体中设置
+      admin_approval=APPROVED + effective_status=ACTIVE，
+      绕过 Reddit 广告的管理员审核和付款流程，直接投放广告。
+  - url: "https://hackerone.com/reports/1861487"
+    title: "inDriver Job - Admin Approval Bypass"
+    platform: "inDriver"
+    severity: "Medium"
+    note: >
+      纯结果文。approach 相同：API 直接修改审批状态字段绕过管理员审核。
+  - url: "https://hackerone.com/reports/1168475"
+    title: "Non privileged user is able to approve his own app himself leading to mass privilege escalations"
+    author: "imran_nisar"
+    platform: "Lark Technologies (larksuite.com)"
+    severity: "High (CVSS 7.1)"
+    note: >
+      no-content 公开。非特权用户可绕过管理员审批自行批准应用，导致批量权限提升。
+      (团队摘要: "A privilege escalation vulnerability was identified in Lark which
+      could have potentially allowed an attacker to approve the apps in the same tenant
+      by bypassing the admin approval.")
+      approach 相同：绕过管理员审批工作流，直接操作审批状态。
+  - url: "https://hackerone.com/reports/2144868"
+    title: "CVE-2023-40611: Apache Airflow Dag Runs Broken Access Control Vulnerability"
+    author: "x_h1"
+    platform: "Apache Airflow (IBB)"
+    severity: "Low"
+    bounty: "有赏金"
+    cve: "CVE-2023-40611"
+    note: >
+      DAG Runs 编辑页面中 Conf 参数文本框为灰色不可编辑，但拦截 Save 请求后
+      修改 Conf 值可以成功写入。前端禁用控件但后端未校验字段可写性。
+      approach 相同：前端 disabled 控件 → 拦截请求 → 直接写入服务端控制的字段。
+  - url: "https://hackerone.com/reports/2249299"
+    author: "itztrq"
+    platform: "Apache Airflow (IBB)"
+    severity: "Low"
+    bounty: "有赏金"
+    cve: "CVE-2023-47037"
+    note: >
+      CVE-2023-40611 的未完全修复变种。Airflow 2.7.1 中声称修复了 DAG run 参数篡改漏洞，
+      但实际修复不完整，已认证且有 DAG-view 权限的用户仍可在提交 notes 时
+      修改 DAG run 的 configuration parameters、start date 等详情值。
+      直到 2.7.3 才真正修复。
+      (团队摘要: "We failed to apply CVE-2023-40611 in 2.7.1...
+      Users should upgrade to version 2.7.3 or later which has removed the vulnerability.")
+      approach 相同：已认证用户通过 API 直接写入服务端控制的状态/配置字段绕过访问控制。
+      额外教训：修复验证不完整——DISCLOSED_FIX_INCOMPLETE_RETEST 场景。

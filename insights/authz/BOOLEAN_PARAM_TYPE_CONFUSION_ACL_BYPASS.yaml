@@ -1,0 +1,64 @@
+name: "布尔/枚举 ACL 参数注入非标值（如逗号）导致服务端解析回退到宽松默认——绕过内部评论限制"
+id: "BOOLEAN_PARAM_TYPE_CONFUSION_ACL_BYPASS"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["input"]
+tags: ["access-control", "type-confusion", "boolean-bypass", "parameter-tampering", "comment-permission", "group-acl", "hackerone"]
+source: "https://hackerone.com/reports/107336"
+
+# ——— L3 核心 ———
+
+observation: >
+  HackerOne 平台中，被分配到只有"Post internal comments"权限的 Group 的团队成员，
+  其发布评论时请求参数 is_internal= 决定评论可见范围。将 is_internal=, (逗号) 发送后，
+  评论被发布为对所有参与者可见（非内部评论），绕过了 Group 的只读内部评论限制。
+  (原文: "Bypass it just with Add comma ',' is_internal=,")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  成功：发送 message=test&substate=&is_internal=,&reference=&...&report_ids[]=107329，
+  服务端返回 {"flash":"Comment was created successfully.","reports":[...]}，
+  评论对所有参与者可见而非仅内部可见。
+  (原文: 响应 JSON 显示评论创建成功，状态为 "new"，可见于所有参与者)
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  低权限团队成员（仅可发内部评论）→ 修改 is_internal 参数值为逗号 → 评论发布为外部评论
+  → 绕过 Group 权限限制，向报告者和所有参与者泄露内部讨论内容。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对控制可见性/权限级别的布尔或枚举参数（is_internal、is_private、visibility、role），
+  注入非标准值（逗号、空字符串、null、非枚举字符串）使服务端解析回退到宽松默认值，
+  从而绕过原本的 ACL 限制。
+
+reasoning_chain:
+  - "问：请求中是否有布尔/枚举参数控制操作的可见性或权限级别（如 is_internal、is_private、visibility、access_level）？"
+  - "问：当前用户的 Group/角色是否限制了该参数只能取特定值（如只能 is_internal=true）？"
+  - "验证：将该参数改为非标准值测试服务端解析行为：空字符串('')、逗号(',')、null、0、undefined、非枚举字符串"
+  - "问：服务端返回是否仍为 200/成功？操作结果的可见性/权限级别是否变为更宽松的默认值？"
+  - "如果成功 → 问：其他类似的布尔/枚举 ACL 参数是否也有相同的解析宽松问题？"
+  - "扩展：批量扫描所有含 is_*、visibility、access_level、scope 参数的端点，逐一测试非标值"
+
+vuln_root: >
+  服务端将布尔/枚举参数以宽松方式解析——非法值（如逗号）不触发验证错误而是回退到默认值（false/public），
+  且 Group 的 ACL 限制仅在 UI 层强制，未在后端对参数值做 allow-list 校验。
+
+transferable_to:
+  - "任何用布尔参数控制评论/消息可见性的协作平台（Jira、Confluence、GitLab issues）"
+  - "CMS/论坛中 visibility 或 access_level 参数控制帖子/页面公开范围的接口"
+  - "任何 is_draft、is_private、is_internal 等布尔字段决定数据可见范围的 API"
+  - "SaaS 平台中 Group/Role ACL 限制只在前端强制而后端仅依赖参数值的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/107336"
+    author: "dz_samir (Hadji Samir)"
+    platform: "HackerOne"
+    bounty: "有奖金（金额未公开）"
+    severity: "Medium（Privilege Escalation）"
+    note: >
+      Group 成员仅有"Post internal comments"权限，通过将 is_internal=, 发送
+      绕过了内部评论限制，评论对所有参与者可见。2015-12-29 提交，2016-01-04 修复。

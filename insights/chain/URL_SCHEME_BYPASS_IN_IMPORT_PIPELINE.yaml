@@ -1,0 +1,49 @@
+name: "导入功能中 URL scheme 白名单缺失——伪造源服务器返回 file:// 协议读取本地仓库"
+id: "URL_SCHEME_BYPASS_IN_IMPORT_PIPELINE"
+applicable: "whitebox"
+phase: "chain"
+also_phases: ["input"]
+tags: ["ssrf", "url-scheme-bypass", "file-protocol", "import-feature", "git-fetch", "bulk-import", "gitlab", "ruby"]
+source: "https://hackerone.com/reports/1685822"
+
+observation: >
+  GitLab BulkImport 的 RepositoryPipeline 从远程 GraphQL 响应取 httpUrlToRepo，
+  调用 Gitlab::UrlBlocker.validate! 校验但未传 schemes 白名单参数。
+  (原文: 引用 repository_pipeline.rb#load 源码)
+
+hypothesis: >
+  如果 httpUrlToRepo 返回 file:// URL，git fetch 会将其视为本地路径。
+  GitLab 仓库路径可通过 SHA256(project_id) 确定性计算。
+  (原文: "file://dummy.host/<repository_path>")
+
+action_result: >
+  成功搭建 Flask mock API 返回 file:// URL，导入后新项目包含目标私有仓库全部代码。
+  (原文: 报告包含克隆 GitLab CTF 私有仓库并获取 flag 的证明)
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: "file:// 本地仓库读取 → 获取私有仓库代码 → 可从代码中提取 secrets"
+
+approach: >
+  审计导入/集成功能中从外部 API 响应获取 URL 并在服务端请求的代码路径，
+  检查 SSRF 防护是否限制了 scheme 白名单，未限制则通过伪造源服务器
+  返回 file:// 等非 HTTP 协议 URL 测试本地资源读取。
+
+reasoning_chain:
+  - "问：目标应用有哪些从外部源导入/同步数据的功能？"
+  - "白盒：grep -rn 'import\\|migration\\|bulk_import' --include='*.rb' --include='*.py'"
+  - "问：URL 验证逻辑是否传入了 schemes 白名单参数？"
+  - "白盒：grep -rn 'validate!\\|ssrf_filter' 检查是否有 schemes: 参数"
+  - "如果无 scheme 限制 → 问：最终消费者是否支持 file:// 协议？"
+  - "如果支持 → 搭建伪造源服务器返回 file:// 指向目标本地路径"
+
+vuln_root: "SSRF 防护仅做 host/IP 黑名单但未限制 URL scheme 白名单。"
+
+transferable_to:
+  - "任何在服务端使用用户可控 URL 的导入/同步/webhook 功能"
+  - "git clone/fetch 接受 file:// 协议的场景"
+  - "其他协议如 gopher://、dict:// 在 curl/HTTP client 中的利用"
+
+cases:
+  - url: "https://hackerone.com/reports/1685822"
+    note: "GitLab BulkImport RepositoryPipeline，$22,300，Medium。研究者 vakzz。"

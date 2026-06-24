@@ -1,0 +1,80 @@
+name: "SAML entityId 尾部空格碰撞——劫持目标组织 SSO 并接管用户账户"
+id: "SAML_ENTITYID_TRAILING_SPACE_ORG_HIJACK"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["logic"]
+tags: ["saml", "sso", "entityId", "trailing-space", "string-normalization", "dos", "account-takeover", "organization-hijack"]
+source: "https://hackerone.com/reports/976603"
+
+observation: >
+  攻击者可以创建一个 entityId 与目标组织完全相同但末尾多一个空格的 SSO 配置。
+  应用在验证 SAML Response 时对 issuer 做了 trim()，但在查找用户所属组织时
+  优先匹配了带空格的那个 entity，导致合法用户被路由到攻击者组织。
+  (原文: "The bug stems from the fact that you can create an entityId identical to that
+  of another organization except with a space at the end. The application logic then
+  prioritizes that new entityId to add the user to after authenticating against the correct one.")
+
+hypothesis: >
+  SAML Response 验证和组织查找使用了不同的字符串匹配逻辑（trim vs exact），
+  这个不一致可能导致用户认证通过后被放入错误的组织。
+  (原文: "So it seems the SAML Response is checked against a trim(issuer), but when
+  trying to place the user into an organization, the entity with the space is always prioritized.")
+
+action_result: >
+  成功实现两个攻击效果：
+  1. DoS：合法组织用户无法登录（SSO 报错），因为组织匹配时优先选了攻击者的 entity
+  2. 账户接管链：将用户从目标组织删除（或新用户首次 SSO）→ 用户被 provision 到攻击者组织
+     → 攻击者切换自己的 entityId 到全新值 → 用攻击者持有的密钥对登录受害者账户
+  (原文: "I can DOS any SSO integration making it so nobody in that organization can login")
+  (原文: "delete that user from the victim organization and attempt to login again.
+  Notice you will now end up getting provisioned to the attacker's organization")
+  (原文: "the attacker can then change their entityId to something brand new, and login
+  to the victim's account using the keypair they own")
+
+  研究者花了数天试图进一步升级利用：
+  (原文: "I've spent quite a few days trying to escalate but can't figure out")
+
+why_here_first: >
+  研究者发现 SAML 实现中字符串处理的不一致性——验证阶段 trim 了 issuer，
+  但组织查找阶段优先匹配了新创建的（带空格的）entity。这是 SAML 多租户场景
+  中典型的 normalization 差异漏洞。
+  (原文: "The strange behavior and why I think it might be possible to escalate further,
+  is that I can have you authenticate against one SSO instance, but have you get added
+  to a completely separate one.")
+
+chaining: >
+  DoS 本身是中危。升级为 ATO 需要三步串链：
+  1. 创建 entityId+空格 的攻击者组织（DoS 生效）
+  2. 等用户被 provision 到攻击者组织（用户被删或新用户加入）
+  3. 攻击者切换 entityId 后用自己的密钥对登录受害者已转换的个人账户
+  (原文: "If this was a converted personal account, you can then access that user's personal documents.")
+
+approach: >
+  在支持 SAML SSO 的多租户系统中，用目标组织的 entityId 加尾部空格注册新的 SSO 配置，
+  利用 SAML Response 验证（trim）与组织查找（exact/priority）之间的字符串匹配不一致，
+  劫持用户到攻击者组织并进一步接管账户。
+
+reasoning_chain:
+  - "问：目标平台是否允许多个组织各自配置 SAML SSO（多租户 SSO）？"
+  - "问：entityId / Identity Provider Issuer 是否有唯一性约束？是否校验前后空格？"
+  - "如果可以创建 entityId 尾部加空格的组织 → 系统如何区分两个 entity？"
+  - "问：SAML Response 验证时对 issuer 做 trim 还是 exact match？"
+  - "问：验证通过后查找用户归属组织时用什么逻辑？是否与验证阶段一致？"
+  - "如果不一致（验证时 trim，查找时优先新创建的） → 用户会被放入攻击者组织？"
+  - "问：用户被 provision 到攻击者组织后，攻击者能否切换 entityId 并接管该用户账户？"
+  - "扩展：不只是空格——测试 tab、全角空格、Unicode 空白字符等 normalization 差异"
+
+vuln_root: >
+  SAML entityId 的唯一性约束未规范化空白字符，且认证验证（trim）与组织查找
+  （优先新实体）之间使用了不一致的字符串匹配逻辑。
+
+transferable_to:
+  - "任何多租户 SaaS 的 SAML SSO 配置——entityId 唯一性校验是否做了 normalization"
+  - "OAuth 多租户场景——client_id / issuer 的唯一性校验"
+  - "域名/邮箱域验证场景——是否对输入做了 trim 但查找时 exact match（或反之）"
+  - "多步流程中同一标识符在不同阶段使用不同匹配逻辑的系统"
+  - "SSO/SCIM 集成中 IdP issuer / tenant identifier 的碰撞风险"
+
+cases:
+  - url: "https://hackerone.com/reports/976603"
+    note: "Grammarly SSO entityId 尾部空格碰撞导致 DoS + 账户接管，$10,500，by cache-money。"

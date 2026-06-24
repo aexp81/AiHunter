@@ -1,0 +1,97 @@
+name: "WebRTC TURN 服务器无 peer 限制——通过 TURN 中继绕过防火墙访问内网服务和云元数据"
+id: "TURN_RELAY_OPEN_PEER_SSRF_INTERNAL_ACCESS"
+applicable: "blackbox"
+phase: "chain"
+also_phases: ["recon", "input"]
+tags: ["turn", "webrtc", "ssrf", "relay", "metadata", "aws", "coturn", "firewall-bypass", "internal-network", "8x8"]
+source: "https://hackerone.com/reports/843256"
+
+# ——— L3 核心 ———
+
+observation: >
+  目标使用 WebRTC 进行实时通信，TURN 服务器的临时凭证可通过 XMPP WebSocket
+  消息中 type='turn' 的响应获取。
+  (原文: "Retrieved temporary TURN credentials from XMPP by: making use of
+  Chrome's devtools, open the network tab, filter just WS connections,
+  in the xmpp-websocket messages, set a filter for type='turn',
+  observe the TURN hostname and credentials")
+
+hypothesis: >
+  未叙述（仅结果）。推断：TURN 服务器未限制 peer（中继目标）的地址范围，
+  允许将 relay 指向内部 IP（127.0.0.1、AWS 元数据 169.254.169.254 等），
+  等效于 SSRF 但不限于 HTTP 协议——TCP/UDP 均可中继。
+  (原文: "This is not an SSRF vulnerability but an open TURN relay vulnerability.
+  Typically, this security vulnerability has at least the same impact as an SSRF.
+  However it is considered more useful from an attacker's point of view since
+  attacks are not restricted to HTTP.")
+
+action_result: >
+  使用 stunner 工具对 TURN 服务器进行 recon 和端口扫描：
+  1. 通过 TURN relay 连接 127.0.0.1:5766（coturn telnet 管理接口），
+     成功登入并执行 `help`/`pc` 命令读取完整服务器配置（PID 文件路径、
+     证书路径、监听地址、relay 地址、DB 类型等）。
+  (原文完整展示了 coturn telnet 交互日志)
+  2. 通过 TURN relay 读取 AWS 元数据服务（IAM 凭证 HipChatVideo-Coturn）。
+  3. 扫描 127.0.0.1 及内网 IP 段并连接内部服务。
+  (原文: "connecting to the AWS meta-data service and retrieving IAM credentials
+  for user HipChatVideo-Coturn, viewing user-data configuration etc")
+
+  发现两台 TURN 服务器行为不同：一台允许 TCP+UDP peer，另一台仅 UDP。
+  (原文: "both TCP and UDP peers could be specified, while [second] appeared to
+  restrict TCP and only allow UDP")
+
+why_here_first: >
+  报告者是 WebRTC 安全专家，引用了自己此前发现 Slack TURN 漏洞的经验作为参考。
+  (原文: "Similar vulnerability: https://www.rtcsec.com/2020/04/01-slack-webrtc-turn-compromise")
+
+chaining: >
+  开放 TURN relay → 连接 coturn telnet 管理接口（可写文件、修改配置、停服务）→
+  读取 AWS 元数据 IAM 凭证 → 扫描内网 → 可能通过 coturn 的 psd 命令写入
+  恶意文件实现 RCE → 进一步渗透 8x8 基础设施。
+  (原文: "We think that it is likely that abuse of the coturn telnet server
+  could lead to remote code execution on the server and further penetration
+  inside 8x8's infrastructure.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在使用 WebRTC 的目标中，从浏览器 DevTools 或流量中提取 TURN 凭证，
+  然后用专用工具（stunner）测试 TURN 服务器是否限制 peer 地址——
+  若不限制则可将 relay 指向内网 IP / 云元数据 / localhost 管理端口，
+  实现超越 HTTP SSRF 的全协议内网穿透。
+
+reasoning_chain:
+  - "问：目标是否使用 WebRTC（视频通话、屏幕共享、P2P 通信）？"
+  - "问：浏览器 DevTools 的 WebSocket/Network 面板中能否找到 TURN 服务器地址和临时凭证（type='turn' 或 iceServers 配置）？"
+  - "问：TURN 凭证的生命周期多长？是否可以重复使用？"
+  - "问：使用 stunner recon 或 turncat 等工具连接 TURN 服务器，能否指定 peer 为 127.0.0.1 或内网 IP？"
+  - "如果可以 → 确认开放 TURN relay。问：能否连接 169.254.169.254（AWS 元数据）或 metadata.google.internal（GCP）？"
+  - "问：能否通过 TURN relay 扫描 localhost 端口，发现 coturn telnet（5766）、Redis、数据库等管理接口？"
+  - "如果发现 coturn telnet → 问：能否通过 telnet 命令读取配置、写入文件（psd 命令）或停止服务？"
+  - "问：TURN relay 是否同时支持 TCP 和 UDP peer？仅 UDP 的场景下攻击面受限但仍可做 DNS 隧道、SNMP 查询等。"
+  - "问：获取的 AWS/GCP 凭证有哪些 IAM 权限？能否横向移动到其他服务？"
+
+vuln_root: >
+  TURN 服务器部署时未配置 peer 访问控制（no-loopback-peers、no-multicast-peers
+  均为 OFF），允许中继到任意地址包括 localhost 和内网——开发者假设 TURN
+  仅用于合法 WebRTC 媒体中继，未考虑攻击者利用其作为通用代理。
+
+transferable_to:
+  - "任何使用 coturn 或其他 TURN 服务器的视频会议/VoIP/WebRTC 应用"
+  - "Slack、Zoom、Teams、Discord 等使用 TURN 中继的协作平台"
+  - "SaaS 的嵌入式视频通话功能（如 Intercom、Zendesk 视频支持）"
+  - "部署在 AWS/GCP/Azure 上的 TURN 服务器——结合云元数据攻击"
+  - "IoT/嵌入式设备的 WebRTC 远程管理界面"
+
+cases:
+  - url: "https://hackerone.com/reports/843256"
+    title: "Open TURN relay abuse is possible due to lack of peer access control"
+    author: "sandrogauci"
+    platform: "8x8"
+    severity: "High"
+    bounty: "$700"
+    note: >
+      两台 TURN 服务器均未限制 peer 地址。攻击者从 XMPP WebSocket 获取
+      临时凭证后，通过 stunner 工具：1) 连接 coturn telnet 管理端口读取
+      完整配置，2) 读取 AWS 元数据获取 IAM 凭证，3) 扫描内网。
+      参考：https://www.rtcsec.com/2020/04/01-slack-webrtc-turn-compromise

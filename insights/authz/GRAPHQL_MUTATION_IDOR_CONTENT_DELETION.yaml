@@ -1,0 +1,93 @@
+name: "GraphQL Mutation 中对象 ID 鉴权缺失——跨用户删除任意内容"
+id: "GRAPHQL_MUTATION_IDOR_CONTENT_DELETION"
+applicable: "blackbox"
+phase: "authz"
+also_phases: []
+tags: ["idor", "graphql", "mutation", "authorization", "content-deletion", "ugc", "snapchat"]
+source: "https://hackerone.com/reports/1819832"
+
+observation: >
+  Snapchat Spotlight 删除功能的 GraphQL mutation DeleteStorySnaps 接受 ids 数组参数，
+  仅验证用户身份但未校验 id 对应资源是否属于当前用户。
+  (原文: mutation 结构 {"operationName":"DeleteStorySnaps","variables":{"ids":["███"],"storyType":"SPOTLIGHT_STORY"}})
+
+hypothesis: "未叙述（仅结果）"
+action_result: >
+  替换 id 为其他用户的 Spotlight 视频 ID，成功远程删除他人内容。
+  ID 可从公开分享链接中提取。
+  (原文: "Whenever you share spotlight you can see the parameter in the url as: https://story.snapchat.com/spotlight/█████")
+
+why_here_first: "未叙述（仅结果）"
+chaining: "N/A — 单步 IDOR"
+
+approach: >
+  对 GraphQL mutation 中接受资源 ID 列表执行破坏性操作（delete/update）的端点，
+  替换 ID 为其他用户的资源测试是否缺少 owner check。
+
+reasoning_chain:
+  - "问：目标 GraphQL API 中有哪些执行 delete/update 的 mutation？"
+  - "问：mutation 参数中的 ID 格式是什么？是否可从公开 URL 提取？"
+  - "问：用账户 A 的 session 发送 mutation，将 ids 替换为账户 B 的资源 ID，是否成功？"
+  - "如果成功 → 确认缺少 owner check，评估批量影响"
+
+vuln_root: "GraphQL mutation 仅做 authentication 未做 authorization（owner check），替换 ID 即可操作他人资源。"
+
+transferable_to:
+  - "任何 GraphQL API 中接受用户提供 ID 的 mutation"
+  - "社交/内容平台的 UGC 管理端点"
+
+cases:
+  - url: "https://hackerone.com/reports/1819832"
+    note: "Snapchat Spotlight DeleteStorySnaps IDOR，$15,000。"
+  - url: "https://hackerone.com/reports/2122671"
+    note: "HackerOne CreateOrUpdateHackerCertification mutation 中替换 ID 即可删除任意用户的 Licenses and certifications，$12,500。"
+  - url: "https://hackerone.com/reports/1102365"
+    title: "[dubmash] Lack of authorization checks - Update Sound Titles"
+    platform: "Reddit (Dubsmash / gateway-production.dubsmash.com)"
+    severity: "High"
+    bounty: "有赏金（金额未公开）"
+    note: >
+      Dubsmash GraphQL mutation UpdateSound 接受 uuid 参数修改音轨标题，
+      未校验 uuid 对应的 Sound 是否属于当前用户。攻击者替换 uuid 为受害者的音轨 UUID
+      即可修改其标题。UUID 为公开可知信息。
+      (原文: "the UpdateSound api is vulnerable to IDOR. It allows an attacker to edit
+      the victim's sound track titles. This vulnerability can be exploited using the
+      sound track's uuid in the vulnerable request. This id is publicly known.")
+      2021-02 报告，2021-10 公开。纯结果文，approach 与已有条目一致。
+  - url: "https://hackerone.com/reports/837256"
+    title: "Improper Access Control in Buddypress core allows reply,delete any user's activity"
+    author: "hoangkien1020"
+    platform: "WordPress (BuddyPress Core)"
+    severity: "Medium"
+    bounty: "有赏金"
+    note: >
+      BuddyPress 的 activity reply/delete 操作接受 activity ID 参数，
+      未校验该 activity 是否属于用户已加入的群组。攻击者替换 ID 即可
+      跨群组回复/删除他人 activity。非 GraphQL 但 approach 相同：
+      替换破坏性操作中的资源 ID 测试 owner check 缺失。
+      纯结果文，无 L3 导航叙事。
+      (原文: "In group A-account A select reply/delete action, use proxy
+      to capture this request. Change id_A by id_B. Done, you deleted
+      or reply user's activity without joining group")
+  - url: "https://hackerone.com/reports/273805"
+    title: "Improper access control lead To delete anyone comment"
+    author: "ranjit_p"
+    platform: "Paragon Initiative Enterprises (CMS Airship)"
+    severity: "Medium"
+    bounty: "有赏金"
+    note: >
+      CMS Airship 博客评论功能中，任何已登录用户可先将他人评论设为 Unapproved（Hide Comment），
+      再执行删除操作，服务端未校验评论是否属于当前用户。
+      非 GraphQL 但 approach 相同：破坏性操作（delete）缺少 owner check。
+      纯结果文，无 L3 导航叙事。
+      (原文: "During Comment deletion it does not check whether the comment
+      is created by user or not. so i can delete a comment of others user.")
+  - url: "https://hackerone.com/reports/1307943"
+    title: "Privilege Escalation leads to trash other users comment without having admin rights"
+    author: "fuzzsqlb0f"
+    platform: "Basecamp (3.basecamp.com)"
+    severity: "Low"
+    note: >
+      no-content 公开。非 admin 用户可以 trash 其他用户的评论。
+      团队摘要确认为权限提升类 IDOR。
+      approach 与已有条目一致：破坏性操作（trash/delete）缺少 owner/admin check。

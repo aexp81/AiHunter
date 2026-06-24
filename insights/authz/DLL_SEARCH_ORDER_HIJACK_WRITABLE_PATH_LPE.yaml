@@ -1,0 +1,201 @@
+name: "高权限进程 DLL 搜索顺序劫持——通过可写 PATH 目录植入恶意 DLL 提权"
+id: "DLL_SEARCH_ORDER_HIJACK_WRITABLE_PATH_LPE"
+applicable: "both"
+phase: "authz"
+also_phases: ["chain"]
+tags: ["lpe", "windows", "dll-hijacking", "search-order", "path-variable", "procmon", "privilege-escalation", "acronis", "nodejs", "installer-acl"]
+source: "https://hackerone.com/reports/959608"
+
+# ——— L3 核心 ———
+
+observation: >
+  Acronis Cyber Protection Agent 的 systeminfo.exe 组件以高权限运行时，
+  按照 Windows DLL 搜索顺序从 PATH 环境变量中的目录加载 snapapi.dll，
+  其中包括用户可写的目录（如 C:\Python27）。
+  (原文: "As part of my PATH system variables, I have the Python's location,
+  which was installed in the C:\Python27 folder... systeminfo.exe 2132
+  CreateFile C:\python27\snapapi.dll NAME NOT FOUND")
+
+hypothesis: >
+  未叙述（仅结果）。推断：如果攻击者对 PATH 中任一优先级更高的目录有写入权限，
+  可以放置恶意 DLL，当高权限进程加载该 DLL 时即可以其权限执行任意代码。
+
+action_result: >
+  使用 Sysinternals ProcMon 监控 systeminfo.exe 进程，确认其在 C:\python27\
+  路径下搜索 snapapi.dll（返回 NAME NOT FOUND）。
+  将恶意 snapapi.dll 放入该目录后，进程启动时加载恶意 DLL 并执行
+  C:\attacker\mmg.bat（以高权限运行）。
+  通过 whoami /all 确认代码在 SYSTEM 安全上下文中执行。
+  (原文: "I have attached a sample DLL, when loaded this will call
+  C:\attacker\mmg.bat file... whoami /all >> c:\attacker\who.txt
+  to confirm the security context in which my code was executed.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  DLL 植入 → 高权限进程加载 → SYSTEM 级代码执行。
+  唯一前提是攻击者对 PATH 中某个目录有写入权限。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  用 ProcMon/API Monitor 监控高权限 Windows 进程（安全软件 Agent、备份工具、
+  系统服务的辅助程序）的 DLL 加载行为，筛选 "NAME NOT FOUND" 的 DLL 加载尝试，
+  检查其搜索路径中是否包含当前用户可写的目录。
+
+reasoning_chain:
+  - "问：目标系统中有哪些以 SYSTEM/高权限运行的第三方进程？"
+  - "问：这些进程加载了哪些 DLL？使用 ProcMon 过滤 CreateFile + NAME NOT FOUND。"
+  - "问：DLL 搜索路径中是否包含当前用户可写的目录？（检查 PATH 环境变量中各目录的 ACL）"
+  - "如果找到可写目录且优先级高于实际 DLL 位置 → 植入同名恶意 DLL。"
+  - "问：高权限进程是否在启动/定时任务/用户触发时自动加载该 DLL？"
+  - "问：进程是否校验 DLL 的数字签名？（Authenticode 验证可防止此攻击）"
+  - "如果不校验 → 恶意 DLL 被加载，代码以高权限执行。"
+
+vuln_root: >
+  开发者假设 PATH 中的所有目录都是可信的且仅管理员可写，
+  但实际上用户安装的软件（如 Python、Node.js）会在 PATH 中添加用户可写目录。
+  进程未验证 DLL 的数字签名，也未使用绝对路径加载 DLL。
+
+transferable_to:
+  - "安全软件（杀毒、EDR、备份工具）的 Agent 进程"
+  - "以 SYSTEM 运行的企业管理代理（SCCM、Intune、Puppet agent）"
+  - "开发工具的后台服务（Docker Desktop、VS Code server、Git credential helper）"
+  - "任何 Windows 高权限服务加载非标准 DLL（非 System32 目录下的 DLL）的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/959608"
+    author: "mmg"
+    platform: "Acronis Cyber Protection Agent (systeminfo.exe)"
+    severity: "Medium (CVSS 6.3)"
+    bounty: "有赏金（金额未公开）"
+    note: >
+      systeminfo.exe 以高权限运行，从 PATH 搜索 snapapi.dll，
+      Python 安装目录 C:\Python27 对当前用户可写。
+      植入恶意 DLL 后以 SYSTEM 权限执行任意代码。
+      Windows 10 Pro 1909 环境验证。
+  - url: "https://hackerone.com/reports/1008427"
+    title: "DLL Hijacking when sending feedback and crash report leading to Privilege Escalation"
+    author: "z3ron3"
+    platform: "Acronis True Image 2021 (report_sender.exe)"
+    severity: "Medium (CVSS 6.7)"
+    bounty: "$250"
+    note: >
+      report_sender.exe 以 Administrator 权限运行（发送反馈/崩溃报告时触发），
+      搜索多个不存在的 DLL（CSUNSAPI.dll、swift.dll、ubsec.dll 等）。
+      %USERPROFILE%\AppData\Local\Microsoft\WindowsApps 位于 User PATH 中
+      且普通用户有 Full Control 权限，植入恶意 DLL 后以 Admin 权限加载。
+      进一步通过 schtasks 创建 SYSTEM 计划任务升级至 NT AUTHORITY\SYSTEM。
+      攻击也可在崩溃报告自动发送时无交互触发。
+  - url: "https://hackerone.com/reports/959017"
+    title: "TrueImage for Acronis True Image 2020 - Untrusted DLL Search-Ordering lead to Privilege Escalation"
+    author: "vanitas"
+    platform: "Acronis True Image 2020 (TrueImage.exe)"
+    severity: "Medium"
+    bounty: "$250"
+    note: >
+      TrueImage.exe 由 TrueImageLauncher.exe 以管理员权限启动，
+      搜索 tcmalloc.dll 时遍历 PATH 中包含 C:\Python27（低权限用户可写）。
+      使用 ProcMon 过滤 TrueImage.exe + NAME NOT FOUND + Python27 路径确认。
+      植入 msfvenom 生成的恶意 tcmalloc.dll 后获得管理员反弹 shell。
+  - url: "https://hackerone.com/reports/530967"
+    title: "UniFi Video v3.10.1 (Windows) Local Privileges Escalation to SYSTEM from arbitrary file delete and DLL hijack"
+    author: "b0yd"
+    platform: "Ubiquiti UniFi Video Server (Windows)"
+    severity: "Medium (CVSS 6.7)"
+    cve: "CVE-2020-8146"
+    note: >
+      no-content 公开。UniFi Video v3.10.1 的 .tsExport 文件夹权限和
+      SafeDllSearchMode 注册表配置不当，允许低权限用户通过 DLL 劫持
+      获取 SYSTEM 权限。修复方式：调整 .tsExport 文件夹权限 +
+      安装时设置 SafeDllSearchMode 注册表项。
+      approach 与已有条目一致：高权限服务进程 DLL 搜索路径中包含可写目录。
+  - url: "https://hackerone.com/reports/1211160"
+    title: "Node Installer Local Privilege Escalation"
+    author: "deepsurface-robert"
+    platform: "Node.js Windows Installer (v14.17.0)"
+    severity: "Medium (CVSS 6.7)"
+    bounty: "有赏金（金额未公开）"
+    note: >
+      Node.js Windows 安装器在非默认目录（如 C:\tools）安装时，安装目录继承
+      驱动器根目录的宽松 ACL（BUILTIN\Users Allow *），且被添加到系统 PATH。
+      攻击者可在安装目录放置恶意 npm.exe（.exe 优先于 .cmd），当特权用户
+      运行 npm 时加载恶意可执行文件。同时 node.exe 从安装目录搜索多个 DLL
+      （ProcMon 确认），可进行 DLL 劫持。CVE-2021-22921。
+      同一模式也影响 RabbitMQ (CVE-2021-22117) 和 Erlang (CVE-2021-29221)。
+  - url: "https://hackerone.com/reports/924493"
+    title: "Acronis Sync Agent Service - Untrusted DLL Search-Ordering lead to Privilege Escalation"
+    author: "vanitas"
+    platform: "Acronis True Image ver.24.6.25700 (syncagentsrv.exe)"
+    severity: "Medium (CVSS 6.9)"
+    bounty: "$250"
+    note: >
+      Acronis Sync Agent Service (syncagentsrv.exe) 以 SYSTEM 权限运行，
+      搜索 CSUNSAPI.dll 时遍历 PATH 中包含 C:\Python27（低权限用户可写）。
+      使用 ProcMon 过滤 syncagentsrv.exe + NAME NOT FOUND + Python27 路径确认。
+      植入 msfvenom 生成的恶意 CSUNSAPI.dll 后，重启机器触发服务加载，
+      获得 SYSTEM 权限反弹 shell。Windows 10 Home 64-bit 环境验证。
+  - url: "https://hackerone.com/reports/1010552"
+    title: "DLL Hijacking when creating Rescue Media Builder leading to Privilege Escalation"
+    author: "z3ron3"
+    platform: "Acronis True Image 2021 (MediaBuilder.exe)"
+    severity: "Medium (CVSS 6.7)"
+    bounty: "$250"
+    note: >
+      MediaBuilder.exe（Rescue Media Builder 工具）以 Administrator 权限运行，
+      搜索不存在的 tcmalloc.dll，遍历 Windows DLL 搜索顺序，
+      其中 %USERPROFILE%\AppData\Local\Microsoft\WindowsApps 位于 User PATH
+      中且普通用户有 Full Control 权限。
+      植入恶意 tcmalloc.dll 后以 Administrator 权限执行代码，
+      进一步通过 schtasks 创建 NT AUTHORITY\SYSTEM 计划任务升级至 SYSTEM。
+      即使该目录不在 PATH 中，攻击者也可自行添加任意目录到 User PATH
+      （无需管理员权限）。
+  - url: "https://hackerone.com/reports/784714"
+    title: "Relative Path Vulnerability Results in Arbitrary Command Execution/Privilege Escalation"
+    author: "jhancock"
+    platform: "Slack Nebula VPN (macOS/Windows)"
+    severity: "Medium (CVSS 6.8)"
+    bounty: "$750"
+    note: >
+      Nebula VPN 客户端在 macOS 上以 root/sudo 权限运行时，使用相对路径调用
+      exec.Command("ifconfig") / exec.Command("route")（而非 /sbin/ifconfig），
+      Windows 上类似使用 exec.Command("netsh")。
+      攻击者在 /tmp 目录放置恶意 ifconfig 脚本并修改 PATH 优先级，
+      当 Nebula 以 root 运行时加载恶意脚本获得 root 反弹 shell。
+      与 Windows DLL 搜索顺序劫持属同一模式（PATH/搜索顺序劫持），
+      区别在于目标是 macOS/Go 语言 exec.Command 的可执行文件搜索而非 Windows DLL 加载。
+      (原文: "These commands are entered using relative paths, not absolute paths
+      (such as /sbin/ifconfig). When a binary is run with a relative path, the system
+      uses environmental variables ('PATH') to determine the search order..."
+      "Because Nebula must be run with root/sudo permissions, this can be an effective
+      privilege escalation technique.")
+      2020-01 报告，2020-04 公开。$750 赏金。纯结果文，无导航叙事。
+  - url: "https://hackerone.com/reports/1004740"
+    title: "DLL Hijacking when performing operations in Acronis Secure Zone partition leading to Privilege Escalation"
+    author: "z3ron3"
+    platform: "Acronis True Image 2021 (aszbrowsehelper.exe)"
+    severity: "Medium (CVSS 5.5)"
+    bounty: "$250"
+    note: >
+      Acronis True Image 2021 的 aszbrowsehelper.exe（浏览 Secure Zone 分区内容）
+      以 Administrator 权限运行，搜索 tcmalloc.dll 时按 Windows DLL 搜索顺序遍历
+      PATH 中的目录，其中 %USERPROFILE%\AppData\Local\Microsoft\WindowsApps
+      位于 User PATH 中且普通用户有 Full Control 权限。植入恶意 tcmalloc.dll 后
+      以 Administrator 权限执行代码，进一步通过 schtasks 创建 NT AUTHORITY\SYSTEM
+      计划任务升级至 SYSTEM 权限。即使 WindowsApps 不在 PATH 中，攻击者也可自行
+      添加任意目录到 User PATH（无需管理员权限）。与 case #959017、#1010552 相同
+      产品/DLL（tcmalloc.dll）不同触发组件。
+      (原文: "aszbrowsehelper.exe looks for tcmalloc.dll DLL file according to the
+      untrusted search order... Normal user has Full control over WindowsApps folder
+      so anyone can place a malicious DLL file")
+  - url: "https://hackerone.com/reports/963103"
+    title: "Local Privilege Escalation via DLL Search-Order Hijacking with Cyber Protection Agent - tibxread.exe utility"
+    author: "mmg"
+    platform: "Acronis Cyber Protection Agent (tibxread.exe)"
+    severity: "Medium"
+    note: >
+      no-content 公开。Acronis Cyber Protection Agent 的 tibxread.exe 组件以高权限运行时，
+      按 DLL 搜索顺序从包含可写目录的 PATH 中加载 DLL。
+      approach 与已有条目一致：高权限进程 DLL 搜索路径中包含用户可写目录。
+      与 case #959608（同作者 mmg，同产品 Cyber Protection Agent 不同组件 systeminfo.exe vs tibxread.exe）
+      属同一模式的不同触发点。

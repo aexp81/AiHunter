@@ -1,0 +1,86 @@
+name: "客户端在请求体中携带权限断言对象，服务端直接信任——绕过论坛/资源访问控制"
+id: "CLIENT_SUPPLIED_PERMISSION_CONTEXT_TRUST_BYPASS"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["access-control", "client-side-trust", "permission-assertion", "extended-data", "forum-acl", "idor", "deleted-content", "steam", "valve"]
+source: "https://hackerone.com/reports/308610"
+
+# ——— L3 核心 ———
+
+observation: >
+  Steam 论坛的"删除评论"API 端点（POST /comment/ForumTopic/delete/GroupID/forumID/）
+  接受一个 extended_data 参数，其中包含完整的 topic_permissions JSON 对象
+  （can_view、can_post、can_reply、can_moderate、can_edit_others_posts、can_purge_topics、can_delete、can_edit）。
+  普通 member 正常请求中这些值为 0，但可以手动构造请求将它们全部设为 1。
+  (原文: "extended_data=%7B%22topic_permissions%22%3A%7B%22can_view%22%3A1%2C%22can_post%22%3A0%2C
+  %22can_reply%22%3A0%2C%22can_moderate%22%3A1%2C%22can_edit_others_posts%22%3A1%2C
+  %22can_purge_topics%22%3A1%2C%22is_banned%22%3A0%2C%22can_delete%22%3A1%2C%22can_edit%22%3A1%7D")
+
+hypothesis: >
+  服务端在处理评论列表/删除请求时，不是从数据库/session 中查询用户的实际权限，
+  而是直接读取客户端 POST 请求体中的 topic_permissions 字段来决定是否展示已删除评论
+  和执行管理操作——即权限判断完全由客户端"自我申报"。
+  (原文推断自 PoC 行为: "Keep the extended_data param as it is" — 发送
+  can_moderate:1 后服务端返回了包含已删除评论的完整响应)
+
+action_result: >
+  成功：以 member 身份发送 can_moderate:1, can_delete:1 的 extended_data，
+  响应的 comments_raw 中返回了所有评论包括已被版主删除的评论。
+  更进一步：以 non-member 身份（无权查看该论坛的讨论）发送同样请求，
+  同样成功获取了 members-only 论坛中所有讨论的全部评论（含已删除）。
+  (原文: "in the response search for comments_raw, you will see that even the deleted
+  comments were shown to you";
+  "you will see all comments were exposed to a user who does not even have
+  the permission to view this discussion")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  客户端权限注入 → 读取已删除/私密评论 → 跨论坛权限边界泄露。
+  non-member 可获取 members-only 论坛的完整评论，包括版主已删除的内容。
+  (原文: "Non-members without having the access to view a forum can get read access
+  to all comments including deleted comments on such forum discussions")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在具有分级权限控制的 Web 应用（论坛/CMS/协作平台）中，
+  拦截正常请求寻找包含权限/角色信息的客户端参数（extended_data、permissions、
+  role、access_level 等 JSON 对象），将其中的权限标志修改为提升值
+  （can_moderate:1、is_admin:true、role:admin），
+  检查服务端是否独立验证用户实际权限还是直接信任客户端传递的权限断言。
+
+reasoning_chain:
+  - "问：拦截目标应用的正常 API 请求，是否在请求体/URL 参数中发现了权限相关字段（permissions、role、access_level、can_*、is_admin 等）？"
+  - "问：这些权限字段是由服务端在页面渲染时注入前端 JS 的还是硬编码在客户端的？"
+  - "白盒：grep -rn 'topic_permissions\\|can_moderate\\|extended_data\\|permissions' --include='*.py' --include='*.php' --include='*.js'"
+  - "问：将权限字段中的值从 0/false 修改为 1/true 后发送，服务端是否返回了不同的（更多的/更敏感的）数据？"
+  - "如果服务端返回了额外数据 → 问：服务端是否有独立的权限校验逻辑？还是直接使用了客户端传入的值？"
+  - "扩展：将 is_banned 从 1 改为 0 是否可以绕过封禁？将 can_delete 设为 1 是否可以执行删除操作？"
+  - "扩展：用完全无权限的账户（non-member/unauthenticated）发送同样的提升权限请求，是否也被接受？"
+
+vuln_root: >
+  服务端将权限判断委托给客户端——在 API 请求中接受客户端自我申报的权限上下文
+  （如 topic_permissions 对象），直接用于访问控制决策，
+  而不是从服务端 session/数据库中查询用户的实际权限。
+
+transferable_to:
+  - "社区/论坛平台（Discourse、phpBB、vBulletin）——版主/管理员权限通过请求参数传递"
+  - "CMS 后台的编辑器权限控制——前端 JS 注入的权限对象被 API 端点直接信任"
+  - "SaaS 协作平台的工作空间权限——API 请求中包含 workspace_permissions 字段"
+  - "游戏平台的社区功能（Steam、Epic、Discord）——群组/频道权限通过客户端传递"
+  - "任何在请求体中包含权限/角色 JSON 对象的 API 端点"
+
+cases:
+  - url: "https://hackerone.com/reports/308610"
+    title: "Read Access to all comments on unauthorized forums' discussions! IDOR!"
+    author: "ta8ahi"
+    platform: "Steam/Valve (steamcommunity.com)"
+    severity: "Medium (CVSS 4.3)"
+    bounty: "$500"
+    note: >
+      POST /comment/ForumTopic/delete/ 端点接受 extended_data 参数中的 topic_permissions
+      JSON 对象，member 将 can_moderate 设为 1 即可读取已删除评论；
+      non-member 可获取 members-only 论坛的全部评论（含已删除）。
+      2018-01 报告，2018-05 公开。

@@ -1,0 +1,78 @@
+name: "项目导入注入管理员专属 service template——自动植入所有新建项目的全局后门"
+id: "PROJECT_IMPORT_TEMPLATE_INJECTION_GLOBAL_BACKDOOR"
+applicable: "both"
+phase: "authz"
+also_phases: ["logic", "chain"]
+tags: ["gitlab", "project-import", "service-template", "privilege-escalation", "mass-assignment", "backdoor", "data-exfiltration"]
+source: "https://hackerone.com/reports/446585"
+
+observation: >
+  项目导入功能的 project.json 包含 services 数组，其中有 template 字段。
+  Service templates 通常只能由 instance admin 创建，但导入流程未做权限校验。
+  同时注意到 Projects::CreateService 在新建项目时会自动初始化所有 active 的 template。
+  (原文: "The GitLab import feature contains a vulnerability that allows an attacker to
+  import a project that creates a service template. Service templates can normally only
+  be created by a GitLab instance Administrator.")
+
+hypothesis: >
+  如果在导入的 project.json 中将 service 的 template 字段设为 true，就能以普通用户身份
+  创建 service template。一旦 template 被创建且 active=true，后续所有新建项目都会
+  自动安装该 service，形成全局后门。
+  (原文: "When a new project is created, service templates are automatically initialized
+  for the project that is being created.")
+
+action_result: >
+  成功：
+  1. 导出正常项目，在 project.json 中将 service 的 "template":false 改为 "template":true
+  2. 重新导入后，该 service 变为 instance 级别 template
+  3. 其他用户创建新项目时，自动安装了攻击者的 service
+  4. 具体利用策略包括：
+     - EmailsOnPushService：所有新项目的 commit diff 自动发送给攻击者
+     - HipchatService：所有新项目的 issue/MR/pipeline 事件发给攻击者控制的服务器
+     - MockCiService：注入 UI 不可见的隐藏 service 连接攻击者主机
+     - ExternalWikiService/CustomIssueTrackerService：劫持项目的 Wiki/Issue URL 到钓鱼域名
+  (原文: "Replace \"template\":false in the services array with \"template\":true")
+  (原文: "any commit's diff will be emailed to the attacker")
+  (原文: "creating a template for this service will automatically send all new issues, notes,
+  merge requests, pipeline updates, and pushes to a HipChat server")
+
+why_here_first: >
+  研究者审计了项目导入功能的代码，注意到导入 JSON 直接写入 services 表，
+  且 create_services_from_active_templates 方法会自动将所有 active template
+  传播到新项目。导入流程对 template 字段缺乏特权校验是关键切入点。
+  (原文: "Initializing and saving the service templates is handled in the
+  Projects::CreateService class...Service.where(template: true, active: true).each do |template|")
+
+chaining: >
+  单步即可实现全局后门。但可串链不同 service 类型实现不同攻击目标：
+  数据窃取（EmailsOnPush / Hipchat）→ 隐蔽持久化（MockCiService 不可见于 UI）
+  → 社工钓鱼（ExternalWiki/CustomIssueTracker 劫持 URL）。
+  Slack 服务模板还可能允许攻击者通过弱 token 反向操控项目。
+
+approach: >
+  在项目导入的 export JSON 中将 service 对象的 template 字段改为 true，
+  利用导入流程未校验 template 创建权限（admin-only），注入全局 service template，
+  使所有后续新建项目自动安装攻击者控制的 service（数据外泄/隐蔽后门）。
+
+reasoning_chain:
+  - "问：项目导入功能的 JSON 中有哪些可控字段？services 数组是否被完整导入？"
+  - "问：导入时对 service 的 template 字段是否做权限校验（只有 admin 才能创建 template）？"
+  - "如果 template 字段被原样导入 → 普通用户能否注入 admin-only 的 service template？"
+  - "问：service template 的 active 标志是否也被导入？active=true 的 template 会怎样？"
+  - "如果 create_services_from_active_templates 自动传播 → 所有新项目都会安装该 service？"
+  - "问：有哪些 service 类型可以外泄数据或劫持 URL？（EmailsOnPush / Hipchat / MockCi / ExternalWiki）"
+  - "问：是否有 service 类型在 UI 中不可见（如 MockCiService），可用于隐蔽持久化？"
+
+vuln_root: >
+  导入流程信任 export JSON 中所有字段的值，未对 admin-only 属性（template=true）
+  做权限降级或过滤，假设导出文件只来自同等权限的上下文。
+
+transferable_to:
+  - "任何支持项目/配置导入的系统，导入 JSON 中包含权限敏感的布尔/枚举字段"
+  - "SaaS 平台的 integration/webhook 模板机制，若模板创建与普通集成共用代码路径"
+  - "GitLab/GitHub/Bitbucket 的 import/export 功能——检查是否有 admin-only 字段被导入"
+  - "插件市场的 manifest 导入——template/global/default 标志是否被用户控制"
+
+cases:
+  - url: "https://hackerone.com/reports/446585"
+    note: "GitLab project import 注入 service template（template:true），$11,000，by jobert。Critical，CVSS 9.9。"

@@ -14,6 +14,8 @@ reasoning_chain:
   - "问：API 端点接受对象 ID 参数？(路径参数 /{id} 或 query ?id=)"
   - "问：这个操作是读取、修改还是删除？(DELETE/PUT 比 GET 危害更大)"
   - "问：后端代码是先查数据库，还是直接按 ID 操作？"
+  - "白盒：grep -rniE '\\.get\\(|\\.query\\(|find_by|filter\\(|objects\\.|findOne' --include='*.py' --include='*.js' | grep -iE 'id'"
+  - "白盒：grep -rniE 'current_user|request\\.user|owner|user_id|account_id' --include='*.py' —— 查上一步命中处是否带此所有权过滤"
   - "  - 安全: db.get(id, user=current_user) 带所有权过滤"
   - "  - 不安全: db.get(id) 不带所有权过滤"
   - "如果不带所有权过滤 → IDOR 存在"

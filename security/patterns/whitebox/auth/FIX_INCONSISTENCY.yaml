@@ -12,9 +12,11 @@ trigger:
 
 reasoning_chain:
   - "执行规则：以下每条必须逐一执行，grep 命令必须实际运行，不允许跳过"
-  - "问：代码中有没有安全相关注释或修复标记？(grep 'security', 'race', 'fix', 'bypass', 'prevent')"
+  - "问：代码中有没有安全相关注释或修复标记？"
+  - "白盒：grep -rniE 'security|race|fix|bypass|prevent|workaround|CVE-|TODO|FIXME' --include='*.py' --include='*.js'"
   - "问：这个注释/修复针对的是什么功能点？(如：首次用户分配 admin)"
   - "问：实现同一功能的入口点有几个？(如：email注册 / LDAP / OAuth / SSO / API)"
+  - "白盒：grep -rniE 'def login|authenticate|oauth|ldap_?bind|sso|sign_?up|register' --include='*.py' -l"
   - "问：每个入口点都有相同的防护措施吗？逐一对比实现"
   - "如果发现某个入口缺少相同的防护 → 该入口存在未修复的同类漏洞"
   - "验证：使用未防护的入口重现已知漏洞"

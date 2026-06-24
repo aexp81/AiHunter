@@ -4,8 +4,8 @@
 
 ## 准备
 
-1. 读 `/meowai/workspace/AiHunter/.claude/skills/learn-writeup/SKILL.md` 了解 schema 和核心铁律
-2. 读 `/meowai/workspace/AiHunter/insights/README.md` 了解 phase 列表和去重规则（approach 去重）
+1. 读 `.claude/skills/learn-writeup/SKILL.md` 了解 schema 和核心铁律
+2. 读 `insights/README.md` 了解 phase 列表和去重规则（approach 去重）
 
 ## 对每篇报告（5 篇依次处理，每篇间隔 3 秒）
 

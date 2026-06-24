@@ -37,8 +37,6 @@ AiHunter/（仓库根）
 │   ├── articles.yaml
 │   └── <phase>/<ID>.yaml
 ├── .claude/skills/learn-writeup/      #   从 writeup 提炼 L3 思路的 skill
-├── openwebui-patterns-blackbox.yaml   #   旧文件（已迁移，保留作参考）
-├── openwebui-patterns-whitebox.yaml   #   旧文件（已迁移，保留作参考）
 └── CLAUDE.md                          #   本文件
 ```
 

@@ -13,7 +13,7 @@
 3. 如果 `pending_urls` 为空，输出"全部完成"并打包上传，结束
 4. 用以下命令提取当前所有 approach ID（仅 ID，不读全文）：
    ```bash
-   cd /meowai/workspace/AiHunter/insights && for f in */*.yaml; do python3 -c "
+   cd insights && for f in */*.yaml; do python3 -c "
    import yaml
    with open('$f') as fh:
        d = yaml.safe_load(fh)
@@ -30,7 +30,7 @@
    - `batch_learn.md` 文件的完整内容作为指令
    - 分配的 5 个 URL
    - 步骤 4 提取的 approach ID 列表
-   - 工作区路径前缀：`/meowai/workspace/AiHunter`
+   - 工作区路径前缀：仓库根目录（脚本在此目录下运行，全部用相对路径）
 9. 等待 3 个 subagent 返回（每个返回：一行摘要 + articles.yaml 条目 YAML 文本）
 
 ### 主线程后处理（串行，消除并发冲突）
@@ -38,7 +38,7 @@
 10. **串行追加 articles.yaml**：将 3 个 subagent 返回的 articles.yaml 条目依次追加到文件末尾（只由主线程写，避免并发覆盖）
 11. **二次去重检查**：
     ```bash
-    cd /meowai/workspace/AiHunter/insights && python3 -c "
+    cd insights && python3 -c "
     import yaml, os, collections
     ids = []
     for root, dirs, files in os.walk('.'):
@@ -58,7 +58,7 @@
     ```
 12. **YAML 验证 + 自动清理损坏文件**：
     ```bash
-    cd /meowai/workspace/AiHunter && python3 -c "
+    cd . && python3 -c "
     import yaml, os
     for root, dirs, files in os.walk('insights'):
         for f in files:
@@ -85,7 +85,7 @@
 
 17. 打包项目（排除 .git）：
     ```bash
-    cd /meowai/workspace && rm -f AiHunter.zip && zip -r AiHunter.zip AiHunter/ -x "AiHunter/.git/*"
+    cd .. && rm -f AiHunter.zip && zip -r AiHunter.zip AiHunter/ -x "AiHunter/.git/*"
     ```
 18. 上传 zip 并用 collect_artifact 收集
 19. 输出最终摘要：

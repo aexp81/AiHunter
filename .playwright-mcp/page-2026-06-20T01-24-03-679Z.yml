@@ -1,7 +1,0 @@
-- generic [ref=e6]:
-  - heading "无法访问此网站" [level=1] [ref=e7]
-  - paragraph [ref=e8]:
-    - text: 网址为
-    - strong [ref=e9]: https://www.reddit.com/r/bugbounty/comments/i6oceu/37500_shopify_auth_bypass_hackerone
-    - text: 的网页可能暂时无法连接，或者它已永久性地移动到了新网址。
-  - generic [ref=e10]: ERR_TUNNEL_CONNECTION_FAILED

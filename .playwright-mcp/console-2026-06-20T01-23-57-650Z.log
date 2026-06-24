@@ -1,2 +1,0 @@
-[    2867ms] [ERROR] Failed to load resource: net::ERR_TUNNEL_CONNECTION_FAILED @ https://static.cloudflareinsights.com/beacon.min.js/v833ccba57c9e4d2798f2e76cebdd09a11778172276447:0
-[    4060ms] [LOG] JQMIGRATE: Migrate is installed, version 3.4.1 @ https://www.hackingloops.com/wp-includes/js/jquery/jquery-migrate.min.js:1

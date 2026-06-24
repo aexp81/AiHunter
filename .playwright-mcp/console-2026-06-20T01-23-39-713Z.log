@@ -1,2 +1,0 @@
-[     347ms] [ERROR] Failed to load resource: the server responded with a status of 429 () @ https://hackerone.com/reports/796808:0
-[    5354ms] [ERROR] Failed to load resource: net::ERR_TUNNEL_CONNECTION_FAILED @ https://performance.radar.cloudflare.com/beacon.js:0

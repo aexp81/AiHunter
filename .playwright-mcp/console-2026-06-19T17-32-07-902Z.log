@@ -1,1 +1,0 @@
-[    6499ms] [ERROR] Blocked script execution in 'https://raw.githubusercontent.com/reddelexc/hackerone-reports/master/docs/tops_100/TOP100UPVOTED.md' because the document's frame is sandboxed and the 'allow-scripts' permission is not set. @ https://raw.githubusercontent.com/reddelexc/hackerone-reports/master/docs/tops_100/TOP100UPVOTED.md:0

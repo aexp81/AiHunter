@@ -12,8 +12,11 @@ trigger:
 reasoning_chain:
   - "执行规则：以下每条必须逐一执行，grep 命令必须实际运行，不允许跳过"
   - "问：文件上传后如何提供给用户访问？(inline 渲染 vs attachment 下载)"
+  - "白盒：grep -rniE 'send_file|sendfile|as_attachment|Content-Disposition|res\\.sendFile|serve' --include='*.py' --include='*.js'"
   - "问：服务器响应是否有 X-Content-Type-Options: nosniff 头？(有则此攻击失效)"
+  - "白盒：grep -rniE 'X-Content-Type-Options|nosniff' --include='*.py' --include='*.js' --include='*.conf'"
   - "问：Content-Type 是根据扩展名设置还是根据文件内容检测？"
+  - "白盒：grep -rniE 'content_type|mimetype|guess_type|mime\\.lookup|magic|filetype' --include='*.py' --include='*.js'"
   - "问：文件 URL 和主应用是否同源？(跨域 CORB 会阻止 sniffing)"
   - "如果：inline 渲染 + 无 nosniff + 同源 + 基于扩展名的 Content-Type → 漏洞存在"
   - "构造 polyglot 文件验证（或直接上传 .html / .svg 更有效）"

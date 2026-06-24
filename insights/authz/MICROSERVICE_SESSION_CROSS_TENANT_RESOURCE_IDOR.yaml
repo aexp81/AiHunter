@@ -1,0 +1,88 @@
+name: "微服务 session 跨租户资源操作——在自有店铺创建 session 后篡改资源 GID 操作他人店铺"
+id: "MICROSERVICE_SESSION_CROSS_TENANT_RESOURCE_IDOR"
+applicable: "blackbox"
+phase: "authz"
+also_phases: []
+tags: ["idor", "cross-tenant", "microservice", "session-isolation", "graphql", "shipping-label", "shopify", "gid", "hmac-removal"]
+source: "https://hackerone.com/reports/884159"
+
+# ——— L3 核心 ———
+
+observation: >
+  在 Shopify 创建运输标签流程中，请求先发送到独立微服务
+  mailbox.shopifycloud.com，该服务需要通过 /session/authentication
+  创建 session。观察到 GraphQL 请求体中包含 ShippingLabel GID
+  （gid://shopify/ShippingLabel/xxx）和 HMAC 签名字段。
+  (原文: "A shop owner creating a session on its own store on
+  https://mailbox.shopifycloud.com/ service can craft request to
+  print labels on another store he doesn't have access to.")
+
+hypothesis: >
+  如果在自有店铺创建 session 后，将请求体中的 ShippingLabel GID
+  替换为另一个店铺的资源 ID，并且移除 HMAC 校验字段，
+  微服务可能不会验证 session 对应的店铺与请求的资源是否属于同一租户。
+  未叙述（仅结果）——报告者未说明为何猜测去除 HMAC 会生效。
+
+action_result: >
+  成功：攻击者在自己的店铺完成 session 认证后，
+  将 PurchaseShippingLabels mutation 中的 shippingLabelId 替换为
+  受害者店铺的 ShippingLabel GID，移除 hmac 字段，
+  使用自己的 sessionId 发送请求，成功为受害者的订单生成了运输标签。
+  (原文: "Change the gid://shopify/ShippingLabel/ object id with the one from Step 2.
+  Remove the hmac property from the payload... Send the CURL request and go back to
+  the order, a new label has been generated.")
+
+  扑空路径：未叙述（仅结果）
+
+why_here_first: >
+  未叙述（仅结果）——报告者（imgnotfound，cleared hacker）未说明
+  为何首先测试 mailbox.shopifycloud.com 微服务的跨租户隔离。
+
+chaining: >
+  自有店铺认证 session → 替换 GID 为受害者资源 → 移除 HMAC 绕过完整性校验
+  → 跨租户生成运输标签（产生真实运费、影响订单状态）。
+  报告者指出这证明了 session 可跨店铺操作，其他 mutation 可能也受影响。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  当主应用的特定功能委托给独立微服务处理时，在自有租户/店铺上创建合法 session，
+  然后将请求中的资源标识符（GID/ID）替换为其他租户的资源，
+  测试微服务是否独立验证 session 与资源的租户归属关系。
+  同时检查是否存在客户端签名（HMAC）可移除而不影响请求处理。
+
+reasoning_chain:
+  - "问：目标平台的特定功能是否由独立子域/微服务处理？（观察请求是否发往不同域名）"
+  - "问：该微服务如何建立 session？是否有独立的认证流程（如 OAuth 授权、redirect 回调）？"
+  - "问：请求体中是否包含资源标识符（GID、ID、UUID）？这些标识符是否可以被替换？"
+  - "测试：将资源 ID 替换为另一个租户/店铺的资源 ID，session 保持不变，观察是否成功。"
+  - "问：请求中是否有签名/HMAC 字段？移除后请求是否仍被接受？"
+  - "如果移除 HMAC 后仍成功 → 微服务缺少请求完整性校验。"
+  - "如果跨租户操作成功 → 微服务的 session 机制未绑定到具体租户/资源。"
+  - "扩展：同一微服务上的其他 GraphQL mutation/query 是否也缺少租户隔离？"
+  - "扩展：是否可以通过枚举 GID 的数字部分批量影响其他租户？"
+
+vuln_root: >
+  独立微服务的 session 认证与主应用解耦后，仅验证了用户"是否有有效 session"，
+  但未验证"该 session 对应的租户是否有权操作请求中指定的资源"。
+  同时 HMAC 签名为可选字段（可移除），未能作为资源归属的完整性校验。
+
+transferable_to:
+  - "电商平台的运输/支付/发票等委托给第三方微服务处理的功能"
+  - "SaaS 平台中独立子域上的功能模块（如 *.shopifycloud.com、*.internal.service 等）"
+  - "任何通过 session/token 在微服务间传递认证但缺少租户绑定校验的架构"
+  - "GraphQL 微服务网关——mutation 中的 GID 是否与调用者的组织/租户绑定？"
+  - "支付网关集成——session 创建后是否可以跨商户操作？"
+
+cases:
+  - url: "https://hackerone.com/reports/884159"
+    title: "Ability to generate shipping labels in another store orders"
+    author: "imgnotfound"
+    platform: "Shopify (mailbox.shopifycloud.com)"
+    severity: "Medium (CVSS 4.2)"
+    bounty: "有赏金（具体金额未公开）"
+    note: >
+      Shopify 运输标签微服务 mailbox.shopifycloud.com 的 GraphQL 端点：
+      在自有店铺创建 session 后，将 PurchaseShippingLabels mutation 中的
+      ShippingLabel GID 替换为其他店铺的资源 ID，移除 HMAC 字段，
+      成功为其他店铺的订单生成运输标签。2020-05 报告，2020-08 公开。

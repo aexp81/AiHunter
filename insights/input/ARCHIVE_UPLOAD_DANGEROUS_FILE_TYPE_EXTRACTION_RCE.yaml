@@ -1,0 +1,78 @@
+name: "归档包上传解压后保留攻击者可控的可执行文件类型——嵌入 webshell 实现 RCE"
+id: "ARCHIVE_UPLOAD_DANGEROUS_FILE_TYPE_EXTRACTION_RCE"
+applicable: "blackbox"
+phase: "input"
+also_phases: ["chain"]
+tags: ["file-upload", "archive-extraction", "zip", "webshell", "rce", "scorm", "aspx", "dod", "lms", "content-import"]
+source: "https://hackerone.com/reports/1122791"
+
+# ——— L3 核心 ———
+
+observation: >
+  SCORM 课程包上传功能接受 ZIP 文件并在服务器端解压，解压后的文件直接放置在
+  Web 可访问目录下（/CServer/Courseware/<CourseID>/），且未过滤 ZIP 内包含的
+  可执行文件类型（如 .aspx）。
+  (原文: "There is a Remote Code Execution vulnerability at
+  .../scorm2004uploadcourse.aspx which allows any user to upload a SCORM course package.
+  Furthermore, an attacker can add an ASPX shell to the SCORM package which will then
+  get extracted onto the server")
+
+hypothesis: >
+  未叙述（仅结果）。报告者直接在 SCORM ZIP 包中嵌入了 ASPX webshell 并上传。
+
+action_result: >
+  成功：
+  1. 构造合法 SCORM 包，在 shared/cdlcdlcdl.aspx 中嵌入执行 whoami 的 ASPX shell
+  2. 将该文件引用写入 imsmanifest.xml 使其通过格式校验
+  3. 上传至 scorm2004uploadcourse.aspx
+  4. 从响应中提取 strCourseId
+  5. 访问 /CServer/Courseware/<CourseID>/shared/cdlcdlcdl.aspx 成功执行命令
+  (原文: "visit .../CServer/Courseware/<YOUR_COURSE_ID>/shared/cdlcdlcdl.aspx
+  and you will see the shell executes")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  上传含 webshell 的合法格式归档包 → 服务器解压到 Web 可访问目录
+  → 直接访问 webshell 执行任意命令 → 窃取数据/横向移动到内网。
+  (原文: "an attacker can execute commands on this military server, steal sensitive
+  information, pivot to internal systems")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  寻找接受归档文件（ZIP/TAR/SCORM/DOCX 等）并在服务器端解压的功能点，
+  检查解压逻辑是否过滤危险文件扩展名（.aspx/.jsp/.php/.py 等），
+  以及解压目标目录是否在 Web 根下可直接访问。
+
+reasoning_chain:
+  - "问：目标应用是否有导入/上传归档文件（ZIP/TAR/SCORM/IMS-CP）的功能？"
+  - "问：上传后服务器是否自动解压归档内容？"
+  - "问：解压目标目录是否在 Web 服务器可直接访问的路径下？（尝试猜测或从响应中提取路径）"
+  - "问：解压逻辑是否过滤或白名单限制文件扩展名？（尝试嵌入 .aspx/.jsp/.php 等可执行文件）"
+  - "问：归档格式是否有 manifest/校验文件？如果有，将恶意文件引用加入 manifest 能否通过校验？"
+  - "问：解压后的文件是否保留了原始文件名和扩展名？"
+  - "问：Web 服务器是否配置为对该目录下的可执行扩展名执行而非下载？"
+  - "扩展：即使不能嵌入可执行文件，是否可以嵌入 .html/.svg 实现存储型 XSS？"
+
+vuln_root: >
+  开发者信任归档包内的文件类型安全性，仅校验归档格式（如 SCORM manifest 合规性），
+  未对解压出的文件扩展名做白名单过滤，且解压目标目录在 Web 可访问路径下。
+
+transferable_to:
+  - "LMS（学习管理系统）的 SCORM/IMS-CP/xAPI 课程包上传功能"
+  - "CMS 的主题/插件 ZIP 导入功能"
+  - "文档协作平台的 DOCX/PPTX 上传解压预览功能（Office 格式本质上是 ZIP）"
+  - "任何接受 ZIP 并解压到 Web 可访问目录的导入/批量上传功能"
+  - "游戏平台的 mod/地图包上传解压功能"
+
+cases:
+  - url: "https://hackerone.com/reports/1122791"
+    author: "cdl"
+    platform: "U.S. Dept Of Defense"
+    severity: "Critical (CVSS 10.0)"
+    bounty: "有奖金（金额未公开）"
+    note: >
+      DoD 军事 LMS 的 SCORM 课程包上传：ZIP 解压到 /CServer/Courseware/<ID>/，
+      嵌入 ASPX webshell 在 shared/ 子目录中，通过 imsmanifest.xml 引用通过格式校验，
+      解压后直接访问执行 whoami。无任何文件类型过滤或目录隔离。

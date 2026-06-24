@@ -1,0 +1,66 @@
+name: "子资源创建的 token 端点仅检查宽泛权限而非具体操作权限——绕过细粒度 RBAC"
+id: "TOKEN_ENDPOINT_COARSE_PERMISSION_GATE"
+applicable: "blackbox"
+phase: "authz"
+also_phases: []
+tags: ["rbac", "permission-bypass", "token-endpoint", "shopify", "partner-dashboard", "dev-store", "coarse-check"]
+source: "https://hackerone.com/reports/1167453"
+
+observation: >
+  未叙述（仅结果）。报告者发现 Shopify Partner Dashboard 的 staff 成员只有
+  "managed store" 权限时，仍可通过访问 dev_store 的 signup_object 端点获取 token。
+  (原文: "It appears proper permission checks are not performed when
+  /organizationID/stores/signup_object/dev_store endpoint is queried,
+  as long as a staff member has store access, a token is returned.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：token 发放端点可能只检查"是否有 store 相关的任何权限"，
+  而不区分"managed store"和"development store"两种具体权限类型。
+
+action_result: >
+  成功：
+  1. Owner 先给 Doe 同时授予 dev store 和 managed store 权限
+  2. Doe 打开 dev store 创建页面
+  3. Owner 将 Doe 权限改为仅 managed store
+  4. Doe 继续提交创建请求 → 成功创建 dev store 并自动登录
+  5. 或直接 GET /organizationID/stores/signup_object/dev_store 获取 token，
+     再 POST /services/signup/create 创建 dev store
+  (原文: "Doe proceeds to create the development store and gets logged in automatically."
+  "send a GET request to /organizationID/stores/signup_object/dev_store to obtain the required token")
+
+why_here_first: >
+  未叙述（仅结果）
+
+chaining: "N/A — 单步权限绕过即可创建不应有权创建的资源"
+
+approach: >
+  在多权限类型的 RBAC 系统中，持有低权限（如 managed store access）时，
+  直接访问高权限操作的 token/签名对象获取端点，测试该端点是否只检查了
+  宽泛的权限类别（如"有任何 store 权限"）而未校验具体权限类型。
+
+reasoning_chain:
+  - "问：目标平台的 staff/member 权限是否分为多个细粒度类型？（如 managed store vs dev store、read vs write、viewer vs editor）"
+  - "问：创建或操作资源前是否需要先从某个端点获取 token/nonce/签名对象？"
+  - "问：以仅持有低权限类型的用户身份，直接请求高权限操作的 token 获取端点，是否返回有效 token？"
+  - "如果返回有效 token → 问：使用该 token 提交创建/操作请求，是否成功？"
+  - "如果成功 → 确认 token 端点使用了粗粒度权限检查（检查了大类但未检查子类型）"
+  - "扩展：其他子类型操作（如不同 store 类型、不同资源类型）是否也存在同样的粗粒度检查？"
+
+vuln_root: >
+  Token 发放端点使用粗粒度权限门控（检查"是否有任何 store 权限"），
+  而非精确检查调用者是否持有特定子类型权限（"是否有 dev store 创建权限"），
+  导致低权限用户可获取高权限操作的 token 并执行受限操作。
+
+transferable_to:
+  - "SaaS 平台 Partner/Reseller Dashboard 的多权限类型管理"
+  - "企业后台 RBAC 系统中 token/nonce 发放端点的权限检查"
+  - "API Gateway 按 scope 授权时对 scope 层级的粗粒度匹配"
+  - "多租户系统中按资源类型分权限的创建/管理端点"
+
+cases:
+  - url: "https://hackerone.com/reports/1167453"
+    note: "Shopify Partner Dashboard staff 仅有 managed store 权限时，可通过 signup_object/dev_store 端点获取 token 创建 dev store。Medium。$500。"
+  - url: "https://hackerone.com/reports/1091303"
+    note: "Shopify POS：最低权限 Associate 角色通过 /admin/api/xauth 获取 POS access_token，token 的 associated_user_scope 包含 read_users/read_retail_roles，允许 GraphQL 查询所有 StaffMember 的 PIN 字段实现物理提权。h1-2102 live hack。"
+  - url: "https://hackerone.com/reports/2209433"
+    note: "GitHub Enterprise Server PAT：持有 issues:read + contents:write 权限的 token 可修改 issue comments，后者应需要 issues:write 权限。CVE-2023-51379。no-content 公开。scope 边界混乱：contents:write 被错误映射为允许 issue comment 修改操作。"

@@ -1,0 +1,95 @@
+name: "用户可控字段被拼入服务端模板引擎渲染的邮件——SSTI 到 RCE"
+id: "SSTI_USER_INPUT_IN_EMAIL_TEMPLATE_RCE"
+applicable: "blackbox"
+phase: "input"
+also_phases: ["chain"]
+tags: ["ssti", "template-injection", "jinja2", "flask", "email", "rce", "uber", "profile-field"]
+source: "https://hackerone.com/reports/125980"
+
+# ——— L3 核心 ———
+
+observation: >
+  修改 Uber 个人资料中的 name 字段为 {{ '7'*7 }}，触发"Your Uber account information
+  has been updated"邮件，邮件正文中 name 变成了 '7777777'——说明 name 被直接
+  传入 Jinja2 模板引擎渲染。
+  (原文: "if you change your profile name to {{ '7'*7 }}, and you will receive
+  a mail... And in mail body, you can see your name become '7777777'")
+
+hypothesis: >
+  未叙述（仅结果）。推断：既然 {{ '7'*7 }} 被执行，那么 Jinja2 的 __class__.__base__.__subclasses__()
+  等 Python 自省链也可能可用，进而达到 RCE。
+  (原文引用公开研究: "This is a vulnerability about Flask Template Engine(Jinja2) Injection,
+  more detail can be seen in these blogs")
+
+action_result: >
+  确认模板注入可执行多种 payload：
+  1. {{ [].__class__.__base__.__subclasses__() }} — 列出所有子类
+  2. {{''.__class__.mro()[1].__subclasses__()}} — 同上，不同入口
+  3. {%for c in [1,2,3] %}{{c,c,c}}{% endfor %} — 循环语句执行
+  但存在长度限制，影响完整利用链（report 中附带截图证明）。
+  Orange 判断可达 RCE 但受限于 name 字段长度。
+  (原文: "I think it can be a Remote Code Execution vulnerability but there
+  is a length limit :( But I still can 'write' some Python code in 'name' filed")
+  $10,000 bounty，快速修复。
+
+why_here_first: >
+  未叙述（仅结果）。推断：Orange Tsai 在研究 SSTI 公开博文
+  （nvisium 的 Jinja2 注入系列）后，对已知 Flask 应用的用户可控字段进行系统性探测。
+  profile name 是最容易测试的入口——修改后触发通知邮件，邮件即模板渲染出口。
+
+chaining: >
+  SSTI 本身即为 RCE（绕过长度限制即可完整利用）。
+  如果有长度限制 → 可尝试分段写入文件再执行，或利用 config 对象泄露 SECRET_KEY
+  后伪造 session。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在任何"用户输入 → 服务端邮件/通知渲染"的数据流中，注入模板语法探针
+  （如 {{7*7}}、${7*7}、<%= 7*7 %>），通过邮件/通知内容判断是否被模板引擎执行。
+
+reasoning_chain:
+  - "问：应用是否有'修改个人信息后发通知邮件'的功能？（注册确认、信息更新、订单确认等）"
+  - "问：邮件正文是否包含用户可控字段（姓名、地址、备注、公司名等）？"
+  - "注入探针：在可控字段中填入 {{7*7}}（Jinja2/Twig）、${7*7}（Freemarker/Velocity）、<%= 7*7 %>（ERB）、#{7*7}（Pug）。"
+  - "触发渲染：执行能触发邮件/通知发送的操作（修改个人信息、下单、注册等）。"
+  - "检查邮件：name 变成 49 / 7777777 → 确认 SSTI。"
+  - "问：是否有长度限制？如果有，尝试 {{config}} 泄露配置、{{request}} 泄露请求信息。"
+  - "升级：使用 __class__.__base__.__subclasses__() 自省链遍历可用类，找 subprocess/os 模块执行命令。"
+  - "白盒：搜索 render_template_string() / Template().render() / env.from_string() 等将用户输入直接传入模板的调用。"
+
+vuln_root: >
+  开发者将用户可控字段（如 profile name）直接传入 Jinja2/Twig 等模板引擎的
+  render_template_string() 而非作为变量传入预编译模板——模板内容本身被用户控制。
+
+transferable_to:
+  - "Flask/Jinja2 应用中任何将用户输入直接拼入模板字符串渲染的场景"
+  - "邮件通知系统（transactional email）——用户信息被嵌入邮件模板"
+  - "PDF/报告生成器——用户输入被嵌入模板渲染的文档"
+  - "Twig (PHP)、Freemarker (Java)、ERB (Ruby)、Pug (Node.js) 等其他模板引擎"
+  - "CMS/E-commerce 后台——商品描述、店铺名称等字段被模板渲染"
+  - "短信/推送通知模板——与邮件场景类似"
+
+cases:
+  - url: "https://hackerone.com/reports/125980"
+    title: "uber.com may RCE by Flask Jinja2 Template Injection"
+    author: "Orange Tsai"
+    platform: "Uber (rider.uber.com)"
+    bounty: "$10,000"
+    note: >
+      profile name 字段 → 触发账户信息更新通知邮件 → Jinja2 SSTI 确认。
+      {{7*7}} 渲染为 7777777，__subclasses__() 可列出所有 Python 类。
+      存在 name 字段长度限制影响完整 RCE payload 构造。
+  - url: "https://hackerone.com/reports/869831"
+    title: "XSS within Shopify Email App — Admin (Shopify)"
+    author: "imgnotfound"
+    platform: "Shopify"
+    bounty: "未公开"
+    note: >
+      Settings → Store address 的 Apartment 字段 → 注入 HTML/JS →
+      Shopify Email App 模板编辑器中渲染，触发 Stored XSS。
+      同一导航路径（用户可控 settings 字段 → 邮件模板渲染），不同利用（XSS 而非 SSTI）。
+      攻击者可对 email.shopifyapps.com/graphql 发起请求。
+      (原文: "A user with only Settings access can inject html within the
+      Apartment, suite, etc. field... that will then be displayed in the
+      Shopify Email Template edition")

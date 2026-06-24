@@ -1,0 +1,63 @@
+name: "用户 ID 与系统目录路径碰撞——创建并删除用户触发系统数据目录移除"
+id: "USER_ID_SYSTEM_PATH_COLLISION_DATA_DESTRUCTION"
+applicable: "both"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["path-collision", "user-creation", "user-deletion", "data-destruction", "directory-traversal", "nextcloud", "group-admin", "identifier-trust"]
+source: "https://hackerone.com/reports/508493"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）——报告未说明如何发现此问题，
+  直接描述了步骤和结果。
+
+hypothesis: >
+  未叙述（仅结果）——报告未说明猜测过程。
+
+action_result: >
+  以 Group Admin 权限创建用户名为 "files_external" 或 "appdata_{random-data}" 的用户
+  （这些名称与 Nextcloud data/ 目录下的系统目录名称相同），
+  然后删除该用户 → 系统将 data/{username} 目录完整删除 →
+  实际删除的是系统关键数据目录。
+  (原文: "Create a new user \"files_external\", \"appdata_{random-data}\", ..
+  Delete this user.
+  Result: The data/files_external / data/appdata{..} folder is removed."
+  以及 "Group admin can remove arbitrary data from \"data\" directory")
+
+why_here_first: >
+  未叙述（仅结果）
+
+chaining: >
+  Group Admin 创建特定用户名的用户 →
+  系统在 data/ 目录下为新用户创建同名目录（与已有系统目录冲突）→
+  删除用户时系统递归删除 data/{username} →
+  实际删除系统数据目录（包括管理员数据）→
+  数据破坏 / 服务中断。
+
+approach: >
+  检查多用户系统中用户 ID / 用户名是否直接作为文件系统路径的一部分使用；
+  如果系统在同一父目录下同时存放用户数据目录和系统数据目录，
+  且用户创建时不检查名称是否与已有系统目录冲突，
+  则可通过创建→删除用户来破坏系统目录。
+
+reasoning_chain:
+  - "问：用户创建时，用户名/UID 是否直接用作文件系统路径的组成部分（如 data/{username}/）？"
+  - "问：该路径的父目录下是否还有系统级目录（配置、缓存、共享数据）？"
+  - "问：用户创建流程是否验证用户名不与已有目录/文件名冲突？"
+  - "问：用户删除流程是否递归删除 data/{username}/ 目录？删除前是否验证目录内容仅为用户数据？"
+  - "如果以上均为「否」→ 创建名称碰撞的用户 → 删除用户 → 系统目录被清除"
+  - "问：Group Admin 是否有权创建任意用户名的用户？——权限较低的角色即可发起攻击"
+  - "问：是否有其他标识符（组名、项目名）同样映射到文件系统路径且缺少碰撞检查？"
+
+vuln_root: "系统假设用户 ID 命名空间与内部系统目录命名空间不会冲突，但未在用户创建时做碰撞检查——用户删除流程盲目删除 data/{username} 目录，无论其是否为系统关键目录。"
+
+transferable_to:
+  - "文件系统路径与用户名/项目名直接关联的多用户系统（Nextcloud、ownCloud、Seafile）"
+  - "SaaS 平台中租户 ID / workspace slug 作为存储路径一部分的场景"
+  - "CI/CD 系统中 project name / branch name 用作构建目录路径"
+  - "任何「创建实体→删除实体」流程中实体名映射到文件路径的系统"
+
+cases:
+  - url: "https://hackerone.com/reports/508493"
+    note: "Nextcloud Group Admin 创建用户名为 'files_external' 或 'appdata_*' 的用户后删除，data/ 目录下的同名系统目录被递归删除，CVE-2019-15624，CVSS 8.4。"

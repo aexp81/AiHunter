@@ -1,0 +1,89 @@
+name: "CMS 可控路径选项注入——利用 mkdir+chmod 继承机制改写目录权限后上传 Shell"
+id: "CMS_OPTION_PATH_TRAVERSAL_CHMOD_TO_RCE"
+applicable: "whitebox"
+phase: "chain"
+also_phases: ["input"]
+tags: ["wordpress", "path-traversal", "chmod", "mkdir", "file-permission", "rce", "wp_mkdir_p", "upload_path", "hardening-bypass", "admin-rce"]
+source: "https://hackerone.com/reports/436928"
+
+# ——— L3 核心 ———
+
+observation: >
+  WordPress 的 wp_mkdir_p() 函数在创建上传目录时，会继承父目录的权限位，
+  并对路径中每层目录逐一执行 chmod()；upload_path 选项可由管理员在 wp-admin/options.php
+  中设置为任意值，且未做路径规范化。
+  (原文: "wp_mkdir_p() is called by wp_upload_dir() when a user wants to upload
+  a new media file... WordPress then copies the permissions of the parent directory
+  so that the new upload directory will inherit those permissions")
+
+hypothesis: >
+  如果 upload_path 包含路径穿越（../），可以让 $target_parent 指向一个权限为 777 的可写目录
+  （如 /var/tmp/），然后 chmod 遍历时会对路径中经过的每个中间目录（包括 WordPress 安装目录）
+  应用继承的 777 权限，从而绕过文件系统级的写保护硬化。
+  (原文: "if mkdir returns true, a check is made if our umask differs from the
+  $dir_perms. If so, the $target path is exploded and each part of it is chmod'd
+  with the permissions of the $target_parent")
+
+action_result: >
+  成功：设置 upload_path 为
+  "../../../../../../../var/tmp/content/../../../../../../home/simon/html/wordpress/../../../../../../var/tmp/content"，
+  使 $target_parent 解析到 /var/tmp/（权限 777），mkdir 成功后 chmod 遍历将
+  WordPress 目录权限改为 777；然后将 upload_path 设为主题目录，上传 shell.txt 并通过
+  _wp_page_template post meta 包含执行，实现 RCE。
+  (原文: "This means at some point in the iteration the following call is made to
+  chmod: chmod('../../../../../../../var/tmp/content/../../../../../../home/simon/html/wordpress/', 0777);
+  This allowed me to set all directories writable again")
+  无扑空叙述——报告直接给出成功路径。
+
+why_here_first: >
+  研究者面对一个经过完整硬化的 WordPress（PHP safe mode + 目录不可写 + 禁用文件编辑 +
+  禁用插件安装），需要找到一个能绕过文件系统权限限制的功能；upload_path 是为数不多的
+  管理员可控且会触发文件系统操作（mkdir + chmod）的 option，成为突破口。
+  (原文: "My collegue set up WordPress on his local machine and challenged me to hack it.
+  Before he gave me admin access he used the following hardening mechanisms:
+  1. PHP Safe mode 2. The entire web directory was not writable
+  3. Disabled WordPress File edit 4. Disabled the ability to install plugins")
+
+chaining: >
+  两环链：
+  1. upload_path 路径穿越 → wp_mkdir_p() chmod 继承 → WordPress 目录权限被改为 777
+  2. upload_path 重定向到主题目录 + _wp_page_template 文件包含 → 上传并执行 PHP shell → RCE
+  （绕过了 4 层硬化防御：PHP safe mode、目录不可写、禁用文件编辑、禁用插件安装）
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在 CMS/应用中寻找管理员可控的路径选项（如上传目录、缓存目录、日志路径），
+  检查该路径被用于 mkdir + chmod/chown 操作时是否做了路径规范化（realpath）；
+  如果 chmod 会遍历路径中间目录并继承父目录权限，路径穿越可将任意目录权限改写，
+  之后串联文件上传 + 文件包含实现 RCE。
+
+reasoning_chain:
+  - "问：CMS/应用中哪些设置项控制文件系统路径？（上传目录、缓存目录、日志路径、临时目录）"
+  - "问：这些路径是否被用于 mkdir/chmod/chown 操作？"
+  - "问：路径在传入文件系统操作前是否经过 realpath() 或其他规范化？"
+  - "如果未规范化 → 构造包含 ../ 的路径，使 $target_parent 指向权限宽松的目录（如 /tmp）"
+  - "问：mkdir 成功后是否有 chmod 遍历（对路径中每层目录设置权限）？"
+  - "如果有 chmod 遍历 → 路径穿越会导致中间目录（如 web 根目录）被改写权限"
+  - "权限改写后 → 问：是否存在文件上传 + 文件包含/执行的路径？（主题模板、插件目录、autoload 路径）"
+  - "扩展：即使禁用了插件安装/文件编辑，是否有其他文件包含点？（如 page template、widget、cron job）"
+
+vuln_root: >
+  wp_mkdir_p() 未对传入路径做 realpath() 规范化，且 chmod 遍历会对路径穿越中经过的
+  每个目录应用继承的权限位——开发者假设 upload_path 是规范路径，不会包含 ../。
+
+transferable_to:
+  - "WordPress 及其分支（ClassicPress 等）的类似路径选项"
+  - "任何 CMS 中管理员可控的路径设置 + mkdir/chmod 操作（Drupal、Joomla 的文件存储路径配置）"
+  - "PHP 应用中使用 mkdir($path, $perms, true) + chmod 遍历的自定义文件管理器"
+  - "容器化部署中 admin RCE 仍有价值的场景（逃逸到宿主文件系统）"
+
+cases:
+  - url: "https://hackerone.com/reports/436928"
+    title: "RCE as Admin defeats WordPress hardening and file permissions"
+    platform: "WordPress"
+    severity: "Critical"
+    bounty: "有赏金（具体金额未公开）"
+    note: >
+      upload_path 路径穿越 → wp_mkdir_p() chmod 继承 777 → 主题目录上传 shell.txt
+      + _wp_page_template 文件包含 → RCE。绕过 4 层硬化防御。

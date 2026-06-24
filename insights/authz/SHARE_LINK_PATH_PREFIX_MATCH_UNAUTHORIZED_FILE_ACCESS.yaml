@@ -1,0 +1,76 @@
+name: "文件共享链接的路径参数使用前缀匹配——篡改 path 访问同前缀的其他文件"
+id: "SHARE_LINK_PATH_PREFIX_MATCH_UNAUTHORIZED_FILE_ACCESS"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["file-sharing", "path-prefix", "idor", "access-control", "quicklink", "bundle", "files-com", "brickftp", "string-prefix-match"]
+source: "https://hackerone.com/reports/214001"
+
+# ——— L3 核心 ———
+
+observation: >
+  通过 QuickLink 共享单个文件 `foo` 时，下载请求使用 path 参数（如 path=foo）。
+  将 path 改为 `bar` 返回 "Invalid path for bundle"，但改为 `footer.php` 或
+  `foobar/secret`（即任何以 `foo` 为前缀的路径）均可成功下载。
+  (原文: "Notice that the path variable contains foo, if we change it to bar,
+  it will tell us: Invalid path for bundle.
+  However, any other path starting with foo can be downloaded.")
+
+hypothesis: >
+  未叙述（仅结果）。报告者直接测试了替换 path 参数的各种值并观察响应差异。
+
+action_result: >
+  成功：
+  1. 共享文件 `foo`，获得 QuickLink URL（含 code 参数）
+  2. 下载请求 GET /bundles/download?code=...&path=foo&x=... 正常
+  3. 将 path 改为 `footer.php` → 成功下载该文件
+  4. 将 path 改为 `foobar/` → 可下载 foobar 目录下的任何文件（如 foobar/secret）
+  5. 将 path 改为 `bar` → 返回 "Invalid path for bundle"
+  (原文: "For example https://pwn.brickftp.com/bundles/download?code=...&path=footer.php&x=...
+  This would also allow to download any file in foobar/")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  共享一个短前缀名称的文件 → 前缀匹配缺陷 → 访问同前缀的所有文件和子目录
+  → 潜在泄露敏感文件（如 config.php、.env 等以共享文件名为前缀的文件）。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在文件共享/下载功能中，当 URL 包含文件路径参数时，测试将路径修改为
+  原始文件名的扩展形式（加后缀、子目录），检查后端是否使用前缀匹配而非精确匹配
+  来验证路径是否属于共享范围。
+
+reasoning_chain:
+  - "问：文件共享/下载 URL 中是否有 path/filename 参数可以由客户端控制？"
+  - "问：将 path 参数修改为完全不同的文件名，是否返回权限错误？（确认存在路径校验）"
+  - "问：将 path 修改为原文件名 + 额外字符（如 foo → foobar），是否仍能成功下载？"
+  - "如果成功 → 确认后端使用前缀匹配（startsWith）而非精确匹配（equals）"
+  - "问：是否可以通过前缀匹配访问子目录中的文件？（如 foo → foo/../../etc/passwd 路径穿越？）"
+  - "问：如果能列举同前缀的文件，服务器上是否存在敏感文件恰好匹配该前缀？"
+  - "扩展：共享目录时是否也有类似的前缀匹配问题？（共享 /docs 能否访问 /docs-internal/）"
+  - "扩展：批量下载/导出 API 中的路径过滤是否也使用前缀匹配？"
+
+vuln_root: >
+  文件共享链接的路径校验使用字符串前缀匹配（startsWith）而非精确匹配，
+  导致共享一个文件时实际暴露了所有以该文件名为前缀的文件和目录。
+
+transferable_to:
+  - "云存储/文件共享平台的 QuickLink/共享链接功能（Box、Dropbox、Google Drive 的共享子系统）"
+  - "企业文件管理系统的外部分享功能"
+  - "CDN/对象存储的 pre-signed URL 路径校验（S3 bucket policy 使用 StringLike 条件时）"
+  - "API 网关的路径级权限控制（前缀匹配 vs 精确匹配策略）"
+  - "WebDAV 服务器的共享链接路径校验"
+
+cases:
+  - url: "https://hackerone.com/reports/214001"
+    author: "eboda"
+    platform: "Files.com (BrickFTP)"
+    severity: "Medium"
+    bounty: "$600"
+    note: >
+      Files.com（原 BrickFTP）的 QuickLink 文件共享：共享文件 `foo` 后，
+      下载端点 /bundles/download 的 path 参数校验使用前缀匹配，
+      修改 path=footer.php 或 path=foobar/secret 均可成功下载。
+      2017 年报告，纯结果文但观察清晰。

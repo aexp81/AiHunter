@@ -1,0 +1,88 @@
+name: "权限模型对路径前缀长度做硬编码假设——平台特有路径格式绕过安全边界"
+id: "PERMISSION_MODEL_PATH_FORMAT_PREFIX_ASSUMPTION_BYPASS"
+applicable: "whitebox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["permission-model", "path-parsing", "unc-path", "windows", "prefix-assumption", "node.js", "sandbox-bypass", "fs-permission", "CVE-2024-37372"]
+source: "https://hackerone.com/reports/2079103"
+
+# ——— L3 核心 ———
+
+observation: >
+  Node.js 权限模型中 fs_permission.cc 的 is_tree_granted 函数假设任何以两个反斜杠 \\ 开头的路径
+  都有一个可以跳过的四字符前缀，但这个假设并不总是成立（如 \\A\C:\Users 仅 3 字符 server 名）。
+  (原文: "The is_tree_granted function in fs_permission.cc assumes that any path starting
+  with two backslashes \\ has a four-character prefix that can be ignored, which is not always true.
+  This subtle bug leads to vulnerable edge cases.")
+
+hypothesis: >
+  如果 is_tree_granted 对 UNC 路径前缀长度的假设不成立，攻击者可以构造特殊 UNC 路径
+  使权限检查在错误的位置开始比较，导致本应被拒绝的路径通过检查，
+  获得超出 --allow-fs-read 授权范围的文件系统访问。
+  (原文: "An attacker can potentially gain unintended access to UNC resources.
+  In the above example, an attacker gains file system access to the UNC path \\A\C:\,
+  even though no access beyond the local C:\ drive has been granted.")
+
+action_result: >
+  成功：运行 node --experimental-permission --allow-fs-read=C:\*
+  -p "fs.readdirSync(Buffer.from('\\\\A\\C:\\Users'))" 时，
+  预期应返回 ERR_ACCESS_DENIED 错误，但实际未发生，
+  Node.js 成功调用 scandir 读取 \\A\C:\Users 路径。
+  (原文: "The expected behavior is an ERR_ACCESS_DENIED error, but it does not occur.
+  Instead, Node.js calls scandir on \\A\C:\Users.")
+
+why_here_first: >
+  报告者是 Node.js 团队成员，直接审计 is_tree_granted 的源码实现，
+  注意到对 \\ 开头路径的前缀处理使用了硬编码的 4 字符偏移量。
+  (原文引用源码链接: "Implementation of is_tree_granted
+  https://github.com/nodejs/node/blob/b68fa599607f69f2ce3b1a3104e0d5984f6bc0d8/src/permission/fs_permission.cc#L53-L68"
+  以及 "File path formats on Windows systems: UNC paths
+  https://learn.microsoft.com/en-us/dotnet/standard/io/file-path-formats#unc-paths")
+
+chaining: >
+  通过 UNC 路径绕过权限模型 → 访问远程共享（\\server\share）或
+  构造带 C:\ 的 UNC 路径访问本地文件系统的未授权区域。
+  影响难以完全评估，因 Windows 路径格式极其复杂。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  当目标运行时/沙箱的权限模型使用路径字符串比较来判断访问权限时，
+  检查其对平台特有路径格式（Windows UNC \\server\share、
+  \\?\长路径、//?/ 设备路径、DOS 设备名等）的前缀解析逻辑——
+  是否存在硬编码的前缀长度假设，导致非标准长度的路径前缀绕过权限检查。
+
+reasoning_chain:
+  - "问：目标权限模型是否基于路径字符串前缀/树匹配来判断文件系统访问权限？"
+  - "问：路径比较逻辑中是否有对特殊前缀（如 UNC \\\\、长路径 \\\\?\\、设备路径 //?/）的特殊处理？"
+  - "问：特殊处理中是否假设了固定的前缀长度（如跳过前 4 个字符）？"
+  - "如果假设固定长度 → 问：是否存在合法但前缀长度不同的路径格式？（如 UNC 路径 server 名可以很短）"
+  - "问：构造前缀长度不符合假设的路径后，权限检查是否从错误的偏移量开始比较？"
+  - "如果是 → 问：错误的比较起点是否导致路径匹配到已授权的树？（如 \\\\A\\C:\\ 匹配到 C:\\ 授权）"
+  - "扩展：除 UNC 路径外，\\\\?\\ 长路径前缀、/dev/ 设备路径、junction/reparse point 是否也触发异常？"
+  - "扩展：同一权限模型的其他操作（write/execute）是否复用了相同的有缺陷的前缀逻辑？"
+
+vuln_root: >
+  路径权限检查函数对 UNC 路径前缀长度做了硬编码假设（总是跳过 4 个字符），
+  但 Windows 路径格式允许更短的 server 名，导致权限检查从错误的偏移量开始比较。
+
+transferable_to:
+  - "Node.js --permission / --allow-fs-read/write 的其他路径格式边界（\\\\?\\、NUL 设备名、junction）"
+  - "Deno 的 --allow-read/--allow-write 权限模型——是否正确处理 Windows 特殊路径格式？"
+  - "任何使用路径字符串前缀匹配做安全判断的系统（WAF 路径白名单、文件上传路径校验）"
+  - "容器 seccomp/AppArmor 配置文件中基于路径前缀的文件系统限制"
+  - "Java SecurityManager 的 FilePermission 对 UNC 路径的处理"
+
+cases:
+  - url: "https://hackerone.com/reports/2079103"
+    author: "tniessen"
+    platform: "Node.js"
+    severity: "Low (CVSS 3.6)"
+    cve: "CVE-2024-37372"
+    bounty: "无赏金"
+    note: >
+      Node.js v20/v22 的 --experimental-permission 权限模型中，
+      is_tree_granted 函数假设所有 \\ 开头路径都有 4 字符前缀，
+      但 \\A\C:\Users 等短 server 名 UNC 路径不满足此假设，
+      导致权限检查偏移量错误，攻击者可访问 UNC 资源绕过 --allow-fs-read 限制。
+      由 Node.js 团队成员 tniessen 自行发现并报告。

@@ -1,0 +1,186 @@
+name: "辅助/元数据 API 端点缺少资源级 ACL 过滤——认证用户可列出无权访问的资源信息"
+id: "AUXILIARY_API_ENDPOINT_MISSING_RESOURCE_LEVEL_ACL"
+applicable: "blackbox"
+phase: "authz"
+also_phases: []
+tags: ["access-control", "api", "authz-filter", "airflow", "dag", "metadata-leak", "resource-level-acl", "CVE-2023-42780"]
+source: "https://hackerone.com/reports/2208647"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。Apache Airflow 的 /api/v1/dagWarnings 端点返回所有 DAG 的警告信息，
+  即使认证用户仅被授权访问特定 DAG。
+  (原文: "Apache Airflow, versions prior to 2.7.2, contains a security vulnerability
+  that allows authenticated users of Airflow to list warnings for all DAGs, even if the
+  user had no permission to see those DAGs.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：dagWarnings 端点在查询数据库时未按当前用户的
+  DAG 级权限过滤结果，直接返回全量数据。
+
+action_result: >
+  创建仅对 "example_setup_teardown_taskflow" DAG 有读权限的角色，
+  使用该受限用户调用 /api/v1/dagWarnings，成功获取所有 DAG 的警告信息，
+  包括 dag_id 和导入错误的堆栈跟踪。
+  (原文: "Here I create a role with very little permission. It only has read permissions
+  for the DAG 'example_setup_teardown_taskflow' and read warning permissions."
+  以及 "Use burpsuite to send the following message, and you can see the warnings of other DAGs.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  N/A。影响限于信息泄露——泄露 dag_id 列表和导入错误的堆栈跟踪，
+  堆栈跟踪可能暴露文件路径、依赖版本、内部配置等信息。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对实现了资源级权限（如 DAG 级、项目级、文档级 ACL）的系统，
+  枚举所有辅助/元数据 API 端点（warnings、audit-log、statistics、health-check、tags），
+  测试是否按当前用户的资源级权限过滤返回结果——
+  关键在于辅助端点常被视为"全局功能"而遗漏资源级过滤。
+
+reasoning_chain:
+  - "问：目标系统是否实现了资源级权限（如每个 DAG/项目/文档有独立的 ACL）？"
+  - "问：系统提供了哪些辅助/元数据 API 端点？（/warnings、/audit-log、/tags、/statistics 等）"
+  - "问：这些辅助端点是否需要认证？（需要认证 ≠ 已做资源级过滤）"
+  - "问：用受限角色调用辅助端点时，返回的数据是否仅限于该角色有权访问的资源？"
+  - "如果返回了无权访问的资源的数据 → 资源级 ACL 过滤缺失"
+  - "问：泄露的信息中是否包含敏感内容？（堆栈跟踪、内部路径、配置参数、错误详情）"
+  - "扩展：同一系统的其他列表/搜索端点是否也缺少资源级过滤？"
+
+vuln_root: >
+  开发者在辅助/元数据端点的查询逻辑中仅做了认证检查（是否登录）和功能权限检查
+  （是否有"读取警告"的权限），但未在数据库查询层面按用户的资源级权限（DAG ACL）
+  过滤结果，假设"有功能权限即可访问所有资源的该类数据"。
+
+transferable_to:
+  - "Apache Airflow 的其他列表端点——audit log、import errors、DAG runs、task instances"
+  - "其他工作流/编排平台（Prefect、Dagster、Luigi）的 API 权限过滤"
+  - "多租户 SaaS 的辅助端点——tags、categories、statistics 是否泄露跨租户资源信息"
+  - "项目管理工具的全局搜索/过滤 API——是否返回用户无权访问的项目数据"
+  - "CMS/Wiki 系统的全局标签/分类端点——是否泄露受限页面的标签信息"
+
+cases:
+  - url: "https://hackerone.com/reports/2208647"
+    author: "balis0ng"
+    platform: "Apache Airflow (IBB)"
+    severity: "Low"
+    cve: "CVE-2023-42780"
+    bounty: "$540"
+    note: >
+      Airflow 2.7.2 之前，/api/v1/dagWarnings 端点未按用户的 DAG 级权限过滤结果，
+      仅有特定 DAG 读权限+警告读权限的用户可获取所有 DAG 的警告信息，
+      泄露 dag_id 和导入错误堆栈跟踪。
+  - url: "https://hackerone.com/reports/1533220"
+    author: "imran_nisar"
+    platform: "Lark Technologies (larksuite.com)"
+    severity: "Medium (CVSS 4.9)"
+    note: >
+      no-content 公开。无权限用户可查看管理日志（admin log），属于辅助/审计端点
+      缺少权限过滤的典型场景。
+      (团队摘要: "An access control issue was found where a user without proper
+      permissions would be able to view the admin log.")
+      approach 相同：辅助端点（admin log）未做资源/功能级权限过滤。
+  - url: "https://hackerone.com/reports/1091380"
+    author: "imgnotfound"
+    platform: "Shopify (partners.shopify.com)"
+    severity: "Medium (CVSS 4.3)"
+    note: >
+      Shopify Partner Dashboard 的 GraphQL 查询字段 serviceMetrics { totalEarnings { amount } }
+      未检查 staff 成员是否拥有 "View financials" 权限，无任何权限的 staff 成员
+      可通过直接构造 GraphQL 请求获取组织的服务收入数据。
+      (原文: "a staff with no permission is able to retrieve Services financial."
+      "Assuming that this property should be gated by the View financials permission,
+      I should have received an access denied there instead of an amount")
+      h1-2102 live hack event 报告。approach 相同：辅助/元数据查询端点未做功能权限过滤。
+  - url: "https://hackerone.com/reports/962462"
+    title: "Unauthorized user is able to access schedule pipeline variables and values"
+    author: "vaib25vicky"
+    platform: "GitLab (gitlab.com)"
+    severity: "High"
+    cve: "CVE-2020-13351"
+    note: >
+      GitLab pipeline schedule 功能中，安全模型规定只有 schedule owner 或 maintainer
+      可读取变量值，developer 只能列出但不能读取。但 API 端点
+      GET /api/v4/projects/:id/pipeline_schedules/:schedule_id 未做角色过滤，
+      任何认证用户（甚至非项目成员）均可读取 schedule 自定义变量和值。
+      approach 与已有条目一致：API 端点的鉴权实现落后于 UI/文档描述的安全模型。
+      (原文: "the current security model is: If you are owner of schedule (as developer)
+      or master => you can read, modify and delete. But api endpoints are clearly showing
+      this values to everyone even if the user is not part of the project.")
+  - url: "https://hackerone.com/reports/411822"
+    title: "Password protected rooms total number of viewers disclosure to unauthorized members"
+    author: "batee5a"
+    platform: "Chaturbate"
+    severity: "Low"
+    note: >
+      密码保护的直播间 UI 隐藏了所有信息，但 /contest/log/{username}/ 端点
+      未检查请求者是否有房间密码，直接返回当前观看人数。
+      未认证/无密码用户可通过该辅助端点枚举受保护房间的实时观众数量。
+      (原文: "through the following endpoint, It is possible to know the total
+      number of viewers of the room even if it is password protected")
+      approach 相同：辅助/统计端点未继承父资源（密码保护房间）的访问控制。
+  - url: "https://hackerone.com/reports/13959"
+    title: "privilege escalation — Cloudup password-protected file bypass"
+    author: "niks"
+    platform: "Automattic (Cloudup)"
+    severity: "未评级"
+    bounty: "赏金（金额未披露）"
+    note: >
+      Cloudup 上传文件并设置密码保护后，下载链接为
+      https://cloudup.com/files/<id>/download（需密码）。
+      但去掉 /download 后缀访问 https://cloudup.com/files/<id>/
+      可直接获取文件内容和 EXIF 元数据，绕过密码保护和跨用户访问控制。
+      (原文: "modify the url ... remove the download part ... you can access the
+      file contents i.e. password protected file (authentication bypass)")
+      approach 相同：资源的辅助/元数据端点（文件详情 API）未继承主端点（download）的
+      密码保护和授权检查。
+  - url: "https://hackerone.com/reports/676976"
+    title: "Container scanning and Dependency scanning report leaked to unauthorized users"
+    platform: "GitLab"
+    severity: "Medium"
+    bounty: "有赏金（金额未公开）"
+    cve: "CVE-2019-15591"
+    note: >
+      GitLab 公共项目设置了 "restrict CI pipeline access to project members only"
+      并禁用了 public pipelines，但 merge request 的辅助端点
+      /merge_requests/<id>/container_scanning_reports 和
+      /merge_requests/<id>/dependency_scanning_reports 未继承 CI 访问控制，
+      未授权用户（无 CI 权限）可直接访问安全扫描报告，获取容器和依赖漏洞详情。
+      approach 相同：辅助/衍生数据端点未继承父资源（CI pipeline）的访问控制。
+      纯结果文，无导航叙事。
+      (原文: "GitLab makes the container scanning and dependency scanning information
+      available as part of a JSON endpoint for merge requests... However, right now
+      GitLab displays the scanning reports regardless of this permission.")
+  - url: "https://hackerone.com/reports/95589"
+    title: "Privilege escalation and circumvention of permission to limited access user"
+    author: "egrep"
+    platform: "Shopify"
+    severity: "Low"
+    bounty: "有赏金（金额未披露）"
+    note: >
+      Shopify 店铺管理后台对仅有 "Overviews" 权限的受限用户隐藏了活动页面
+      (/admin/activity 返回 403），但活动页面的分页 AJAX 子端点
+      /admin/dashboard/activity_feed?activity_pages=XXXX&activity_filter=all
+      未做同等权限检查，受限用户可直接枚举所有店主操作日志。
+      approach 相同：主页面正确鉴权但辅助/分页子端点遗漏权限过滤。
+      (原文: "If limited access user Y tried to view shop admin activities, the system
+      blocks the url rightly" 但 "If the limited access user Y use the url
+      .../activity_feed?activity_pages=XXXX , he can able to view all shop admin activities")
+  - url: "https://hackerone.com/reports/45960"
+    title: "IDOR — Unauthorized access to Videos of Private Channel via widget/montage endpoint"
+    author: "coolboss"
+    platform: "Vimeo"
+    severity: "未评级（报告标题标注 CRITICAL）"
+    bounty: "有赏金（金额未披露）"
+    note: >
+      Vimeo 频道设为 "Only moderators and people I choose" 时，主页面
+      /channels/870575 正确返回 "Private Channel — Sorry, this Channel is private."
+      但 widget/montage 预览端点 /tools/widget/montage?badge_stream=channel&badge_channel=870575
+      未检查频道隐私设置，直接返回私有频道内视频的缩略图。
+      攻击者可枚举 badge_channel 参数获取任意私有频道的视频列表。
+      approach 相同：辅助/嵌入式端点（widget 预览生成器）未继承父资源（频道）的隐私 ACL。
+      (原文: "Now, I have a video placed there... Go to /tools/widget/montage...
+      Note badge_channel parameter to any value... it will get you access to any videos.")

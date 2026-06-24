@@ -1,0 +1,66 @@
+name: "OAuth认证失败仍生成有效会话——绕过认证访问内部门户"
+id: "OAUTH_FAILED_AUTH_VALID_SESSION_BYPASS"
+applicable: "blackbox"
+phase: "auth"
+also_phases: []
+tags: ["oauth", "session", "auth-bypass", "internal-portal", "admin-panel", "session-handling"]
+source: "https://hackerone.com/reports/294911"
+
+# ——— L3 核心 ———
+
+observation: "未叙述（仅结果）。no-content 公开，仅有团队摘要。"
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  成功：绕过 Mapbox 内部门户的 OAuth 认证，在认证失败的情况下仍获得有效会话，
+  利用该会话访问了门户上需要认证才能查看的信息。
+  (原文团队摘要: "The vulnerability allowed them to bypass OAuth authentication and
+  generate a valid session for the site. This session was then used by @aneeskhan to
+  access information on the portal which required authentication.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  OAuth 认证失败 → 仍生成有效 session → 访问内部门户认证后内容。
+  单一漏洞即可完成攻击，无需额外串联。
+  (原文团队摘要: "Mapbox fixed the session handling code within its portal software
+  preventing failed OAuth authentication attempts from generating valid sessions.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对使用 OAuth 保护的内部门户/管理后台，测试 OAuth 回调流程中认证失败的场景
+  是否仍生成有效会话：1) 拦截 OAuth 回调请求，篡改或移除认证令牌；
+  2) 使 OAuth 认证故意失败后，检查响应中是否仍设置了有效的 session cookie；
+  3) 使用该 cookie 直接访问门户的认证保护页面。
+
+reasoning_chain:
+  - "问：目标内部门户/管理后台是否使用 OAuth（GitHub/Google/SSO）作为认证入口？"
+  - "问：OAuth 回调端点在认证失败时返回什么？是否仍在响应中设置了 session cookie？"
+  - "黑盒：拦截 OAuth callback 请求，移除或篡改 code/token 参数，观察响应头是否有 Set-Cookie。"
+  - "问：获得的 cookie 是否能直接用于访问门户的其他页面？是否有二次认证检查？"
+  - "问：门户是否有独立的 session 创建逻辑（先建 session 再验 OAuth），还是仅在 OAuth 成功后才建 session？"
+  - "如果失败的 OAuth 回调也建了有效 session → 用该 session 访问所有认证保护页面。"
+
+vuln_root: >
+  门户的 session 处理代码在 OAuth 回调处理中先创建 session 再验证 OAuth 结果，
+  导致即使 OAuth 认证失败，session 已经生效且未被销毁。
+
+transferable_to:
+  - "使用 OAuth 保护的内部管理门户/Dashboard"
+  - "自实现 OAuth 回调处理逻辑的应用（非框架自带中间件）"
+  - "多步认证流程中 session 创建与认证验证解耦的系统"
+  - "使用 SSO/SAML 保护的内部服务——类似的 session 提前创建问题"
+
+cases:
+  - url: "https://hackerone.com/reports/294911"
+    title: "Admin Panel Accessed (OAuth Bypassed)"
+    platform: "Mapbox"
+    severity: "Critical"
+    bounty: "$4,000"
+    note: >
+      no-content 公开。团队摘要确认：Mapbox 内部门户 OAuth 认证绕过，
+      OAuth 认证失败时仍生成有效 session，攻击者利用该 session 访问了
+      需要认证的门户信息。修复方案为修改 session 处理代码，
+      防止失败的 OAuth 认证尝试生成有效 session。

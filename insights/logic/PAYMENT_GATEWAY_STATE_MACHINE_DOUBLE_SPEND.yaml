@@ -1,0 +1,42 @@
+name: "支付网关状态机不一致——交易状态处理缺陷导致双重提款"
+id: "PAYMENT_GATEWAY_STATE_MACHINE_DOUBLE_SPEND"
+applicable: "blackbox"
+phase: "logic"
+also_phases: []
+tags: ["payment", "state-machine", "double-spend", "paypal", "transaction-state", "fintech", "withdrawal"]
+source: "https://hackerone.com/reports/307239"
+
+observation: >
+  未叙述（仅结果）——报告为 no-content 公开，仅有团队摘要。
+  (原文/团队摘要: "An issue with the handling of the PayPal transaction states resulted in a user being able to both withdraw money from PayPal, but not have the funds deducted from their account.")
+
+hypothesis: "未叙述（仅结果）"
+action_result: "未叙述（仅结果）——团队确认了 PayPal 交易状态处理问题导致可提款但不扣款"
+why_here_first: "未叙述（仅结果）"
+
+chaining: "N/A — 单步逻辑漏洞，直接造成经济损失"
+
+approach: >
+  对接第三方支付网关（PayPal/Stripe/etc.）的平台上，测试交易状态机中
+  异步回调、超时、取消等边界状态下资金借贷双方是否一致——
+  特别关注"已完成提款但回调状态报告为失败/取消"的场景。
+
+reasoning_chain:
+  - "问：目标平台对接了哪些第三方支付网关？（PayPal、Stripe、Braintree 等）"
+  - "问：提款/转账流程中，平台如何处理支付网关返回的异步状态（pending → success/fail）？"
+  - "问：如果在 pending 阶段发起取消或第二次提款，平台是否有幂等保护？"
+  - "问：支付回调（webhook/IPN）与平台内部账本的状态同步是否有 TOCTOU 窗口？"
+  - "如果存在 → 发起提款后模拟回调失败/延迟，检查资金是否已转出但账户余额未扣除"
+
+vuln_root: "平台内部账本与支付网关之间的交易状态同步不一致，允许在状态转换间隙完成资金提取但不扣减余额。"
+
+transferable_to:
+  - "任何对接第三方支付的加密货币交易所"
+  - "电商平台的退款/提现流程"
+  - "P2P 转账应用的到账确认逻辑"
+  - "订阅服务的付款失败但服务已开通场景"
+  - "积分/虚拟货币系统的充值/提现状态机"
+
+cases:
+  - url: "https://hackerone.com/reports/307239"
+    note: "Coinbase Double Payout via PayPal，$10,000，Critical。交易状态处理缺陷导致可提款但不扣款。"

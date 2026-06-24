@@ -1,0 +1,74 @@
+name: "公开 SOAP WSDL 列出全部管理方法——去掉认证 Header 直接调用特权接口"
+id: "SOAP_WSDL_AUTH_HEADER_STRIP_ADMIN_ACCESS"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["recon"]
+tags: ["soap", "wsdl", "service-descriptor", "auth-bypass", "admin-panel", "header-strip", "CWE-306"]
+source: "https://hackerone.com/reports/1026146"
+
+# ——— L3 核心 ———
+
+observation: >
+  Questionmark Perception 系统的 SOAP Web 服务描述符（WSDL）公开可访问，
+  列出了所有可用方法（如 GetAdministratorList、GetAccessAdministrator、GetParticipantList）。
+  (原文: "Visit https://██████/█████████ to get all the Questionmark Web Integration Services' description")
+
+hypothesis: >
+  未叙述（仅结果）。推断：WSDL 中列出的方法虽然设计上需要 SOAP Trust header 认证，
+  但如果服务端未强制验证该 header，去掉 <soapenv:Header> 标签即可直接调用特权方法。
+
+action_result: >
+  成功：去掉请求中 <soapenv:Header>...</soapenv:Header> 标签之间的所有内容后，
+  调用 GetAdministratorList 返回所有管理员的完整信息（ID、姓名、邮箱等）。
+  (原文: "remove all the code between the <soapenv:Header> and the </soapenv:Header> tag")
+  (原文: "The response shows us a list giving the full details of all the administrators")
+
+  进一步利用：调用 GetAccessAdministrator 方法传入管理员用户名，
+  服务端返回一个免密码登录 URL（含 CHECKSUM），直接以管理员身份登录。
+  (原文: "GetAccessAdministrator processes an Administrator Name and returns a URL
+  that enables the administrator to log in to Enterprise Manager (without using a password)")
+
+  还可调用 GetParticipantList 获取全部参与者的用户名、密码等信息。
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  公开 WSDL（信息泄露，低危）→ 去掉认证 Header 仍可调用（认证绕过，高危）→
+  GetAdministratorList 枚举管理员 → GetAccessAdministrator 生成免密登录链接 → 管理员接管（Critical）
+
+# ——— 落地检查清单 ———
+
+approach: >
+  发现目标暴露 SOAP WSDL/服务描述符后，列出所有方法签名，
+  尝试去掉或置空 SOAP Header 中的认证字段直接调用特权方法，
+  验证服务端是否强制校验认证 header。
+
+reasoning_chain:
+  - "问：目标是否暴露了 SOAP WSDL（?wsdl）或服务描述页面？"
+  - "如果是：问：WSDL 中列出了哪些方法？是否有 GetAdmin*/ListUser*/CreateSession 等特权操作？"
+  - "问：正常请求中 <soap:Header> 包含什么认证信息（WS-Security / Trust token / API key）？"
+  - "测试：去掉或置空 <soap:Header> 标签中的全部认证内容，仅保留 <soap:Body>，发送请求观察是否仍返回数据？"
+  - "如果成功绕过：问：是否有生成会话/免密登录链接的方法（如 GetAccessAdministrator）？调用它能否直接获取管理员会话？"
+  - "问：是否有列出用户/参与者的方法可泄露凭据（用户名、密码、PII）？"
+  - "AWS/Azure 环境检查：问：WSDL 端点是否在非标准端口（8080/8443）上？是否存在于未被 WAF 覆盖的子域名？"
+
+vuln_root: >
+  开发者假设 SOAP Trust/WS-Security header 会被客户端始终携带，
+  但服务端未对缺少认证 header 的请求做强制拒绝——可选认证等于无认证。
+
+transferable_to:
+  - "任何暴露 WSDL 的企业级 SOAP 服务（尤其政府、教育、医疗行业的遗留系统）"
+  - "WCF（.NET）服务默认暴露 ?wsdl 元数据端点"
+  - "SAP/Oracle ERP 的 SOAP 接口（PI/PO、EBS）"
+  - "内部 B2B 集成接口暴露在公网但依赖 IP 白名单而非协议层认证"
+  - "REST API 的类似场景：Bearer token 在 header 中但服务端不校验——去掉 Authorization header 仍可调用"
+
+cases:
+  - url: "https://hackerone.com/reports/1026146"
+    title: "Unauthorized access to admin panel of the Questionmark Perception system"
+    platform: "U.S. Dept Of Defense"
+    severity: "Critical"
+    bounty: "N/A (VDP)"
+    note: >
+      SOAP WSDL 公开 → 去掉 Trust header → GetAdministratorList 枚举管理员 →
+      GetAccessAdministrator 生成免密登录 URL → 管理员完全接管

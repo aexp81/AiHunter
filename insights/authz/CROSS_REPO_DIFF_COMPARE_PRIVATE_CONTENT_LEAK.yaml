@@ -1,0 +1,57 @@
+name: "跨仓库 diff/compare 端点绕过授权读取私有仓库代码"
+id: "CROSS_REPO_DIFF_COMPARE_PRIVATE_CONTENT_LEAK"
+applicable: "blackbox"
+phase: "authz"
+also_phases: []
+tags: ["idor", "authorization-bypass", "github", "ghes", "git", "diff", "compare", "private-repo"]
+source: "https://hackerone.com/reports/3124517"
+
+observation: >
+  GitHub Enterprise Server 的跨仓库 compare/diff 功能允许拥有任意仓库访问权限
+  的用户通过创建两个仓库之间的 diff 来获取另一个私有仓库的有限代码内容。
+  (原文: "An improper access control vulnerability was identified in GitHub Enterprise
+  Server that allowed users with access to any repository to retrieve limited code
+  content from another repository by creating a diff between the repositories.")
+
+hypothesis: >
+  未叙述（仅结果）。推测：跨仓库 compare/diff 端点在生成 diff 时
+  加载了目标仓库的代码，但未验证请求者对目标仓库的读取权限。
+
+action_result: >
+  未叙述（仅结果）。漏洞被确认并修复，CVE-2025-8447，
+  影响 GHES 3.18 之前的所有版本。
+  (原文: "This vulnerability affected all versions of GitHub Enterprise Server
+  prior to 3.18, and was fixed in versions 3.14.17, 3.15.12, 3.16.8 and 3.17.5.")
+
+why_here_first: >
+  未叙述（仅结果）。推测：Git 的 fork network / compare 功能天然涉及跨仓库
+  对象引用，是授权边界容易出错的地方。
+
+chaining: "N/A"
+
+approach: >
+  对代码托管平台的跨仓库 compare/diff/merge 端点进行授权测试——
+  用拥有 repoA 访问权限的账号，尝试创建 repoA 与 repoB（私有、无权限）的 diff，
+  观察返回内容中是否泄露了 repoB 的代码片段。攻击者需要知道目标私有仓库的名称
+  及其分支/标签/commit SHA。
+
+reasoning_chain:
+  - "问：目标代码托管平台是否支持跨仓库 compare/diff（如 GitHub 的 compare 视图）？"
+  - "问：跨仓库 diff 端点是否对两端仓库都验证了当前用户的读取权限？"
+  - "如果只验证了源仓库权限 → 能否通过 diff 获取目标仓库的代码片段？"
+  - "问：攻击者需要知道目标仓库的哪些信息（仓库名、分支名、commit SHA）？"
+  - "问：返回的 diff 中包含多少目标仓库的上下文行（limited vs full content）？"
+
+vuln_root: >
+  跨仓库 diff/compare 功能仅验证了请求者对源仓库的权限，
+  假设能创建 diff 的用户对两端仓库都有访问权。
+
+transferable_to:
+  - "GitHub Enterprise Server 及 GitHub.com 的 compare/diff 端点"
+  - "GitLab 的跨项目 merge request / compare 功能"
+  - "Bitbucket 的跨仓库 diff"
+  - "任何支持 fork network 和跨仓库引用的 Git 托管平台"
+
+cases:
+  - url: "https://hackerone.com/reports/3124517"
+    note: "GitHub GHES 跨仓库 diff 读取私有仓库代码，CVE-2025-8447，$10,000，by furbreeze。"

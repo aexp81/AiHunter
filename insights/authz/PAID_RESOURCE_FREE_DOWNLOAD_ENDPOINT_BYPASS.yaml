@@ -1,0 +1,62 @@
+name: "付费资源 ID 嫁接到免费下载端点——下载端点缺少购买状态校验"
+id: "PAID_RESOURCE_FREE_DOWNLOAD_ENDPOINT_BYPASS"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["paywall-bypass", "access-control", "download-endpoint", "purchase-validation",
+       "resource-id-swap", "vimeo", "music-store", "digital-goods"]
+source: "https://hackerone.com/reports/43770"
+
+# ——— L3 核心 ———
+
+observation: >
+  Vimeo Music Store 的免费曲目下载通过 GET /musicstore/download?track_id=[id]&license_id=4 完成；
+  付费曲目则走 POST /cart/music 加入购物车流程。两个流程使用相同的 track_id 标识符。
+  (原文: "For non-free tracks, the link is replaced with an Add to Cart icon, and you're
+  expected to go through the checkout procedure... a POST request to /cart/music with a body
+  of action=add&license_id=2&...&track_id=110947")
+
+hypothesis: >
+  未叙述（仅结果）。推断：/musicstore/download 端点仅检查 license_id 参数是否为免费许可证类型（4），
+  而未验证该 track_id 对应的曲目是否确实属于免费类别或当前用户是否已购买。
+
+action_result: >
+  成功：从付费曲目的 Add to Cart POST 请求中复制 track_id，
+  拼接到 /musicstore/download?track_id=[track_id]&license_id=4 的 GET 请求中，
+  服务器返回 302 重定向到 Amazon S3 下载地址。
+  (原文: "Copying the track_id from the Add to Cart request and transplanting it into
+  the /musicstore/download successfully redirects you to Amazon S3 to download the track,
+  despite you not having paid for it.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: "N/A — 单步即可下载付费资源"
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对数字商品（音乐/视频/文档/课程）的下载端点，用付费资源的 ID 替入免费下载路径的参数位，
+  测试端点是否校验当前用户对该资源的购买/授权状态，而非仅依赖客户端流程引导（UI 按钮替换）隔离。
+
+reasoning_chain:
+  - "问：目标平台是否同时存在免费和付费数字商品，且共用下载基础设施？"
+  - "问：免费下载端点的 URL 结构是什么？是否接受资源 ID 参数？"
+  - "问：付费资源的 ID 格式是否与免费资源相同（同表/同 namespace）？"
+  - "问：将付费资源 ID 替入免费下载端点后，服务端返回 403/402 还是直接下发文件？"
+  - "问：端点是否依赖 license_id 参数区分免费/付费？改用免费 license_id 是否绕过检查？"
+  - "问：下载 URL 是否包含签名/token？签名是否绑定了购买记录？"
+
+vuln_root: >
+  开发者假设 UI 层的按钮切换（免费=下载按钮 vs 付费=购物车按钮）足以限制用户行为，
+  未在 /musicstore/download 端点做服务端购买状态验证。
+
+transferable_to:
+  - "在线教育平台的课程视频/课件下载接口"
+  - "数字音乐/电子书/软件商店的文件下载端点"
+  - "SaaS 平台的导出/下载功能区分免费版和付费版内容"
+  - "游戏平台的 DLC 资源下载接口"
+
+cases:
+  - source: "https://hackerone.com/reports/43770"
+    title: "Ability to Download Music Tracks Without Paying (Vimeo)"
+    note: "Resolved, $100 bounty, 2015"

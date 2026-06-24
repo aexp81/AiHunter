@@ -1,0 +1,138 @@
+name: "异步资源部署期间抢先执行受限操作——利用安装/配置未完成的时间窗口绕过限制"
+id: "ASYNC_PROVISION_STATE_WINDOW_BYPASS"
+applicable: "blackbox"
+phase: "logic"
+also_phases: []
+tags: ["race-condition", "state-machine", "async-provisioning", "timing-window", "theme", "trial", "shopify", "graphql-mutation"]
+source: "https://hackerone.com/reports/953083"
+
+observation: >
+  研究者在先前报告 (#927567) 中发现了另一种不购买即发布付费主题的方式，
+  被修复后继续寻找替代路径，发现在付费主题异步安装过程中（spinner 动画阶段），
+  可以对尚未完全部署的资源调用 ThemePublishLegacy mutation。
+  (原文: "I kept looking for alternatives to my report #927567 and I found another way
+  to publish a paid theme without having to purchase it. This time the trick is to send
+  'ThemePublishLegacy' XHR request while the theme is being installed.")
+
+hypothesis: >
+  主题安装是异步过程（有安装中 spinner），而 publish 操作的权限检查（如"是否已购买"）
+  可能依赖于安装完成后才会设置的状态标志，在安装进行中这些标志尚未生效，
+  因此存在一个时间窗口可以绕过付费检查。
+  (原文: "I believe this attack has to be timed at the right moment for it to work all the time.
+  It seems like for this to work properly, the ThemePublishLegacy request should be sent
+  right before the installation is complete")
+
+action_result: >
+  第一次尝试失败——因为主题文件还未就位：
+  "Role can't be set to main: missing required file layout/theme.liquid"
+  (原文: "the first time I sent the request, it did not work because of an error
+  (Role can't be set to main: missing required file layout/theme.liquid)")
+
+  调整时机后，在安装即将完成（文件已就位但 trial 标志尚未锁定）的瞬间发送请求，
+  publish 成功。刷新页面后，付费主题已变为当前发布主题，
+  且后续可重命名、编辑代码、下载文件——绕过了试用限制。
+  (原文: "the yellow 'Theme trial' badge is missing and that you can rename, edit and download the theme files")
+
+why_here_first: >
+  作者先前已有同功能的报告 (#927567) 被修复，说明已熟悉该功能的逻辑；
+  在补丁后继续寻找替代路径，选择在异步安装过程中测试是 patch bypass 的自然延伸。
+  (原文: "I kept looking for alternatives to my report #927567")
+
+chaining: >
+  单步即造成影响（绕过付费→免费获得主题代码），
+  但可进一步扩展：试用主题的代码包含付费开发者的知识产权，可下载窃取。
+
+approach: >
+  当应用中存在异步部署/安装/创建流程（如主题安装、应用配置、订阅开通）时，
+  在资源部署进行中（pending/installing 状态），尝试调用正常情况下需资源完全就绪后才允许的操作（publish、activate、export），
+  测试权限检查和状态标志是否在部署完成前就已生效——
+  关键在于找到"文件/数据已就位但限制标志未设置"的精确时间窗口。
+
+reasoning_chain:
+  - "问：目标系统中有哪些操作是异步的？（主题/插件安装、应用部署、订阅开通、资源创建）"
+  - "问：在异步操作进行中，目标资源是否已经分配了 ID？能否在其他 API 中引用该 ID？"
+  - "问：资源上的限制标志（如 trial、pending_payment、draft）是在安装完成后才设置，还是在创建时就设置？"
+  - "如果限制标志延迟设置 → 在安装过程中尝试调用 publish/activate/export 等状态转换操作"
+  - "问：第一次失败了吗？失败原因是什么？（如文件未就位 vs 权限拒绝）如果是文件未就位，调整时机到安装即将完成时重试"
+  - "问：操作成功后，资源是否完全脱离试用/限制状态？（检查是否可编辑、下载、重命名）"
+  - "扩展：是否有轮询 API（如 ThemesProcessingLegacy）可用来监控安装进度，精确计时攻击？"
+
+vuln_root: >
+  开发者假设异步部署的权限检查与资源就绪是原子的——
+  实际上资源先创建（含 ID 和文件），限制标志后设置，
+  在二者之间存在一个可利用的时间窗口。
+
+transferable_to:
+  - "SaaS 平台的主题/模板/插件安装流程"
+  - "云服务的资源创建（VM、容器、数据库实例）——创建中尝试操作"
+  - "应用商店的试用安装→购买→发布流程"
+  - "订阅 SaaS 的 trial→paid 升级状态机"
+  - "任何有 async provisioning + 状态标志的后台管理系统"
+
+cases:
+  - url: "https://hackerone.com/reports/953083"
+    author: "saltymermaid"
+    platform: "Shopify"
+    bounty: "$2,000"
+    note: >
+      在 Shopify 付费主题异步安装过程中，抢先发送 ThemePublishLegacy GraphQL mutation，
+      利用"文件已就位但 trial 标志未设置"的时间窗口将试用主题发布为正式主题，
+      绕过付费检查。作者在前序报告 #927567 修复后继续寻找替代路径发现。
+  - url: "https://hackerone.com/reports/2190827"
+    title: "Bypassing Collaborator Restrictions: Retaining Admin Access Post-Repository Transfer"
+    author: "inspector-ambitious"
+    platform: "GitHub Enterprise Server"
+    severity: "Medium"
+    bounty: "有赏金（金额未公开）"
+    cve: "CVE-2023-6803"
+    note: >
+      no-content 公开。GHES 中仓库转移期间的竞态条件，允许在仓库被转移到另一组织时
+      添加外部协作者（outside collaborator），利用转移过程中的时间窗口绕过协作者限制。
+      (原文团队摘要: "A race condition in GitHub Enterprise Server allows an outside
+      collaborator to be added while a repository is being transferred.")
+      影响 GHES 3.8-3.10 全部版本，修复于 3.8.12/3.9.7/3.10.4/3.11.1。
+      approach 相同：利用异步状态转换（仓库转移）进行中的时间窗口执行受限操作。
+      2023-10 报告，2024-03 公开。
+  - url: "https://hackerone.com/reports/2216036"
+    title: "RC Between GitHub's Repo Transfer REST API and updateTeamsRepository GraphQL Mutation Results in Covert and Persistent Admin Access Retention"
+    author: "inspector-ambitious"
+    platform: "GitHub Enterprise Server"
+    severity: "Medium"
+    cve: "CVE-2023-6690"
+    note: >
+      no-content 公开。仓库转移（REST API）期间，通过 updateTeamsRepository GraphQL mutation
+      修改仓库权限，利用竞态时间窗口使已有 admin 在转移后保留管理权限。
+      (原文团队摘要: "A race condition in GitHub Enterprise Server allowed an existing admin
+      to maintain permissions on transferred repositories by making a GraphQL mutation to alter
+      repository permissions during the transfer.")
+      影响 GHES 3.8.0+，修复于 3.8.12/3.9.7/3.10.4/3.11.1。
+      同一研究者（inspector-ambitious）对同一功能的不同利用路径。
+  - url: "https://hackerone.com/reports/2185545"
+    title: "Persistent Unauthorized Administrative Access on All Organization Repositories via RC in User Conversion to Organization"
+    author: "inspector-ambitious"
+    platform: "GitHub Enterprise Server"
+    severity: "Medium"
+    cve: "CVE-2023-46649"
+    note: >
+      no-content 公开。用户账户转换为组织（User Conversion to Organization）的过程中，
+      利用竞态条件使攻击者获得对新组织全部仓库的 admin 权限。
+      (原文团队摘要: "A race condition in GitHub Enterprise Server was identified that could
+      allow an attacker administrator access. To exploit this, an organization needs to be
+      converted from a user.")
+      影响 GHES 3.7+，修复于 3.7.19/3.8.12/3.9.7/3.10.4/3.11.1。
+      与 #2216036 同一研究者、同一攻击面（异步状态转换中的权限竞态），不同触发入口。
+  - url: "https://hackerone.com/reports/2357443"
+    title: "RC Between GitHub's Repo Update REST API and updateTeamsRepository GraphQL Mutation Results in Covert and Persistent Admin Access Retention"
+    author: "inspector-ambitious"
+    platform: "GitHub Enterprise Server"
+    severity: "Medium"
+    cve: "CVE-2024-2440"
+    note: >
+      no-content 公开。#2216036 的补丁绕过——将触发点从"仓库转移"改为"仓库更新（detach）"，
+      在仓库被 detach 期间通过 updateTeamsRepository GraphQL mutation 修改权限，
+      保留 admin 访问。
+      (原文团队摘要: "A race condition in GitHub Enterprise Server allowed an existing admin
+      to maintain permissions on a detached repository by making a GraphQL mutation to alter
+      repository permissions while the repository is detached.")
+      影响 GHES < 3.13，修复于 3.9.13/3.10.10/3.11.8/3.12.1。
+      同一研究者连续报告的第三个变种（#2190827→#2216036→#2357443），体现补丁绕过持续挖掘思路。

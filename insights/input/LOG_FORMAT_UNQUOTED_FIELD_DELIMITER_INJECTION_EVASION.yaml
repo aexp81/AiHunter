@@ -1,0 +1,88 @@
+name: "nginx 日志格式中未加引号的用户可控字段注入分隔符导致日志被丢弃"
+id: "LOG_FORMAT_UNQUOTED_FIELD_DELIMITER_INJECTION_EVASION"
+applicable: "whitebox"
+phase: "input"
+also_phases: ["chain"]
+tags: ["log-injection", "log-evasion", "nginx", "authorization-header", "incident-response", "siem", "whitebox", "delimiter-injection", "hackerone"]
+source: "https://hackerone.com/reports/447488"
+
+# ——— L3 核心 ———
+
+observation: >
+  白盒审计 nginx 负载均衡器配置时，发现日志格式中 $remote_user 变量
+  放在 $remote_addr 和 [$time_local] 之间，以空格分隔且未加引号。
+  当用户未提供凭证时该值为 `-`。
+  (原文: "the HTTP user specified in the `Authorization` header (`$remote_user`)
+  is placed between the `$remote_addr` and `[$time_local]`.
+  A log entry is delimited with white space and the `$remote_user` variable isn't surrounded with quotes.
+  When a user isn't specified, its value is set to `-`.")
+
+hypothesis: >
+  如果 $remote_user 未被引号包裹且分隔符是空格，那么在 Authorization header 中
+  注入包含空格的用户名会在日志中引入额外的列，破坏日志解析器的字段对齐，
+  可能导致日志条目被 SIEM 丢弃。
+  (原文: "it was identified that an additional delimiter can be injected,
+  which seems to cause ingestion of the log entry to fail and the log entry to be discarded.")
+
+action_result: >
+  成功：发送 `curl -X POST -u '- A:B' https://hackerone.com/graphql?secret=1`，
+  Authorization header 中的 Base64 解码后 $remote_user 为 `- A`（含空格），
+  导致日志行多出一列。该请求对应的日志条目在 SIEM Events source 中消失，
+  但请求本身作为有效 HTTP 请求被正常代理到上游 Rails 应用。
+  (原文: "When this is ingested by █████████, the log for that particular request
+  doesn't seem to appear in the Events source. However, as the request itself is valid,
+  it'll be proxied to the upstream.")
+
+why_here_first: >
+  在白盒审计另一个网络组件时发现了这个问题——审计日志配置是代码审查的一部分。
+  (原文: "During a white box test of another component in a network,
+  it was identified that an additional delimiter can be injected")
+
+chaining: >
+  Authorization header 注入空格 → nginx 日志格式列错位 → SIEM 丢弃该日志条目 →
+  攻击者的恶意请求（如 ?secret=1）在负载均衡器层面无审计痕迹 →
+  事件响应时无法从 nginx 日志还原完整攻击时间线。
+  补偿控制：Rails 应用层使用 JSON 格式日志，仍可追溯到上游请求。
+  (原文: "Because our Rails logs have a different format (JSON), we do have the ability
+  to still determine which requests were sent to our backend.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  白盒审计 Web 服务器/负载均衡器的日志格式配置，找出未加引号的用户可控变量
+  （$remote_user、$cookie_*、自定义 header），通过注入分隔符字符（空格/换行）
+  破坏日志解析，验证 SIEM/日志管道是否丢弃被破坏的条目。
+
+reasoning_chain:
+  - "问：nginx/Apache/HAProxy 的日志格式中有哪些字段是用户可控的（$remote_user、$http_*、$cookie_*）？"
+  - "问：这些用户可控字段是否被引号或转义包裹？"
+  - "如果未加引号 → 问：字段分隔符是什么（空格/制表符）？用户能否在输入中注入该分隔符？"
+  - "如果能注入 → 问：下游日志管道（SIEM/ELK/Splunk）如何解析该格式？额外列是否导致整行被丢弃？"
+  - "如果被丢弃 → 确认日志逃逸：攻击者可发送被正常代理但无日志记录的请求"
+  - "扩展：$cookie___cfduid 等其他未引号字段是否也可注入？"
+  - "缓解检查：应用层是否有独立的结构化日志（如 JSON 格式）作为补偿控制？"
+
+vuln_root: >
+  nginx 默认 combined log format 及许多自定义格式中 $remote_user 不加引号，
+  开发者/运维沿用默认配置未意识到该字段是攻击者可控的（通过 Authorization header）。
+  下游日志管道假设每行列数固定，遇到额外列时静默丢弃而非告警。
+
+transferable_to:
+  - "任何使用 nginx/Apache/HAProxy 默认或自定义日志格式的 Web 基础设施"
+  - "CDN（Cloudflare/AWS ALB）日志中引用 HTTP header 的自定义字段"
+  - "日志管道（ELK/Splunk/Datadog）中依赖固定列数解析的 ingestion pipeline"
+  - "WAF 绕过场景——如果 WAF 日志也使用相同的日志格式"
+  - "审计合规场景——攻击者通过日志逃逸规避取证分析"
+
+cases:
+  - url: "https://hackerone.com/reports/447488"
+    author: "jobert"
+    platform: "HackerOne"
+    severity: "Medium (CVSS 6.1)"
+    bounty: "无（内部报告）"
+    note: >
+      HackerOne 自身 nginx 负载均衡器的 cf_custom 日志格式中 $remote_user 未加引号，
+      通过 `curl -u '- A:B'` 注入含空格的用户名，导致 SIEM 丢弃该日志行。
+      请求本身正常代理到上游。Rails JSON 日志作为补偿控制可追溯请求。
+      $cookie___cfduid 也可能受同样攻击。
+      内部白盒发现，2018-11 报告，2019-04 公开。

@@ -1,0 +1,80 @@
+name: "App Proxy 后端返回 X-Accel-Redirect 头触发 NGINX 内部跳转——攻击者控制的上游服务可访问内部 location"
+id: "APP_PROXY_XACCEL_REDIRECT_INTERNAL_LOCATION_ACCESS"
+applicable: "blackbox"
+phase: "chain"
+also_phases: ["authz"]
+tags: ["nginx", "x-accel-redirect", "app-proxy", "internal-location", "reverse-proxy", "shopify", "header-injection", "upstream-control"]
+source: "https://hackerone.com/reports/1027873"
+
+# ——— L3 核心 ———
+
+observation: >
+  Shopify App Proxy 功能将请求代理到开发者控制的后端服务器，而 NGINX 的 X-Accel
+  功能允许上游服务通过返回 X-Accel-Redirect 响应头来触发 NGINX 内部重定向到
+  任意 internal location。
+  (原文: "NGINX allows internal redirection to a location determined by that header
+  returned from a backend - in our case being the configured App Proxy backend
+  controlled by the attacker.")
+
+hypothesis: >
+  如果 NGINX 配置中存在 internal 标记的 location（如内部微服务代理），
+  攻击者可以通过 App Proxy 后端返回 X-Accel-Redirect 头访问这些内部路由。
+  (原文: "it is possible to hit any configured internal NGINX location as your
+  current configuration is not ignoring the X-Accel-Redirect header response
+  from an upstream service.")
+
+action_result: >
+  部分验证：攻击者在 mocky.io 上配置了返回 X-Accel-Redirect: /collections/all 的响应，
+  通过 App Proxy 访问时 NGINX 确实执行了内部跳转并返回了商店的 /collections/all 页面，
+  证明 X-Accel-Redirect 被 NGINX 处理。但进一步 fuzzing 内部路由时未能命中真实的
+  内部端点。
+  (原文: "the following request would ends up hitting http://private-service/flag...
+  However, I did some very basic fuzzing and wasn't able to hit anything but still
+  reporting and will let you guys assess the risk.")
+
+why_here_first: >
+  研究者了解 NGINX X-Accel 功能文档，意识到当反向代理信任上游的 X-Accel-Redirect
+  头时，攻击者控制的上游后端可以触发 NGINX 内部重定向。
+  (原文: "By making use of the Shopify App Proxy and the X-Accel feature of NGINX,
+  it is possible to hit any configured internal NGINX location")
+
+chaining: >
+  攻击者注册 App Proxy 指向自己控制的后端 → 后端返回 X-Accel-Redirect 头 →
+  NGINX 执行内部重定向 → 可能访问 internal location 对应的内部微服务。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  当目标使用 NGINX 反向代理且允许用户/第三方应用配置上游后端（如 App Proxy、webhook 代理）时，
+  测试上游后端返回 X-Accel-Redirect 响应头是否被 NGINX 处理，尝试访问 internal location。
+
+reasoning_chain:
+  - "问：目标架构中 NGINX 是否作为反向代理，且存在用户可控的上游后端（App Proxy、webhook 转发、OAuth callback 代理）？"
+  - "如果存在 → 问：NGINX 是否配置了 proxy_ignore_headers X-Accel-Redirect？"
+  - "如果未配置忽略 → 在攻击者控制的后端返回 X-Accel-Redirect: /known-path 响应头，观察 NGINX 是否执行内部重定向"
+  - "如果重定向生效 → 问：NGINX 配置中是否有 internal 标记的 location（如 /internal-api、/_health、/admin-internal）？"
+  - "尝试 fuzz 常见内部路由路径，观察是否能通过 X-Accel-Redirect 到达内部服务"
+  - "扩展：除 X-Accel-Redirect 外，还检查 X-Accel-Buffering、X-Accel-Charset 等其他 X-Accel-* 头是否被信任"
+
+vuln_root: >
+  NGINX 默认信任上游服务返回的 X-Accel-Redirect 头并执行内部重定向，
+  当上游服务是用户可控的（如第三方应用代理），开发者未配置
+  proxy_ignore_headers 来禁用此行为。
+
+transferable_to:
+  - "任何使用 NGINX 反向代理且允许用户配置上游后端的平台（App Marketplace、Webhook 代理）"
+  - "CDN/负载均衡器代理到用户服务器的场景（如 Cloudflare Workers、Fastly backend）"
+  - "API Gateway 代理到第三方服务的架构"
+  - "SaaS 平台的 App/Plugin 系统中代理请求到开发者服务器的功能"
+
+cases:
+  - url: "https://hackerone.com/reports/1027873"
+    author: "imgnotfound"
+    platform: "Shopify (*.myshopify.com)"
+    severity: "None (CVSS 0.0) — 未实际命中内部路由，$500 奖励认可潜在风险"
+    bounty: "$500"
+    note: >
+      通过 App Proxy 配置指向 mocky.io 的后端，返回 X-Accel-Redirect: /collections/all，
+      NGINX 执行了内部跳转。fuzzing 未能命中真实内部端点，但证明了 X-Accel-Redirect
+      未被禁用。修复方案：proxy_ignore_headers X-Accel-Redirect。
+      (原文: "a proxy_ignore_headers X-Accel-Redirect directive should be set")

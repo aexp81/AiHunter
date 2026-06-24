@@ -1,0 +1,105 @@
+name: "安全产品直接注入页面脚本——网页自下载发现脚本地址后重执行劫持命令接口"
+id: "INJECTED_SCRIPT_SELF_DOWNLOAD_COMMAND_INTERFACE_HIJACK"
+applicable: "both"
+phase: "input"
+also_phases: ["chain"]
+tags: ["script-injection", "kaspersky", "antivirus", "command-interface", "javascript", "self-download", "privilege-escalation", "CVE-2019-15685"]
+source: "https://hackerone.com/reports/470544"
+
+# ——— L3 核心 ———
+
+observation: >
+  Kaspersky 在未安装浏览器扩展时，会将自身脚本直接注入到网页中（fallback 机制）。
+  虽然有措施防止网页发现注入脚本的地址，但网页可以通过下载自身页面来绕过这些防护；
+  同时虽然注入脚本在网页脚本运行前执行以保存未篡改的 JS 对象引用，
+  但网页可以先篡改对象再重新运行 Kaspersky 的脚本来绕过。
+  (原文: "There are provisions to prevent the webpage from discovering the address
+  of these script, which are trivially circumvented by the webpage downloading itself.
+  There are also provisions to inject the script before any webpage scripts can run,
+  so that unmanipulated references to various JavaScript objects can be stored.
+  These provisions can also be circumvented by manipulating the objects and rerunning
+  Kaspersky's script then.")
+
+hypothesis: >
+  如果网页通过自下载获取注入脚本的 URL，再通过篡改 JS 原生对象后重新执行该脚本，
+  就能使 Kaspersky 脚本在被控制的环境中运行，从而暴露其完整的命令接口。
+  (原文: "As a result, webpages can get full access to Kaspersky's command interface")
+
+action_result: >
+  成功：构造 PoC 页面（disable_features1.html），通过自下载发现 Kaspersky 注入脚本地址，
+  篡改 JS 对象后重新执行脚本，获取命令接口的完整访问权，
+  禁用了 Anti-Banner 和 Private Browsing 功能。
+  更严重的是，暴露的内部处理逻辑如有 bug 可升级为 SYSTEM 权限 RCE。
+  (原文: "which allows disabling Anti-Banner and Private Browsing functionality
+  for example (either completely or on specific sites), adding URLs to the blocklist
+  and much more. Worse yet: by exposing Kaspersky's internal processing to the web,
+  bugs in this processing code will turn into Remote Code Execution vulnerabilities
+  allowing websites to execute code with the privileges of the SYSTEM user")
+
+why_here_first: >
+  研究者发现 Kaspersky 在没有浏览器扩展时的 fallback 行为——直接向网页注入脚本。
+  这意味着脚本与网页共享同一个 DOM 和执行环境，是天然的攻击面。
+  此外研究者还发现可以通过报告 470519 卸载扩展，强制触发这个 fallback 路径。
+  (原文: "Without a browser extension (e.g. because extension installation not
+  confirmed by user, unsupported like in MS Edge or uninstalled via
+  https://hackerone.com/reports/470519), Kaspersky fall back to injecting its script
+  directly into the webpage.")
+
+chaining: >
+  扩展卸载/未安装 → 触发 fallback 直接脚本注入 → 网页自下载获取脚本 URL →
+  篡改 JS 对象 + 重执行脚本 → 命令接口完整控制 →
+  禁用安全功能 / 添加 URL 到黑名单 / 潜在 SYSTEM RCE。
+  域名需以 "www.google." 开头才会触发脚本注入（攻击者可用自有域名的子域名满足）。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  审计安全产品（杀毒/DLP/广告拦截）在浏览器扩展未安装时的 fallback 行为：
+  是否直接将脚本注入网页 DOM；若注入，网页能否通过自下载（XHR/fetch 请求自身 URL）
+  发现注入脚本的地址，并通过篡改 JS 原生对象后重执行该脚本来劫持产品的命令接口。
+
+reasoning_chain:
+  - "问：目标安全产品在浏览器中的工作模式是什么？（扩展 vs 代理注入 vs 直接脚本注入）"
+  - "问：在浏览器扩展未安装/被禁用/不支持时，是否有 fallback 机制直接向网页注入脚本？"
+  - "问：注入脚本的 URL 是否可被网页发现？（网页通过 XHR/fetch 下载自身 HTML 是否可提取注入的 <script> 标签？）"
+  - "问：注入脚本是否有'先于网页脚本执行'的保护？若有，网页能否通过修改 JS 对象后重新加载/执行该脚本来绕过？"
+  - "问：注入脚本是否暴露了与本地高权限进程（如 avp.exe / SYSTEM 服务）通信的命令接口？"
+  - "问：通过命令接口可以执行哪些操作？（禁用功能、修改黑白名单、触发内部处理逻辑）"
+  - "问：内部处理逻辑的攻击面是否可以进一步升级为 RCE？（如传入恶意数据触发解析 bug）"
+  - "限制条件：脚本注入是否有域名限制？（如仅特定域名前缀才注入）攻击者能否满足？"
+
+vuln_root: >
+  安全产品在浏览器扩展不可用时 fallback 到直接向网页注入脚本，
+  且对脚本地址发现和 JS 对象篡改的防护措施不充分——
+  网页可通过自下载页面和重执行脚本绕过所有保护，获取产品的特权命令接口。
+
+transferable_to:
+  - "杀毒软件的浏览器防护模块（Kaspersky, Norton, Avast, ESET）在非扩展模式下的脚本注入"
+  - "企业 DLP/Web 过滤产品通过代理注入 JS 到页面的场景"
+  - "家长控制软件在浏览器中注入监控/过滤脚本"
+  - "广告拦截/隐私保护工具的 non-extension fallback 机制"
+  - "任何通过网络代理/驱动层向 HTTP 响应注入 JS 脚本的安全产品"
+
+cases:
+  - url: "https://hackerone.com/reports/470544"
+    title: "Unauthorized command execution in Web protection component of Anti-Virus products family"
+    platform: "Kaspersky"
+    severity: "Medium"
+    cve: "CVE-2019-15685"
+    note: >
+      Kaspersky Internet Security 19.0，Chrome 71。
+      无扩展时 fallback 注入脚本，网页自下载获取脚本地址后篡改 JS 对象并重执行，
+      完整控制命令接口，禁用 Anti-Banner/Private Browsing，潜在 SYSTEM RCE。
+      域名需以 "www.google." 开头（可用攻击者子域名满足如 www.google.attacker.com）。
+  - url: "https://hackerone.com/reports/470553"
+    title: "Unauthorized command execution in Web protection component of Anti-Virus products family [FF, Chrome]"
+    platform: "Kaspersky"
+    severity: "Medium"
+    cve: "CVE-2019-15685"
+    note: >
+      Kaspersky Internet Security 19.0，Firefox 64 / Chrome 71。
+      与 470544 同系列但不同入口路径：浏览器扩展已安装时，URL Advisor frame
+      通过 window.postMessage() 向父页面传数据但未限制 targetOrigin，
+      网页可替换 frame 内容并截获消息，获取 Kaspersky 命令接口的 URL 位置。
+      结果相同：完整控制命令接口，禁用 Anti-Banner/Private Browsing，
+      潜在 SYSTEM RCE。域名需以 "www.google." 开头。

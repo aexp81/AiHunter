@@ -1,0 +1,78 @@
+name: "服务用户拥有日志目录 + logrotate 竞态条件——符号链接重定向 root 写入任意目录提权"
+id: "LOGROTATE_RACE_SYMLINK_LOG_DIR_OWNED_PRIVESC"
+applicable: "whitebox"
+phase: "chain"
+also_phases: ["authz"]
+tags: ["logrotate", "race-condition", "symlink", "privilege-escalation", "log-directory", "root", "toctou", "gitlab", "omnibus"]
+source: "https://hackerone.com/reports/578119"
+
+# ——— L3 核心 ———
+
+observation: >
+  GitLab Omnibus 安装将日志目录 /var/log/gitlab/ 的所有者设为 git 用户，
+  而 logrotate 以 root 身份运行，处理该目录下的日志文件。
+  (原文: "Gitlab sets the ownership of the logdirectory to the system-user \"git\",
+  which might let local users obtain root access because of unsafe interaction
+  with logrotate."
+  以及 "drwxr-xr-x 19 git root 4096 May 12 18:43 /var/log/gitlab/")
+
+hypothesis: >
+  由于 git 用户拥有日志父目录，可以在 logrotate 处理日志文件的瞬间
+  将子目录替换为指向敏感目录（如 /etc/bash_completion.d、/etc/cron.d）的符号链接；
+  logrotate 作为 root 会将文件写入符号链接指向的目标目录，
+  并将文件所有者改为 git，从而实现任意目录写入。
+  (原文: "Due to logrotate is prone to a race-condition it is possible
+  for user \"git\" to replace the directory /var/log/gitlab/gitlab-workhorse/
+  with a symbolik link to any directory(for example /etc/bash_completion.d).
+  Logrotate will place files AS ROOT into /etc/bash_completition.d
+  and set the owner of the file to \"git\".")
+
+action_result: >
+  使用 logrotten 工具利用 logrotate 竞态条件，将
+  /var/log/gitlab/gitlab-workhorse/ 替换为指向 /etc/bash_completion.d 的符号链接 →
+  logrotate 将轮转后的文件写入 /etc/bash_completion.d 并设置 git 为所有者 →
+  攻击者将反弹 shell 写入该文件 → root 登录时触发 bash_completion 脚本 → 获得 root shell。
+  (原文: "Renamed /var/log/gitlab/gitlab-workhorse with
+  /var/log/gitlab/gitlab-workhorse2 and created symlink to /etc/bash_completion.d"
+  以及 "uid=0(root) gid=0(root) groups=0(root)")
+
+why_here_first: >
+  未叙述（仅结果）——报告未说明为何先检查日志目录权限，
+  但可推断：日志目录的所有权是本地提权审计的经典检查点，
+  特别是使用 Omnibus 打包的应用程序常将大量目录交给服务用户拥有。
+
+chaining: >
+  服务用户（git）拥有日志目录 →
+  logrotate 以 root 身份处理该目录中的文件（TOCTOU 竞态窗口）→
+  符号链接替换将 root 写入重定向到 /etc/bash_completion.d 或 /etc/cron.d →
+  写入的文件由 git 用户控制内容 →
+  root 登录或 cron 触发时执行恶意代码 → root 提权。
+  (原文: "It might be possible to exploit this bug without interaction
+  of user root by writing into /etc/cron.d or anything similar.")
+
+approach: >
+  审计应用安装后各目录权限，识别服务用户（git/www-data/postgres 等）拥有的目录
+  中是否有被 root 级定时任务（logrotate/cron/systemd timer）处理的路径；
+  若 logrotate 配置中的日志路径在服务用户可控目录下，
+  利用 logrotten 等工具测试 TOCTOU 竞态条件，通过符号链接将 root 写入重定向。
+
+reasoning_chain:
+  - "问：目标应用的服务用户（git/www-data/postgres 等）拥有哪些目录？"
+  - "问：这些目录中是否有被 root 运行的 logrotate/cron 处理的路径？"
+  - "问：logrotate 配置中是否缺少 su 指令（指定 logrotate 以非 root 用户处理文件）？"
+  - "问：logrotate 配置是否使用通配符（*.log）？——通配符增加竞态窗口"
+  - "如果服务用户拥有日志目录且 logrotate 以 root 运行 → 尝试 logrotten 竞态利用"
+  - "问：符号链接指向的目标目录中，root 会自动执行哪些文件？（/etc/cron.d、/etc/bash_completion.d、/etc/profile.d）"
+  - "问：是否还有其他 root 定时任务处理服务用户可控路径？（systemd timer、anacron）"
+
+vuln_root: "开发者假设服务用户拥有日志目录仅影响日志文件本身，但 logrotate 以 root 运行并信任目录结构不变——TOCTOU 竞态窗口允许服务用户通过符号链接将 root 写入重定向到任意目录。"
+
+transferable_to:
+  - "使用 Omnibus/打包安装且服务用户拥有日志目录的应用程序（GitLab、Mattermost、Sentry 自建等）"
+  - "Docker 容器中以非 root 服务用户运行但 logrotate 以 root 运行的部署"
+  - "任何将日志目录所有权交给应用用户的 Linux 服务配置"
+  - "其他以 root 身份处理用户可控路径的定时任务（backup scripts、log aggregators）"
+
+cases:
+  - url: "https://hackerone.com/reports/578119"
+    note: "GitLab Omnibus /var/log/gitlab/ 由 git 用户拥有，logrotate 以 root 运行处理 *.log，利用 logrotten 竞态条件将日志目录替换为符号链接指向 /etc/bash_completion.d，root 登录后触发反弹 shell。"

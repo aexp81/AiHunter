@@ -1,0 +1,83 @@
+name: "非特权进程抢占本地 RPC 端口——冒充钱包服务捕获客户端命令"
+id: "LOCAL_PORT_PREBIND_RPC_IMPERSONATION"
+applicable: "both"
+phase: "auth"
+also_phases: ["logic"]
+tags: ["local-attack", "port-hijack", "rpc", "server-impersonation", "monero", "wallet", "digest-auth", "multi-user", "cryptocurrency"]
+source: "https://hackerone.com/reports/462442"
+
+# ——— L3 核心 ———
+
+observation: >
+  Monero 钱包 RPC 服务器使用 HTTP Digest 认证，但该认证仅验证客户端身份（client→server），
+  不验证服务端身份——任何进程都可以绑定同一端口冒充 RPC 服务器。
+  (原文: "The digest access authentication mechanism does not help here because it
+  only authenticates the client.")
+
+hypothesis: >
+  如果非特权攻击者进程在受害者启动 RPC 服务器之前抢占端口（port pre-binding），
+  真正的 RPC 进程将因端口已占用而启动失败，而攻击者的恶意服务器则会接收所有客户端命令
+  （如 create_wallet），从而获得对新钱包的控制权。
+  (原文: "it is possible to perform server impersonation on the Monero wallet by
+  hijacking the port number before the victim starts the RPC server")
+
+action_result: >
+  成功：在多用户系统中，攻击者以非特权用户身份后台运行恶意进程抢占 RPC 端口。
+  受害者启动 RPC 服务器失败但无 GUI 提示（特别是设置开机自启时），
+  受害者的 RPC 客户端连接到攻击者的假服务器，攻击者捕获 create_wallet 等命令。
+  无扑空叙述（直接描述攻击路径）。
+  (原文: "The RPC executable will fail to start if the port that it uses has already
+  been taken... an aggressively-caching user may attach the RPC executable to the
+  operating system's startup... the victim will not notice the failure and thus
+  assume that the RPC server is running")
+
+why_here_first: >
+  研究者此前在 Usenix Security 和 DefCon 上展示了对密码管理器和硬件令牌的类似攻击，
+  将本地端口抢占模型迁移到加密货币钱包的 RPC 接口。
+  (原文: "Recently, we have shown similar critical vulnerabilities in many well-known
+  password managers, hardware tokens, and other security-critical applications
+  at Usenix Security and DefCon")
+
+chaining: >
+  本地端口抢占（非特权）→ RPC 服务器启动失败（无 GUI 通知）→
+  客户端连接到假服务器 → 攻击者捕获 create_wallet 命令 → 新钱包由攻击者控制。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对本地运行的安全敏感 RPC/IPC 服务（钱包、密码管理器、2FA 代理等），
+  检查其是否仅使用单向认证（只验证客户端不验证服务端），
+  以及非特权用户是否可以抢占同一端口来冒充服务。
+  重点关注无 TLS mutual auth 的 HTTP RPC 和开机自启但无 GUI 反馈的场景。
+
+reasoning_chain:
+  - "问：目标应用是否在本地监听 RPC/API 端口？（localhost:port 或 0.0.0.0:port）"
+  - "问：该端口的认证机制是否仅验证客户端身份？（HTTP Digest、Basic Auth 只认证 client→server）"
+  - "问：是否有 TLS mutual auth 或其他服务端身份验证机制？"
+  - "问：非特权用户是否可以绑定同一端口？（大多数 OS 允许 >1024 端口的任意用户绑定）"
+  - "如果非特权可绑定且无服务端认证 → 端口抢占可冒充服务"
+  - "问：真正的服务启动失败时，是否有可见的错误通知？（无 GUI 的 daemon 模式尤其危险）"
+  - "问：通过假服务器可以捕获哪些敏感操作？（创建账户、转账、认证令牌等）"
+  - "扩展：是否可以在重启/自启场景中稳定复现？"
+
+vuln_root: >
+  RPC 服务仅使用单向客户端认证（HTTP Digest），未实现服务端身份验证（如 TLS），
+  且用户态端口无绑定互斥机制——开发者假设只有合法进程会监听该端口。
+
+transferable_to:
+  - "加密货币钱包的本地 RPC 接口（Bitcoin Core、Ethereum geth、Litecoin 等）"
+  - "密码管理器的本地代理（1Password CLI、Bitwarden CLI 等）"
+  - "开发工具的本地调试端口（IDE 调试器、Node.js inspector）"
+  - "2FA/FIDO 代理的本地 IPC 接口"
+  - "任何在 localhost 监听且无 mutual TLS 的安全敏感服务"
+
+cases:
+  - url: "https://hackerone.com/reports/462442"
+    title: "Unauthorized access of Monero wallet by an unprivileged process"
+    platform: "Monero"
+    severity: "High"
+    bounty: "无赏金"
+    note: >
+      非特权进程抢占 monero-wallet-rpc 端口，HTTP Digest 仅验证客户端，
+      攻击者冒充 RPC 服务器捕获 create_wallet 等命令，获得新钱包控制权。
+      攻击模型：多用户系统 / 企业环境 / guest 账户 / SSH 远程登录。

@@ -1,0 +1,40 @@
+name: "内部微服务 JWT 签名验证缺陷——认证绕过链到全站存储型 XSS"
+id: "MICROSERVICE_JWT_SIGNATURE_BYPASS"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["input"]
+tags: ["jwt", "authentication-bypass", "signature-verification", "stored-xss", "microservice", "tiktok"]
+source: "https://hackerone.com/reports/1328546"
+
+observation: >
+  TikTok Ads 平台的 intelbot 服务未正确验证 JWT 签名。
+  (原文团队摘要: "authentication bypass and site wide stored XSS vulnerability was found
+  on TikTok Ads as JWT was not verified properly")
+
+hypothesis: "未叙述（仅结果）"
+action_result: >
+  伪造/篡改 JWT 以任意身份访问 intelbot 服务，读取工单信息，并注入持久化 XSS。
+  (原文: "authentication bypass...leading to ticket information")
+
+why_here_first: "未叙述（仅结果）"
+chaining: "JWT 签名绕过 → 认证绕过 → 数据泄露 + 全站存储型 XSS"
+
+approach: >
+  对使用 JWT 认证的内部微服务端点，测试签名验证缺陷：修改 payload 保留签名、
+  设置 alg=none、RS256→HS256 密钥混淆，绕过认证后链接存储型 XSS。
+
+reasoning_chain:
+  - "问：目标 API 中哪些端点使用 JWT 认证？（拦截请求分析 Authorization header）"
+  - "问：修改 JWT payload 但保留签名，请求是否仍被接受？"
+  - "问：设置 alg=none 或 RS256→HS256 密钥混淆后是否绕过验证？"
+  - "如果绕过 → 枚举内部微服务端点，测试数据访问和 XSS 注入"
+
+vuln_root: "内部微服务未正确验证 JWT 签名，主服务与子服务的认证逻辑不一致。"
+
+transferable_to:
+  - "大型平台中由不同团队开发的内部微服务"
+  - "使用 JWT 进行服务间认证的架构"
+
+cases:
+  - url: "https://hackerone.com/reports/1328546"
+    note: "TikTok Ads intelbot JWT 绕过 + Stored XSS，$15,000，Critical。"

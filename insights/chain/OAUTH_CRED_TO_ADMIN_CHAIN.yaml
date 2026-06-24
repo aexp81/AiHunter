@@ -1,0 +1,27 @@
+name: "组合拳：凭证泄露→自助注册→grant切换→参数提权 的递进串链"
+id: "OAUTH_CRED_TO_ADMIN_CHAIN"
+applicable: "blackbox"
+phase: "chain"
+also_phases: [recon, auth, authz]
+tags: [chain, oauth, privesc, methodology]
+approach: "把每步'扑空/半个洞'当作'下一步缺什么'的导航信号，缺什么就回前端/接口找什么，循环推进"
+source: "https://mp.weixin.qq.com/s/R-3uPkL88iBndFoWnw9lpA"
+
+observation: "单看每一步都是'半个洞'：凭证泄露但无权限、能注册但只是 GUEST、token 有效但接口 403"
+hypothesis: "每次扑空不是终点，而是'下一步需要什么'的提示——缺什么就回前端/接口找什么"
+action_result: '泄露凭证→注册普通账号→拿低权限 token→发现权限不足→分析前端找到管理员 ownerId→注册管理员账号→拿高权限 token→访问全部受限接口 (原文利用路径节选: "泄露凭证 → 注册普通账号 → 获取低权限 Token → 发现权限不足 → 分析前端找到管理员 ownerId → 注册管理员账号 → 获取高权限 Token")'
+why_here_first: "元思路：黑盒提权常是多个低危的链式叠加；每一步的'失败响应'本身指明了下一步该补的能力"
+chaining: "本条即串链元思路，串联 COMMENTED_JS_CRED_LEAK → OAUTH_GRANTTYPE_PIVOT → FRONTEND_ROLE_MAPPING_PRIVESC"
+
+reasoning_chain:
+  - "问：当前这步卡在哪（缺凭证/缺用户/缺权限）？这是终点还是'缺一块拼图'？"
+  - "问：失败响应在暗示下一步需要什么能力？（无权限→需更高角色；需用户→找注册）"
+  - "问：补这块能力的线索最可能在哪（前端 JS / 未授权接口 / 注册流程）？"
+  - "如果补齐：问：回到卡住的那步重试，是否推进一格？循环直到拿到目标权限。"
+vuln_root: "系统在多个环节各自做了'局部信任'假设，单点都不致命，但链起来形成完整提权路径"
+transferable_to:
+  - "任何认证/授权由多组件拼装的系统（OAuth + 注册 + RBAC）"
+  - "把'单步扑空'当作导航信号而非死路的通用挖洞方法论"
+cases:
+  - note: "护网实战：四环组合拳从未认证到管理员"
+    source: "https://mp.weixin.qq.com/s/R-3uPkL88iBndFoWnw9lpA"

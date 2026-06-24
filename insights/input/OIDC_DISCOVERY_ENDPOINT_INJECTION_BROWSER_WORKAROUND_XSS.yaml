@@ -1,0 +1,72 @@
+name: "OIDC Discovery Endpoint 返回值未编码直接拼入浏览器特例 HTML 中导致 Stored XSS"
+id: "OIDC_DISCOVERY_ENDPOINT_INJECTION_BROWSER_WORKAROUND_XSS"
+applicable: "whitebox"
+phase: "input"
+also_phases: ["auth"]
+tags: ["oidc", "discovery-endpoint", "safari-workaround", "meta-refresh", "stored-xss", "csp-limited", "nextcloud", "sso"]
+source: "https://hackerone.com/reports/1687410"
+
+# ——— L3 核心 ———
+
+observation: >
+  审计 Nextcloud user_oidc 插件的 LoginController.php 时，发现一段 Safari 浏览器专用
+  workaround 代码——当 User-Agent 包含 "Safari" 且不包含 "Chrome" 时，不使用标准重定向
+  而是返回 DataDisplayResponse 拼接 meta refresh HTML，且 $url 未经编码直接拼入。
+  (原文: "A workaround that was apparently implemented for the Safari browser enables
+  stored Cross-Site-Scripting (XSS)." 代码: "return new Http\DataDisplayResponse('<meta
+  http-equiv=\"refresh\" content=\"0; url=' . $url . '\" />');")
+
+hypothesis: >
+  如果 $url 来源于 OIDC discovery endpoint 的 authorization_endpoint 字段，而该字段
+  由外部 IdP 控制，那么恶意 IdP 管理员可以在 authorization_endpoint 中注入 HTML/JS，
+  通过 Safari workaround 路径触发 Stored XSS。
+  (原文: "The mocked discovery endpoint responds as follows:
+  \"authorization_endpoint\":\"'\\\" http-equiv=><svg/onload=alert(document.domain)>\"")
+
+action_result: >
+  配置一个恶意 OIDC provider，将 discovery endpoint 中 authorization_endpoint 设置为
+  包含 XSS payload 的值。当 Safari 用户发起登录流程时，服务端返回的 meta refresh HTML
+  中包含未编码的恶意内容，SVG onload 事件触发。但 CSP 头 "default-src 'none'" 阻止了
+  JS 实际执行，影响受限。
+  (原文: "The execution of JavaScript is prevented by the Content-Security-Policy header")
+
+why_here_first: >
+  审计 OIDC 登录流程代码时，注意到针对特定浏览器（Safari）的兼容 workaround 分支，
+  这类"非主路径"代码通常安全审计覆盖不足。
+  (原文: "Workaround to avoid empty session on special conditions in Safari
+  https://github.com/nextcloud/user_oidc/pull/358")
+
+chaining: >
+  如果 CSP 配置不够严格或在其他部署场景中缺少 CSP，该 XSS 可用于窃取管理员 session。
+  当前场景下因 CSP 限制影响较低。
+
+approach: >
+  审计 SSO/OIDC 集成代码中针对特定浏览器的 workaround 分支，检查外部 IdP 返回的
+  discovery metadata（authorization_endpoint 等）是否在非标准渲染路径中被未编码直接拼入 HTML。
+
+reasoning_chain:
+  - "问：目标是否集成了 OIDC/SAML SSO？登录流程中是否有针对特定浏览器的兼容代码分支？"
+  - "问：这些浏览器兼容分支是否使用了非标准的响应方式（如 meta refresh 而非 302 redirect）？"
+  - "问：OIDC discovery endpoint 返回的字段（authorization_endpoint / token_endpoint / issuer）是否经过输出编码后才拼入 HTML？"
+  - "如果发现未编码拼接 → 检查 CSP 策略是否足够严格以缓解 XSS"
+  - "如果 CSP 宽松 → 完整 Stored XSS，可接管任何通过该 IdP 登录的用户会话"
+
+vuln_root: "浏览器兼容 workaround 绕过了主路径的安全控制（标准 redirect），在备用渲染路径中直接拼接外部可控数据到 HTML 而未编码。"
+
+transferable_to:
+  - "任何自托管 SSO 集成（Nextcloud / GitLab / Mattermost 等）中有浏览器兼容 workaround 的代码路径"
+  - "使用 meta refresh 替代 HTTP redirect 的身份验证流程"
+  - "OIDC RP 实现中直接渲染 discovery metadata 字段的场景"
+  - "SAML 集成中直接渲染 IdP metadata XML 字段的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/1687410"
+    title: "[user_oidc] Stored XSS via Authorization Endpoint - Safari-Only"
+    platform: "Nextcloud"
+    severity: "Low (CSP mitigated)"
+    bounty: "有赏金"
+    note: >
+      Nextcloud user_oidc 插件 LoginController.php 中 Safari workaround 代码
+      直接将 OIDC authorization_endpoint 拼入 meta refresh HTML。
+      恶意 IdP 可注入 XSS，但被严格 CSP (default-src 'none') 缓解。
+      CVE-2022-39338。

@@ -1,0 +1,77 @@
+name: "角色降级后已订阅/缓存的聚合视图未清退——低权限用户持续获取敏感数据"
+id: "ROLE_DOWNGRADE_CACHED_VIEW_STALE_ACCESS"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["access-control", "role-downgrade", "stale-access", "dashboard", "subscription", "gitlab", "security-dashboard"]
+source: "https://hackerone.com/reports/853355"
+
+# ——— L3 核心 ———
+
+observation: >
+  用户 B 曾以 maintainer 身份将私有项目添加到个人安全仪表盘，
+  当 B 被降级为 guest 后，直接访问项目安全仪表盘会被拦截（提示无权限），
+  但通过个人安全仪表盘仍可持续看到该项目的新旧安全漏洞。
+  (原文: "if user was previously a maintainer in the project he/she can add the
+  project to their security dashboard and when their access levels decreases to guest,
+  they can still view new security vulnerabilities result found in the project
+  through their security dashboard. New security issues found in the project are
+  reflecting back to the guest user security dashboard.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：系统仅在用户直接访问项目资源时检查当前角色，
+  而聚合视图（安全仪表盘的订阅列表）在角色变更时未被清退，
+  导致间接路径绕过了权限检查。
+
+action_result: >
+  验证步骤：A 创建私有项目 → 邀请 B 为 maintainer → B 添加项目到安全仪表盘 →
+  A 将 B 降级为 guest → B 直接访问项目安全仪表盘被拦截 →
+  B 通过个人安全仪表盘仍能看到项目的新旧安全漏洞及新添加的文件/依赖信息。
+  (原文: "User B access the project new as well as old security issues through
+  his security dashboard and also the specific new files where the issues lies")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  N/A — 单步授权绕过即造成持续信息泄露。但报告者指出影响链：
+  恶意用户利用泄露的安全漏洞信息可进一步攻击目标应用。
+  (原文: "A malicious user can take advantage of the security issues found
+  and can use it to exploit the owner application")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  测试"角色降级/移除后，用户先前订阅/缓存的聚合视图（仪表盘、Feed、通知、收藏列表）
+  是否仍能通过间接路径访问原本受限的资源"——检查的不是直接访问权限，
+  而是订阅关系是否随角色变更同步清退。
+
+reasoning_chain:
+  - "问：目标系统是否有'订阅/关注/添加到仪表盘/收藏'类功能，让用户将资源加入个人聚合视图？"
+  - "问：这些聚合视图（仪表盘、Feed、通知流、收藏列表）的数据拉取是否独立于原始资源的直接访问 ACL？"
+  - "问：当用户角色被降级（如 maintainer→guest）或被移除时，已建立的订阅关系是否被清退？"
+  - "验证：以高权限用户身份订阅/添加资源到聚合视图 → 降级为低权限 → 直接访问资源确认被拦截 → 通过聚合视图检查是否仍能看到资源内容"
+  - "问：降级后，聚合视图中是否能看到降级之后新产生的数据（而非仅缓存的旧数据）？"
+  - "如果能看到新数据 → 确认是实时拉取而非缓存残留，属于授权绕过而非信息残留"
+
+vuln_root: >
+  开发者在直接资源访问路径上正确实施了 ACL 检查，
+  但忽略了聚合视图（仪表盘/订阅/Feed）的间接路径——
+  订阅关系在角色变更时未被同步清退，导致低权限用户通过"旁路"持续获取数据。
+
+transferable_to:
+  - "任何有'个人仪表盘/收藏夹/关注/订阅'功能的多角色 SaaS 平台"
+  - "GitLab/GitHub/Bitbucket 等代码托管平台的安全仪表盘、Issue 订阅、通知流"
+  - "项目管理工具（Jira/Asana/Trello）的 Board 订阅和 Feed 聚合"
+  - "企业 BI/数据平台的已保存仪表盘和定时报告"
+  - "云控制台中的资源组/收藏夹——用户被移出组织后已收藏资源是否仍可见"
+
+cases:
+  - url: "https://hackerone.com/reports/853355"
+    title: "Unauthorized access to private project security dashboard"
+    author: "vaib25vicky"
+    platform: "GitLab"
+    severity: "Medium"
+    note: >
+      guest 用户通过个人安全仪表盘的订阅关系，持续获取私有项目的
+      安全漏洞信息（含新发现的漏洞和新添加的文件/依赖），
+      尽管直接访问项目安全仪表盘已被正确拦截。

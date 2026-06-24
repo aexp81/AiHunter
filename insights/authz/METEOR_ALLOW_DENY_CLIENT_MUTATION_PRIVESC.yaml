@@ -1,0 +1,38 @@
+name: "Meteor框架allow-deny规则被绕过——客户端直接修改服务端集合实现权限提升"
+id: METEOR_ALLOW_DENY_CLIENT_MUTATION_PRIVESC
+applicable: blackbox
+phase: authz
+also_phases: [logic]
+tags: [meteor, framework, allow-deny, client-side-mutation, mongodb, privilege-escalation, minimongo, ddp]
+source: "https://hackerone.com/reports/261285"
+
+approach: "识别目标使用Meteor框架（DDP WebSocket协议、minimongo客户端集合）→ 测试客户端是否可通过DDP直接对服务端MongoDB集合发起insert/update/remove操作绕过allow/deny规则 → 尝试修改用户角色/权限字段实现提权"
+
+# L3 核心（no-content报告，L3均标未叙述，从团队摘要提取approach）
+observation: "未叙述（仅结果）——研究者发现Legal Robot使用Meteor框架的allow-deny包存在严重权限提升漏洞 (团队摘要: 'A security researcher discovered a potentially serious privilege escalation issue in our system which was ultimately traced to our use of the allow-deny package provided in the open source Meteor framework')"
+hypothesis: "未叙述（仅结果）——推测Meteor的allow/deny规则实现存在缺陷，允许客户端绕过服务端校验直接修改集合数据"
+action_result: "成功提升至Admin级别账户。Meteor核心团队随后修复了allow-deny包并公开披露 (团队摘要: 'The Meteor team soon resolved the issue in the allow-deny package and we verified their solution; the issue has now been publicly disclosed')"
+why_here_first: "未叙述（仅结果）"
+chaining: "N/A — 单步提权至Admin"
+
+reasoning_chain:
+  - "目标应用是否使用Meteor框架？（特征：/__meteor__/ 路径、DDP WebSocket、minimongo客户端）"
+  - "是否使用了allow/deny规则而非Methods来控制数据库操作？（Meteor官方已不推荐allow/deny）"
+  - "客户端是否可通过DDP协议直接对集合发起insert/update/remove？"
+  - "allow/deny规则是否存在逻辑缺陷（如仅检查insert但未检查update，或条件判断有漏洞）？"
+  - "用户角色/权限相关的集合字段是否受到allow/deny保护？能否通过$set直接修改？"
+
+vuln_root: "Meteor的allow/deny包实现存在安全缺陷，开发者信任框架层面的权限控制但该控制可被绕过；根本问题是Meteor早期设计允许客户端直接操作服务端数据库"
+
+transferable_to:
+  - "所有使用Meteor框架allow/deny规则的应用（特别是旧版本）"
+  - "任何允许客户端直接操作数据库的实时框架（如Firebase Realtime Database规则绕过）"
+  - "GraphQL subscriptions中客户端可直接修改服务端状态的场景"
+  - "NoSQL数据库（MongoDB）结合实时同步框架的权限模型审计"
+
+cases:
+  - source: "https://hackerone.com/reports/261285"
+    target: "Legal Robot (Meteor应用)"
+    bounty: "有赏金（金额未公开）"
+    note: "allow-deny包漏洞导致Privilege Escalation to Admin，Meteor核心团队修复并公开披露"
+    disclosure: "https://blog.meteor.com/meteor-allow-deny-vulnerability-disclosure-baf398f47b25"

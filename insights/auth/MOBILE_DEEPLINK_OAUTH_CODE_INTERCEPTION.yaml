@@ -1,0 +1,38 @@
+- name: "移动端自定义URL Scheme劫持OAuth授权码（无PKCE保护）"
+  id: MOBILE_DEEPLINK_OAUTH_CODE_INTERCEPTION
+  applicable: blackbox
+  source: "https://hackerone.com/reports/1700734"
+  phase: auth
+  also_phases: []
+  tags: [mobile, oauth, deep-link, PKCE, android, ios, authorization-code]
+
+  approach: "检查移动App的OAuth回调是否使用custom URL scheme（而非Universal Links/App Links），且服务端是否强制PKCE——如果两者都不满足，恶意App可注册同一scheme截获authorization code"
+
+  # L3 核心
+  observation: "Shop App使用shopapp://作为Microsoft Outlook OAuth回调的custom URL scheme来传递authorization code (原文: 'the custom url scheme shopapp:// is used for transmitting the authorization code')"
+  hypothesis: "如果另一个App也注册同一URL scheme，就能截获授权码；且如果没有PKCE保护，截获的授权码可直接兑换token (原文: 'Another (malicious) app is also able to claim the same url scheme and can intercept the authorization code')"
+  action_result: "编写恶意Android App注册shopapp:// scheme → 成功截获Microsoft OAuth authorization code → 可兑换session token读取受害者邮件 (原文: 'The malicious App successfully intercepted the authorization code, which can now be exchanged to get a valid session token')"
+  why_here_first: "未叙述（仅结果）"
+  chaining: "截获的authorization code可用于两种攻击路径：(1) 直接兑换Microsoft session token读取受害者邮件；(2) 通过LinkOutlookAccount mutation将受害者Outlook绑定到攻击者的Shop账号 (原文: 'the attacker uses the intercepted authorization code to link the Outlook account to his own Shop account via the endpoint https://server.shop.app/graphql')"
+
+  reasoning_chain:
+    - "该App是否有OAuth集成第三方账号的功能（如连接邮箱/社交登录）？"
+    - "OAuth回调是使用custom URL scheme（app://）还是Universal Links/App Links（https:// verified）？"
+    - "如果是custom URL scheme，服务端是否强制PKCE流程（code_challenge/code_verifier）？"
+    - "如果没有PKCE，能否注册同一scheme的恶意App来截获authorization code？"
+    - "截获的authorization code能否直接兑换access token（无额外绑定验证）？"
+    - "兑换得到的token/session除了预期功能外，是否还能用于其他API操作（如绑定到攻击者账号）？"
+
+  vuln_root: "开发者假设custom URL scheme是安全的传输通道，未实现PKCE来防止授权码被第三方App截获"
+
+  transferable_to:
+    - "任何移动App中使用custom URL scheme回调的OAuth/OpenID Connect集成"
+    - "银行/金融App的第三方账号连接功能"
+    - "邮箱/日历等敏感数据的OAuth授权流程"
+    - "SSO登录使用deep link回调的场景"
+
+  cases:
+    - source: "https://hackerone.com/reports/1700734"
+      target: "Shopify Shop App + Microsoft Outlook OAuth"
+      bounty: "$900"
+      note: "Android PoC App截获Microsoft OAuth code，可读取受害者邮件或绑定到攻击者账号"

@@ -1,0 +1,81 @@
+name: "导入流程 GID 全局解析无租户归属校验——对比 export 路径发现不对称鉴权"
+id: "IMPORT_GID_CROSS_TENANT_RESOLUTION_NO_OWNERSHIP_CHECK"
+applicable: "whitebox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["import-export", "multi-tenant", "gid", "sgid", "cross-tenant", "rails", "action-text", "basecamp", "asymmetric-authz"]
+source: "https://hackerone.com/reports/3543475"
+
+# ——— L3 核心 ———
+
+observation: >
+  导入流程中 convert_gids_to_sgids 方法将攻击者控制的 gid 值全局解析并铸造为持久化的 sgid，
+  未校验目标 record 是否属于导入账户。而导出路径中同一文件有明确的 account_id 校验。
+  (原文: "import-time method convert_gids_to_sgids converts attacker-controlled gid values
+  into persisted sgid values by resolving the target record globally"
+  "The import path has no tenant ownership check before minting the signed reference."
+  "For comparison, export path has an account check (record&.account_id == account.id)
+  in the same file at action_text_rich_text_record_set.rb:69")
+
+hypothesis: >
+  既然导出路径做了 account_id 校验而导入路径没有，攻击者可在导入 ZIP 中注入受害者拥有的
+  record 的 gid，导入后系统会将其解析为 sgid 并持久存储在攻击者的 rich text 中，
+  实现跨租户数据引用和泄露。
+  (原文: "In action_text_rich_text_record_set.rb, import-time method convert_gids_to_sgids
+  converts attacker-controlled gid values into persisted sgid values by resolving the
+  target record globally")
+
+action_result: >
+  两个 PoC 路径均确认漏洞：
+  1. Path A (standalone): 直接加载 action_text_rich_text_record_set.rb 运行 import_batch，
+     输出 IMPACT_CONFIRMED=true，imported 记录的 account_id 为攻击者账户，
+     但 resolved_account_id 为受害者账户。
+  2. Path B (full Rails): 端到端导入流程，同样确认 cross_account_reference=true。
+  (原文: "Path A: RESULT: IMPACT_CONFIRMED=true, imported.account_id = <attacker_account_id>,
+  resolved_account_id = <victim_account_id>"
+  "Path B: cross_account_reference=true, IMPACT_CONFIRMED=true,
+  leaked_attachable_text=@alice")
+
+why_here_first: >
+  研究者对 Rails ActionText 的 GID/SGID 机制有理解，审计导入代码时
+  对比了同一文件中 export（第69行）和 import（第83-89行）的处理逻辑，
+  发现 export 有 account_id 归属校验而 import 缺失。
+  (原文: "app/models/account/data_transfer/action_text_rich_text_record_set.rb:83-89"
+  vs "export path has an account check (record&.account_id == account.id)
+  in the same file at action_text_rich_text_record_set.rb:69")
+
+chaining: >
+  单步即可跨租户泄露数据：导入含恶意 gid 的 ZIP → 系统铸造 sgid →
+  攻击者上下文中渲染受害者的 attachable 数据。sgid 持久存储直到手动清除。
+  (原文: "Persisted unauthorized reference (sgid) remains stored until removed")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对多租户 SaaS 的导入/导出功能做对称性审计：导出路径通常有归属校验（防止导出他人数据），
+  但导入路径可能遗漏——因为开发者假设导入数据来自合法的导出包。
+  特别关注 GID/SGID、外键引用等全局解析机制：import 时是否校验 record 归属于当前租户。
+
+reasoning_chain:
+  - "问：该应用的导入功能处理哪些序列化引用（GID、foreign key、attachment URL）？"
+  - "问：导出路径对这些引用做了哪些归属校验（account_id / tenant_id check）？"
+  - "问：导入路径在反序列化/解析这些引用时，是否做了同等的归属校验？"
+  - "如果不对称 → 在导入 payload 中注入属于其他租户的引用 ID，观察是否被全局解析"
+  - "问：解析后的跨租户引用是否被持久化（sgid / 外键绑定）？渲染时是否可见？"
+
+vuln_root: >
+  开发者在导出路径做了租户归属校验但在导入路径遗漏，假设导入数据来自合法导出包
+  因此无需再次验证引用的归属。
+
+transferable_to:
+  - "Rails ActionText GID/SGID 机制的多租户 SaaS（Basecamp、HEY 等 37signals 产品）"
+  - "任何有导入/导出功能且使用全局 ID 解析的多租户系统"
+  - "GitLab 项目导入（已有 foreign key 注入变种，见 PROJECT_IMPORT_FOREIGN_KEY_INJECTION）"
+  - "Notion/Confluence 等有数据导入功能的协作平台"
+  - "电商平台的店铺数据导入（商品引用、用户引用等可能跨租户解析）"
+
+cases:
+  - source: "https://hackerone.com/reports/3543475"
+    title: "Cross-tenant ActionText GID reference resolution in fizzy.do import flow (Basecamp)"
+    bounty: "$218"
+    note: "白盒代码审计，对比 export 第69行和 import 第83-89行的不对称校验"

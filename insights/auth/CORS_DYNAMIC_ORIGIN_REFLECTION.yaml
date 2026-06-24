@@ -1,0 +1,104 @@
+name: "检测动态 Origin 反射——找 CORS 无白名单验证的高危误配置"
+id: "CORS_DYNAMIC_ORIGIN_REFLECTION"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["recon"]
+tags: ["cors", "origin", "sop-bypass", "credential", "api-key", "null-origin", "subdomain"]
+source: "https://portswigger.net/research/exploiting-cors-misconfigurations-for-bitcoins-and-bounties"
+
+# ——— L3 核心 ———
+
+observation: >
+  响应头中出现 Access-Control-Allow-Origin 和 Access-Control-Allow-Credentials: true，
+  但 Allow-Origin 的值与请求中 Origin 头的值完全相同（动态反射），
+  而不是写死的白名单值。
+  (原文: "many servers programmatically generate the Access-Control-Allow-Origin header
+  based on the user-supplied Origin value. This is the single most common CORS vulnerability.
+  If you see a HTTP response with any Access-Control-* headers but no origins declared,
+  this is a strong indication that the server will generate the header based on your input.")
+
+hypothesis: >
+  若服务器动态反射 Origin 且附带 credentials: true，任何域名（包括攻击者域名）
+  都可以跨域读取该接口的响应，包括 cookie、API key 等敏感数据。
+
+action_result: >
+  测试1（直接反射）：发送 Origin: https://attacker.com →
+  响应中 Access-Control-Allow-Origin: https://attacker.com + Credentials: true →
+  成功，可构造 XHR PoC 读取受害者数据。
+  (原文案例：bitcoin exchange API key 被直接反射 Origin 泄露)
+
+  测试2（null origin 绕过）：
+  发送 Origin: null →
+  若响应中 Access-Control-Allow-Origin: null + Credentials: true →
+  可通过 sandboxed iframe 发起请求（iframe 的 origin 为 null）：
+  <iframe sandbox="allow-scripts allow-top-navigation allow-forms"
+    src='data:text/html,<script>/* CORS exploit */</script>'></iframe>
+  (原文: "any website can easily obtain the null origin using a sandboxed iframe")
+
+  测试3（URL 解析器欺骗）：
+  发送 Origin: http://trusted.com`.attacker.com →
+  某些解析器将 hostname 识别为 trusted.com 并反射，实际请求来自 attacker.com。
+  在 Safari 中有效（支持 backtick 字符）；在 Firefox/Chrome 中用 _ 替换。
+  (原文: "this is a valid URL in Safari - http://example.com`.hackxor.net/static/cors.html")
+
+  测试4（子域白名单绕过）：
+  目标信任 *.trusted.com（所有子域），
+  测试 Origin: https://evil.trusted.com 或 Origin: http://trusted.com.attacker.com →
+  (原文: "a site which I'll call advisor.com trusts all origins that ended in advisor.com,
+  including definitelynotadvisor.com")
+
+why_here_first: >
+  API 接口（尤其需要认证的 /api/ 路径）是 CORS 误配置的高发点：
+  开发者为支持跨域前端调用而添加 CORS，但动态生成 Origin 头是最简单的实现方式，
+  导致直接反射。响应头中有 Access-Control-* 但无具体 Origin 值是关键信号。
+  (原文: "Other servers will only send CORS headers if they receive a request containing
+  the Origin header, making associated vulnerabilities extremely easy to miss.")
+
+chaining: >
+  CORS 误配置本身允许跨域读取受害者的认证 API 响应。
+  危害升级链：
+  1. 读取 API key / CSRF token → 接管账户
+  2. 读取私有 API 响应 → 绕过授权检查泄露敏感数据
+  3. 结合 XSS：若信任域有 XSS，则可读取主域的 CORS 受保护数据
+  4. 无 credentials 时：读取内网 IP 认证的内部服务（victim 浏览器作代理）
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对所有 API 接口发送带 Origin 头的请求，观察响应中是否动态反射 Origin 值
+  且同时设置 credentials: true；如有则尝试 null origin / 子域绕过 / URL 解析欺骗等变体。
+
+reasoning_chain:
+  - "问：目标 API 接口的响应中是否含有 Access-Control-Allow-Credentials: true 头？"
+  - "如果有：问：Access-Control-Allow-Origin 是写死的特定域，还是反射了请求中的 Origin 值？"
+  - "黑盒：在 Burp 中对目标接口发送请求，在 Origin 头设为 https://evil.com，观察响应中 ACAO 是否变成 https://evil.com。"
+  - "如果直接反射：构造 XHR PoC（withCredentials: true）验证是否可跨域读取响应内容。"
+  - "如果白名单存在但可能有缺陷：问：白名单是否用字符串结尾匹配（endsWith）？若是，尝试 Origin: https://notatrusted.com（包含 trusted.com 后缀）。"
+  - "问：白名单是否用字符串开头匹配（startsWith）？若是，尝试 Origin: https://trusted.com.attacker.com。"
+  - "问：服务器是否信任 null origin？发送 Origin: null，观察 ACAO 是否返回 null。若是，用 sandboxed iframe 发起请求绕过限制。"
+  - "问：目标使用 URL 解析器验证 origin？在 Safari 环境尝试 Origin: http://trusted.com`.attacker.com（backtick）。"
+  - "问：目标是否信任所有子域（*.trusted.com）？查找是否有子域存在 XSS 或被第三方托管（可利用 subdomain takeover）。"
+  - "问：目标是否允许 HTTP origin 访问 HTTPS 接口？若是，结合 MITM 攻击可绕过 HTTPS 保护。"
+
+vuln_root: >
+  开发者为支持多前端域名的跨域调用，选择动态反射 Origin 头作为"最简单"的实现方式，
+  未意识到这等同于对所有域名开放跨域读取权限；
+  同时错误地认为 cookies/credentials 可以提供足够的访问控制。
+
+transferable_to:
+  - "所有返回 Access-Control-Allow-Credentials: true 的 API 接口（尤其 /api/ 路径）"
+  - "SPA 应用的后端 API，为支持开发环境 localhost 而动态放行 origin"
+  - "多子域共享 API 的大型平台（whitelisting *.example.com 时子域信任问题）"
+  - "OAuth 服务器的 token 端点（若 CORS 误配置可跨域窃取 access token）"
+  - "内网服务（无认证但通过 IP 限制访问）——受害者浏览器作代理绕过 IP 白名单"
+
+cases:
+  - source: "https://portswigger.net/research/exploiting-cors-misconfigurations-for-bitcoins-and-bounties"
+    author: "James Kettle (albinowax)"
+    note: >
+      案例1：Bitcoin exchange API 直接反射任意 Origin + credentials: true →
+      跨域读取私有 API key → 接管账户（20 分钟内修复）。
+      案例2：Google PDF reader 信任 null origin（iframe sandbox 可利用）。
+      案例3：第三个 bitcoin exchange 信任 null origin → 读取加密钱包备份文件。
+      案例4：advisor.com 信任所有以 advisor.com 结尾的 origin（包括 notadvisor.com）。
+      案例5：btc.net 信任所有以 https://btc.net 开头的 origin（包括 https://btc.net.evil.net）。

@@ -1,0 +1,53 @@
+name: "新功能导出/下载路径未继承已有访问边界——新功能上线当天即测"
+id: "NEW_FEATURE_EXPORT_BOUNDARY_BYPASS"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["new-feature", "export", "zip", "limited-disclosure", "access-boundary", "data-leak", "day-zero"]
+source: "https://hackerone.com/reports/182358"
+
+observation: >
+  平台新上线了 Export as .zip 功能，研究者注意到该功能可以导出报告内容。
+  (原文: "I noticed a new feature has been launched, which allows to export report. Great feature.")
+
+hypothesis: >
+  新功能可能没有遵守已有的 partial disclosure（限制性披露）访问控制——
+  导出应该被限制的评论可能直接包含在 zip 中。
+  (原文: "But unfortunately it discloses comments of partially disclosed reports which supposed to be hidden..")
+
+action_result: >
+  访问一个 partially disclosed 的报告，点击 Export 按钮导出 zip，
+  发现本应隐藏的评论全部出现在导出文件中。一次成功，无扑空。
+  (原文: "Go to this partially disclosed report ... Click Export Button. You'll see comments are getting disclosed!")
+
+why_here_first: >
+  新功能刚上线是最佳测试窗口——开发团队可能只考虑了主页面展示的权限，
+  未在新增的导出路径中复制相同的访问控制逻辑。
+  未叙述（仅结果）——研究者未明确描述为何第一时间关注此功能，但行为本身
+  体现了"新功能上线 → 立即测试"的导航模式。
+
+chaining: "N/A — 单步信息泄露，但泄露的是本应受限的安全报告评论内容"
+
+approach: >
+  当目标平台上线新的数据导出/批量下载功能时，立即用已知存在访问限制的对象
+  （如 limited disclosure 报告、私有内容、受 RBAC 保护的资源）测试：
+  新导出路径是否继承了原有的访问控制？
+
+reasoning_chain:
+  - "问：目标平台最近是否上线了新的导出/下载/批量操作功能？（changelog、release notes、UI 变化）"
+  - "问：平台中是否存在分级访问控制的内容？（如 limited disclosure、partial access、role-based view）"
+  - "问：用已知受限内容通过新导出功能操作，受限字段是否出现在导出结果中？"
+  - "如果受限字段出现 → 新功能的导出路径未继承原有访问控制"
+  - "问：修复后，其他导出路径（API、RSS、webhook、PDF 等）是否也已覆盖？"
+
+vuln_root: "新功能开发时未在数据导出路径中复制已有的访问控制过滤逻辑，导致受限内容通过新路径泄露。"
+
+transferable_to:
+  - "任何新增导出/批量下载功能的 SaaS 平台"
+  - "有分级披露或部分可见性设置的内容管理系统"
+  - "私有报告/文档系统中新增的 API、导出为 PDF/CSV/JSON 等路径"
+  - "企业协作工具中新上线的搜索/导出功能对已有 RBAC 的尊重"
+
+cases:
+  - url: "https://hackerone.com/reports/182358"
+    note: "HackerOne Export as .zip 泄露 partially disclosed 报告评论，上线当天发现，$10,000。"

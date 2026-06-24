@@ -1,0 +1,143 @@
+name: "聊天/命令通道绕过仅客户端实施的房间权限控制"
+id: "CHAT_COMMAND_BYPASS_CLIENT_SIDE_ACL"
+applicable: "both"
+phase: "authz"
+also_phases: ["input"]
+tags: ["access-control", "client-side-enforcement", "websocket", "chat-commands", "virtual-room", "mozilla-hubs", "bypass"]
+source: "https://hackerone.com/reports/1987011"
+
+observation: >
+  Mozilla Hubs 虚拟房间中管理员可以禁用"创建和移动对象"及"固定对象"权限。
+  但聊天功能中的 /add 命令仍然可以在房间中放置对象（包括 3D 模型和 YouTube 视频），
+  且 --no-menu 标志使对象无法被删除。
+  (原文: "I found out that this is bypassable with the usage of certain /<commands> inside
+  the chat feature. An attacker does not to be authenticated nor have joined the room
+  to perform this attack.")
+
+hypothesis: >
+  房间的权限设置（禁用创建对象）仅在客户端 UI 层面隐藏了操作按钮，
+  服务端/WebSocket 后端没有在处理 /add 命令时验证房间的 ACL 规则。
+  (原文: "The server does not validate the access control rules of the room
+  when calling the websockets requests to create an object.")
+
+action_result: >
+  成功通过 /add 命令在禁止创建对象的房间中放置鸭子模型、YouTube 视频；
+  使用 --no-menu 标志使放置的对象无法被管理员删除。
+  进一步发现：旁观者（Spectator）通过 Chrome debugger 修改
+  this.scene.is("entered") 为 true 即可在不加入房间的情况下执行命令。
+  (原文: "When enabling the debugging modus in Chrome browser, we are able to
+  set const entered = this.scene.is('entered'); to const entered=true.
+  This will allows us to execute all above commands without entering the room.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  /add 命令 + --no-menu 标志 → 创建不可删除的对象（griefing/DoS）；
+  /add 命令 + 自定义服务器 URL → 发现后端会主动请求该 URL（SSRF 信号）。
+  (原文: "When adding our own server to the /add command, we can see several
+  pingbacks coming in from the backend")
+
+approach: >
+  在具有实时协作功能的 Web 应用（虚拟房间/协作编辑器/游戏大厅）中，
+  管理员可通过设置面板配置权限（禁止创建/移动/删除对象），
+  但这些限制可能仅在 UI/前端 JS 中实施。
+  测试方法：通过替代输入通道（聊天命令/WebSocket 直接消息/API 调用）
+  发送与受限操作等效的请求，检查服务端是否独立验证权限。
+
+reasoning_chain:
+  - "问：应用是否有管理员可配置的操作权限（创建/编辑/删除/移动对象）？"
+  - "问：禁用某操作后，UI 上的按钮是否消失但服务端 API/WebSocket 端点仍存在？"
+  - "白盒：grep -rn 'is_admin\\|can_create\\|permission' --include='*.js' | grep -v node_modules"
+  - "问：权限检查代码是仅在前端（dispatch/render 层）还是后端（WebSocket handler/API controller）也有？"
+  - "白盒：grep -rn 'dispatchCommand\\|handleCommand' --include='*.js' | 查看是否有 ACL 校验"
+  - "问：是否存在替代输入通道（聊天命令 /add /spawn、WebSocket 直接消息、REST API）可以触发同等操作？"
+  - "如果替代通道跳过了 UI 权限检查 → 构造请求验证服务端是否接受"
+  - "如果服务端接受 → 确认客户端仅实施权限绕过"
+  - "问：绕过后的操作是否有额外 flag（如 --no-menu）使对象不可逆？"
+
+vuln_root: "服务端将权限实施完全委托给客户端 UI 层——UI 隐藏了操作按钮但 WebSocket/API 端点未独立验证房间权限配置。"
+
+transferable_to:
+  - "WebRTC/WebSocket 实时协作应用（虚拟会议室、白板、3D 空间）"
+  - "在线游戏大厅/创意沙盒（Roblox 类似平台的自定义房间规则）"
+  - "协作编辑工具（Figma/Miro 类）的权限配置绕过"
+  - "任何同时具有 GUI 和 CLI/API/命令通道的应用"
+  - "Slack/Discord/Teams 中的 bot 命令与频道权限的交互"
+
+cases:
+  - url: "https://hackerone.com/reports/1987011"
+    title: "[Hubs] - Broken access control in placing objects in hubs room"
+    author: "quikke"
+    platform: "Mozilla Hubs"
+    severity: "Medium"
+    note: >
+      /add 聊天命令绕过管理员禁用的"创建和移动对象"权限，--no-menu 标志使对象不可删除。
+      旁观者通过 JS debugger 修改 entered 变量也可执行。还发现 /add 自定义 URL 触发后端 SSRF pingback。
+  - url: "https://hackerone.com/reports/3112106"
+    title: "BAC – Bypass chatbot restrictions via unauthorized mention injection"
+    author: "yoyomiski"
+    platform: "Dust (AI agent platform)"
+    severity: "Medium (CVSS 5.4)"
+    note: >
+      Dust 平台中管理员禁用 Gemini chatbot 后，成员用户通过修改 POST 请求体中的
+      mention 和 configurationId 字段为 "gemini-pro"，绕过前端权限控制直接与被禁用的
+      chatbot 对话。
+      (原文: "we change mention and configurationId to gemini's 'gemini-pro' and forward
+      the request, the result is that we can chat with chatbot 'gemini' even though the
+      admin does not grant us permission")
+      approach 相同：通过修改请求参数（替代输入通道）绕过管理员配置的权限限制，
+      服务端未独立验证用户对特定 agent/chatbot 的访问权限。
+  - url: "https://hackerone.com/reports/202499"
+    title: "User with only Viewing Privilege can send message to Room"
+    author: "lucasveigaf"
+    platform: "Phabricator (Conpherence)"
+    severity: "Low"
+    bounty: "$300"
+    note: >
+      聊天室所有者给用户仅 Viewing Privilege，前端不显示消息发送表单，
+      但通过直接 POST /conpherence/update/1/ 可成功发送消息。
+      服务端未检查房间级别的 Viewing-only 权限限制。
+  - url: "https://hackerone.com/reports/145950"
+    title: "Uploading files to a folder where invited user don't have any EDIT privilege"
+    author: "detroitsmash"
+    platform: "Nextcloud"
+    severity: "Low"
+    bounty: "有赏金"
+    note: >
+      共享文件夹授予受邀用户只读权限，Web UI 正确隐藏了上传/编辑操作，
+      但 WebDAV COPY 端点未检查共享权限，通过 Android 客户端的复制功能
+      即可向只读共享文件夹写入文件。CVE-2016-9461。
+      approach 相同：UI 层面限制了操作但替代协议通道（WebDAV COPY）未独立校验权限。
+      纯结果文，无 L3 导航叙事。
+      (原文 team summary: "The WebDAV endpoint was not properly checking the permission
+      on a WebDAV 'COPY' action. This allowed an authenticated attacker with access to
+      a read-only share to put new files in there.")
+  - url: "https://hackerone.com/reports/199286"
+    title: "Group admin can remove user from all his groups via API"
+    author: "nickvergessen"
+    platform: "Nextcloud"
+    severity: "None"
+    note: >
+      Group admin 仅管理 group1 和 group2，UI 限制其只能在自己管辖的组内操作用户，
+      但通过重放 togglegroup.php 请求并替换 group 参数为任意组名，
+      可将用户从不属于自己管辖范围的组中移除。由团队成员自报。
+      approach 相同：UI 实施了组范围限制但 API 端点（togglegroup.php / provisioning_api）
+      未独立验证操作者是否为目标组的 group admin。
+      纯结果文，无 L3 导航叙事。
+      (原文: "Either the restriction should be enforced on the api endpoints
+      (not only in the UI), or the restriction in the UI should be removed.")
+  - url: "https://hackerone.com/reports/46113"
+    title: "Can message users without the proper authorization"
+    author: "jkjkjk"
+    platform: "Vimeo"
+    severity: "Low"
+    bounty: "有赏金"
+    note: >
+      Vimeo 要求用户先关注至少一个用户才能发送私信（UI 显示提示文字），
+      但直接 POST /messages 并指定任意 user ID 即可绕过关注限制发送消息。
+      服务端未校验发送者与接收者之间的关注关系。
+      approach 相同：UI 层面限制了操作但服务端 API 端点未独立校验前置条件（关注关系）。
+      纯结果文，无 L3 导航叙事。
+      (原文: "It shouldn't be possible to send messages to users without
+      following users... It's possible to bypass that by just sending a POST
+      request to /messages")

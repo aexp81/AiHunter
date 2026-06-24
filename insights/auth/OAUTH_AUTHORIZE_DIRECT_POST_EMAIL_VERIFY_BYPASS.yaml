@@ -1,0 +1,88 @@
+name: "OAuth 授权端点绕过邮箱验证前置检查——直接 POST 跳过 UI 拦截页面"
+id: "OAUTH_AUTHORIZE_DIRECT_POST_EMAIL_VERIFY_BYPASS"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["chain"]
+tags: ["oauth", "email-verification", "bypass", "alternate-path", "account-takeover", "gitlab", "3rd-party-ato"]
+source: "https://hackerone.com/reports/922456"
+
+# ——— L3 核心 ———
+
+observation: >
+  GitLab 的 OAuth 授权流程中存在邮箱未验证的前置检查，
+  UI 显示"Verify the email address in your account profile before you sign in"
+  阻止用户完成 OAuth 授权。但这个检查仅在渲染授权页面时执行。
+  (原文: "There's a limitation that requires a validated email before going through
+  the OAuth flow, however this is bypassable.")
+
+hypothesis: >
+  如果邮箱验证检查仅在前端/页面渲染阶段执行，直接向 /oauth/authorize 端点
+  POST 授权参数可能绕过这个检查，因为后端处理 POST 请求时未重复执行验证。
+  (原文: "It should also be possible to use this technique to get into internal
+  company using pages that just look for @domain.com in the email before
+  allowing them access.")
+
+action_result: >
+  成功：创建一个未验证邮箱的 GitLab 账户 → 尝试 OAuth 授权被 UI 拦截 →
+  直接用 Burp 构造 POST 请求到 /oauth/authorize（带 cookies、CSRF token、state）→
+  收到 302 重定向到第三方回调 URL，包含有效 code →
+  第三方网站（LaravelShift）使用该 code 完成登录，认为邮箱已验证，接管受害者账户。
+  (原文: "Notice the request succeeds with a 302 to LaravelShift with the code.
+  Visit that URL and notice you get logged into the victim's account from step 1.")
+
+why_here_first: >
+  未叙述（仅结果）。但报告者显然理解第三方依赖 OAuth 提供者的邮箱验证状态作为信任锚点，
+  因此专注于验证该前置检查是否可绕过。
+
+chaining: >
+  绕过 OAuth 邮箱验证前置检查 → 以未验证邮箱完成 OAuth 授权 →
+  第三方应用信任 OAuth 提供者返回的邮箱为已验证 →
+  按邮箱匹配折叠到受害者账户 → 接管第三方平台上的任意账户。
+  (原文: "This behavior can frequently lead to account takeovers in 3rd parties
+  since they often use the email as an identifier, and fold all OAuth/manually
+  created accounts into one.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  当 OAuth 提供者在授权页面显示验证拦截（如"请先验证邮箱"）时，
+  直接向 /oauth/authorize POST 表单数据（绕过 UI 渲染），
+  检查后端是否独立执行邮箱验证检查，还是仅依赖前端拦截。
+
+reasoning_chain:
+  - "问：OAuth 提供者（GitLab/GitHub/Google 等）是否要求邮箱已验证才能完成 OAuth 授权？"
+  - "问：未验证邮箱时 OAuth 授权页面是否显示拦截/错误信息？"
+  - "如果有拦截：问：拦截发生在页面渲染阶段（GET）还是表单提交阶段（POST）？"
+  - "黑盒：从被拦截的授权页面提取 client_id、redirect_uri、state、CSRF token，直接构造 POST 到 /oauth/authorize，观察是否返回 302+code。"
+  - "问：第三方应用是否基于 OAuth 提供者返回的邮箱做账户匹配/合并？是否检查 email_verified 字段？"
+  - "如果：POST 绕过成功 + 第三方按邮箱合并 → 注册含受害者邮箱的未验证账户，完成 OAuth 流程，接管受害者在第三方的账户。"
+
+vuln_root: >
+  OAuth 授权端点的邮箱验证检查仅在 GET 页面渲染时执行，
+  POST 处理授权请求时未重新校验邮箱验证状态，导致 UI 拦截可被直接 POST 绕过。
+
+transferable_to:
+  - "任何 OAuth/OIDC 提供者在授权流程中设置了前置检查（邮箱验证、2FA、ToS 同意等）——检查是否可通过直接 POST 绕过"
+  - "依赖 OAuth 提供者的 email_verified 字段做账户合并的第三方应用——尤其不独立验证该字段的"
+  - "企业内部 SSO 门户使用 @domain.com 邮箱白名单做访问控制——绕过验证后可冒充内部员工"
+
+cases:
+  - url: "https://hackerone.com/reports/922456"
+    title: "Ability to bypass email verification for OAuth grants results in accounts takeovers on 3rd parties"
+    platform: "GitLab"
+    severity: "High"
+    bounty: "$3,000"
+    note: >
+      GitLab OAuth 授权端点：直接 POST 绕过"邮箱未验证"拦截页面，
+      以未验证邮箱完成 OAuth 授权流程，在 LaravelShift 等第三方平台接管账户。
+
+  - url: "https://hackerone.com/reports/1018489"
+    title: "Ability to connect an external login service for unverified emails/accounts at accounts.shopify.com"
+    platform: "Shopify"
+    severity: "Medium (CVSS 4.2)"
+    bounty: "$1,600"
+    note: >
+      Shopify 账户系统：UI 显示"verify your email address to connect a login service"，
+      但直接构造 POST 请求到 /accounts/{id}/external-login/1 即可绕过，
+      将 Google OAuth 绑定到未验证邮箱的账户，作为后门登录入口。
+      与 GitLab 案例相同的 approach：邮箱验证仅在 UI 层拦截，服务端未独立检查。

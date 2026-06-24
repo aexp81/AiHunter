@@ -1,0 +1,91 @@
+name: "Rails _url Helper 使用 Host Header 构造 URL——操控 Host 触发服务端 SSRF"
+id: "RAILS_URL_HELPER_HOST_HEADER_SSRF"
+applicable: "both"
+phase: "input"
+also_phases: ["auth"]
+tags: ["ssrf", "rails", "host-header", "oauth", "jira", "gitlab", "unauthenticated"]
+source: "https://hackerone.com/reports/398799"
+
+# ——— L3 核心 ———
+
+observation: >
+  作者审查 Oauth::Jira::AuthorizationsController#access_token 端点，
+  发现 Gitlab::HTTP.post 调用使用了 oauth_token_url（一个 Rails _url routing helper），
+  该 helper 会使用请求的 Host header 来构造完整 URL。
+  (原文: "The GItlab::HTTP.post call is using the oauth_token_url directly.
+  This _url Rails routing helper uses the Host header to construct the URL
+  it needs to point to.")
+
+hypothesis: >
+  通过在 POST 请求中将 Host header 指向任意内部地址/端口，
+  可以让 GitLab 服务端向攻击者指定的目标发送 HTTP/HTTPS 请求，
+  实现 blind SSRF。
+  (原文: "Because every host is accepted in GitLab, the constructed URL
+  can point to an internal system... the Host header should be checked
+  before making the post call to avoid an attacker being able to make
+  arbitrary requests.")
+
+action_result: >
+  成功：使用 curl 发送 POST 请求到 /-/jira/login/oauth/access_token，
+  Host header 指向 162.243.147.21:81，观察到 GitLab 实例（35.231.137.154）
+  主动连接到目标端口，验证了 SSRF。
+  (原文: "curl -X POST -H 'Host: 162.243.147.21:81'
+  'https://gitlab.com/-/jira/login/oauth/access_token'
+  ... Observe a POST request being sent to 162.243.147.21:81")
+
+  扑空路径：未叙述（仅结果）
+
+why_here_first: >
+  未叙述（仅结果）——作者直接定位到 Jira OAuth 控制器代码并审查。
+
+chaining: >
+  Blind SSRF → 扫描内网端口/服务 → 可能触达未认证的内部端点。
+  响应被部分解析为 JSON（access_token/scope/token_type 字段），
+  但攻击者无法完全读取响应内容。
+  线程阻塞 60 秒 TCP 读超时可用于 DoS。
+  (原文: "The response of the server is actually interpreted, but this is
+  limited to a JSON response that returns an access_token, scope, and token_type...
+  a thread is blocked on the TCP read timeout, which is set to 60 seconds")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在 Rails 应用中搜索使用 _url helper（而非 _path）构造 URL 后传给
+  HTTP client 库（如 Gitlab::HTTP、Faraday、Net::HTTP）做服务端请求的代码路径。
+  如果该端点不限制 Host header，攻击者可通过操控 Host 实现 SSRF。
+
+reasoning_chain:
+  - "问：目标是 Rails 应用吗？使用了哪些 URL routing helper？"
+  - "问：代码中是否有 _url（非 _path）helper 的返回值直接传入 HTTP client 调用（如 HTTP.post/get/put）？"
+  - "问：该端点是否需要认证？未认证端点的 SSRF 影响更大。"
+  - "问：Rails 应用是否限制了 Host header？（默认允许任意 Host）"
+  - "测试：向该端点发送请求，将 Host header 替换为攻击者控制的服务器地址，观察是否收到连接。"
+  - "问：SSRF 请求是 HTTP 还是 HTTPS？HTTPS 连接会泄露 TLS SNI 信息。"
+  - "问：响应是否被解析/回显？（blind vs semi-blind vs full-read SSRF）"
+  - "问：是否设置了 allow_local_requests: true？如果是，可以访问 localhost 服务。"
+  - "问：目标网络中是否有云元数据端点（169.254.169.254）或其他敏感内部服务？"
+  - "问：TCP 超时时间是多少？超时阻塞线程可用于 DoS 放大。"
+
+vuln_root: >
+  Rails _url routing helper 使用请求的 Host header 来构造完整 URL，
+  当该 URL 被用于服务端 HTTP 请求时，未校验 Host header 导致攻击者
+  可以控制请求目标，形成 SSRF。
+
+transferable_to:
+  - "任何 Rails 应用中使用 _url helper 生成 URL 并用于服务端 HTTP 调用的场景"
+  - "OAuth callback 实现中使用 _url helper 构造 token exchange URL"
+  - "Rails 应用中任何 webhook/callback URL 基于 Host header 动态构造的端点"
+  - "使用 Gitlab::HTTP 或类似封装的 GitLab 代码中的其他控制器"
+  - "Django/Flask 等框架中类似的 url_for() + Host header 信任场景"
+
+cases:
+  - url: "https://hackerone.com/reports/398799"
+    title: "Unauthenticated blind SSRF in OAuth Jira authorization controller (GitLab)"
+    author: "jobert"
+    platform: "GitLab"
+    bounty: "$4,000"
+    note: >
+      Oauth::Jira::AuthorizationsController#access_token 使用 oauth_token_url（_url helper）
+      构造 OAuth token URL，_url helper 信任 Host header。
+      攻击者通过 curl -X POST -H 'Host: attacker:port' 触发 blind SSRF。
+      allow_local_requests: true 使本地请求也可达。

@@ -1,0 +1,62 @@
+name: "内核 syscall 多线程竞态——栈缓冲区指针被当作堆分配释放"
+id: "KERNEL_SYSCALL_RACE_STACK_POINTER_FREE_UAF"
+applicable: "whitebox"
+phase: "input"
+also_phases: ["chain"]
+tags: ["kernel", "freebsd", "use-after-free", "race-condition", "stack-pointer-free", "privilege-escalation", "ps5", "syscall"]
+source: "https://hackerone.com/reports/2900606"
+
+observation: >
+  sys_fsc2h_ctrl 系统调用中，CMD_RESOLVE 命令将 path 的指针设为本地栈缓冲区并休眠；
+  CMD_COMPLETE 向该栈缓冲区写入数据并唤醒线程。但等待同一 path 的其他线程
+  可能先于 CMD_RESOLVE 线程被唤醒，并释放该 path——而这实际是栈指针，不是堆分配。
+  (原文: "Thread 3: The command CMD_RESOLVE (0x20005) in sys_fsc2h_ctrl sets the
+  pointer of path 2 to a local stack buffer and sleeps.")
+  (原文: "Thread 2: This thread wakes up before thread 3 and it will free path 2.
+  However, that is not a malloc() allocation, but it is actually a pointer to kernel stack.")
+
+hypothesis: >
+  未叙述（仅结果）。推测：审计 sys_fsc2h_ctrl 的多线程交互时发现
+  CMD_RESOLVE 将栈指针存入共享结构，其他线程可以对该指针调用 free()，
+  触发内核栈内存被释放——这是一种特殊的 UAF / stack corruption。
+
+action_result: >
+  成功触发 kernel stack free，可被用于提权。
+  (原文: "It is possible to cause a kernel stack free in the syscall sys_fsc2h_ctrl.")
+  (原文: "Privilege escalation.")
+
+why_here_first: >
+  未叙述（仅结果）。推测：sys_fsc2h_ctrl 是 PS5 特有的系统调用，
+  其多线程同步模式（等待/解析/完成三阶段）易存在竞态，
+  且涉及多个线程操作共享路径结构。
+
+chaining: >
+  内核栈释放 → 控制释放后的栈内存内容 → 内核代码执行 → 完全提权。
+  未叙述具体利用链。
+
+approach: >
+  审计内核 syscall 中"线程 A 将栈/局部变量指针存入共享结构 → 线程 B 释放该指针"
+  的模式。关注 CMD/ioctl handler 中使用局部栈缓冲区但将其指针暴露到
+  跨线程共享结构的代码路径——当其他线程在原线程返回前释放该指针时，
+  堆分配器对栈地址执行 free() 导致内存损坏。
+
+reasoning_chain:
+  - "问：目标内核 syscall/ioctl handler 中是否有将局部栈变量指针存入共享结构的代码？"
+  - "问：多个线程是否可以并发操作同一共享结构（如 path/queue）？"
+  - "如果线程 A 把栈指针存入共享结构后休眠 → 线程 B 能否在 A 返回前释放该指针？"
+  - "问：free() 一个栈地址会导致什么后果——内核堆损坏？栈数据可控？"
+  - "问：释放后能否通过 heap spray 将可控数据放入同一内存区域？"
+
+vuln_root: >
+  内核 syscall handler 将栈缓冲区指针暴露到跨线程共享结构中，
+  假设该指针在本线程函数返回前不会被其他线程释放。
+
+transferable_to:
+  - "PS5/PS4 内核的自定义系统调用（sys_fsc2h_ctrl 及类似 handler）"
+  - "FreeBSD 及衍生系统中将局部变量指针暴露到全局/共享结构的 syscall"
+  - "任何内核中存在'临时将栈指针存入共享数据结构'模式的 ioctl/syscall handler"
+  - "用户态多线程 C 程序中类似的栈指针暴露模式"
+
+cases:
+  - url: "https://hackerone.com/reports/2900606"
+    note: "PS5 sys_fsc2h_ctrl 内核栈释放竞态 → 提权，$10,000，by theflow0。"

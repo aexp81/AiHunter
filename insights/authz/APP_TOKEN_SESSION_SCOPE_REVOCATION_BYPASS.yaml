@@ -1,0 +1,78 @@
+name: "应用令牌的文件系统权限撤销不传播到已生成的会话 Cookie"
+id: "APP_TOKEN_SESSION_SCOPE_REVOCATION_BYPASS"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["auth"]
+tags: ["access-control", "app-token", "session-cookie", "scope-revocation", "nextcloud", "filesystem", "stale-credential"]
+source: "https://hackerone.com/reports/388515"
+
+# ——— L3 核心 ———
+
+observation: >
+  Nextcloud 的 App Token 机制允许管理员在生成令牌后撤销该令牌的文件系统访问权限（"Allow file system access"）。
+  但当用户先使用该 App Token 进行认证并获取 session cookie，然后管理员撤销该令牌的文件系统权限后，
+  使用已有的 session cookie 仍然可以访问文件系统。
+  (原文团队摘要: "Obtain an App Token → Check that you can access the files with this token and save the cookies →
+  Revoke filesystem access for this token → See that you can still access the files when using the cookies.
+  At step 4 there access to the files should also be forbidden.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：App Token 的权限范围在认证时被检查并写入 session 状态，
+  但 session 本身不会在 token 权限变更时被失效或重新校验。
+  系统假设"令牌权限变更会即时生效"，但派生出的 session cookie 绕过了这个假设。
+
+action_result: >
+  验证步骤（来自团队摘要）：
+  1. 获取 App Token 并确认有文件系统访问权限
+  2. 使用该 token 认证，保存 session cookie
+  3. 撤销该 token 的文件系统访问权限
+  4. 使用保存的 session cookie 仍可访问文件 → 漏洞确认
+  预期行为：步骤 4 应被禁止访问。
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  N/A — 单步权限绕过即造成文件系统未授权访问。但在实际场景中，
+  如果管理员因安全事件紧急撤销 App Token 的文件系统权限，
+  攻击者持有的 session cookie 仍然有效，撤销动作形同虚设。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在支持多种认证机制（App Token / API Key + Session Cookie）的系统中，
+  先通过高权限令牌认证获取 session cookie，然后降低/撤销该令牌的权限范围，
+  测试已有的 session cookie 是否仍保持原有权限，验证权限变更是否传播到派生会话。
+
+reasoning_chain:
+  - "问：系统是否支持多种认证机制（API Key / App Token / OAuth Token），且认证后会发放 session cookie？"
+  - "问：这些令牌是否有细粒度权限控制（如：是否允许文件系统访问、是否只读等）？"
+  - "问：管理员/用户是否可以在令牌创建后修改其权限范围？"
+  - "如果可以 → 先用令牌认证并保存 session cookie，然后修改令牌权限或撤销令牌"
+  - "问：使用之前保存的 session cookie 访问已撤销权限的资源，是否仍然成功？"
+  - "如果成功 → 确认漏洞：权限变更未传播到派生会话，session cookie 保持了旧的权限快照"
+  - "延伸测试：撤销令牌本身（而非修改权限）后，session cookie 是否仍然有效？"
+
+vuln_root: >
+  开发者假设"撤销令牌权限等于撤销所有基于该令牌的访问"，
+  但忽略了令牌认证产生的 session cookie 是独立的凭据，
+  不会因源令牌的权限变更而自动失效。
+
+transferable_to:
+  - "任何支持 App Token / Personal Access Token + Session Cookie 的 Web 应用"
+  - "云存储/文件管理平台（Nextcloud、OwnCloud、Seafile）的 token 权限管理"
+  - "API Gateway 的 API Key scope 修改后，已有 session 是否仍保持旧 scope"
+  - "OAuth 应用的 scope 降级后，已有 refresh token / session 是否仍保持旧 scope"
+  - "IAM 系统的权限策略变更传播延迟问题"
+
+cases:
+  - url: "https://hackerone.com/reports/388515"
+    title: "Access control issue — Allow file system access not validated when using session auth"
+    author: "born2hack"
+    platform: "Nextcloud"
+    severity: "Medium (CVSS 6.4)"
+    bounty: "$100"
+    cve: "CVE-2018-16466"
+    note: >
+      no-content 报告。团队摘要提供了完整 PoC 步骤：
+      App Token 认证 → 保存 cookie → 撤销文件系统权限 → cookie 仍可访问文件。
+      修复方式：session 认证时重新校验源 token 的当前权限范围。

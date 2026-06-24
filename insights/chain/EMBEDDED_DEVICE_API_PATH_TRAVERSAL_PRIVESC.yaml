@@ -1,0 +1,87 @@
+name: "嵌入式设备 API 的路径穿越——用低权限账户上传恶意文件后通过 API 以 root 执行"
+id: "EMBEDDED_DEVICE_API_PATH_TRAVERSAL_PRIVESC"
+applicable: "both"
+phase: "chain"
+also_phases: ["authz"]
+tags: ["path-traversal", "privilege-escalation", "embedded-device", "edgeos", "router", "ubiquiti", "scp", "api-abuse", "firmware"]
+source: "https://hackerone.com/reports/239719"
+
+# ——— L3 核心 ———
+
+observation: >
+  EdgeRouter X 的 Feature API 接受文件路径参数，
+  且 operator（只读）账户可通过 scp 上传文件到设备。
+  (原文研究者摘要: "The EdgeRouter X (firmware v1.9.1.1) is susceptible to a local
+  privilege escalation due a Path Traversal vulnerability in the Feature API.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：Feature API 在处理文件路径时未做规范化/白名单验证，
+  可通过路径穿越指定任意位置的文件，而该 API 以 root 权限执行文件——
+  结合 scp 上传能力，低权限用户可实现提权。
+
+action_result: >
+  攻击步骤：1) 使用 operator（非特权/只读）账户通过 scp 将恶意构造文件上传到设备；
+  2) 调用 Feature API 利用路径穿越指向上传的文件；
+  3) API 以 root 权限执行该文件，攻击者获取完整管理员访问权。
+  (原文团队摘要: "consequence of the lack of validation on the input of the Feature
+  functionality, an attacker with access to an operator (read-only) account and
+  ssh connection to the devices, can escalate privileges to admin (root) access")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  scp 上传（operator 权限即可）+ Feature API 路径穿越（无输入验证）→
+  API 以 root 执行指定文件 → 完整 root 权限。
+  单独的 scp 上传或路径穿越都不直接导致 RCE，组合后实现从 read-only 到 root 的提权。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在嵌入式设备/网络设备中，寻找低权限用户可写入文件的通道（scp/sftp/web upload），
+  再找到以高权限执行/加载文件的 API/功能——通过路径穿越将两者串联实现提权。
+
+reasoning_chain:
+  - "问：目标嵌入式设备/路由器是否提供 SSH/scp/sftp 访问？低权限（只读/operator）用户能否上传文件？"
+  - "问：设备是否有安装/加载/执行功能模块（Feature/Plugin/Package/Firmware upgrade）的 API？"
+  - "问：该 API 是否接受文件路径参数？是否对路径做了白名单或规范化验证？"
+  - "问：能否通过 ../ 或绝对路径穿越指向用户可控目录下的文件？"
+  - "问：该 API/功能以什么权限执行？是否以 root/admin 权限加载或执行指定文件？"
+  - "如果可以 → 构造恶意 payload 文件 → scp 上传 → API 触发 → 确认 root 执行"
+  - "问：除 Feature API 外，设备上还有哪些高权限文件操作入口（firmware update、config restore、日志导出）？"
+
+vuln_root: >
+  嵌入式设备开发者假设 operator 账户仅有只读权限不构成威胁，
+  未对 Feature API 的文件路径输入做验证——scp 上传能力 + API 路径穿越 +
+  root 执行形成了完整的提权链。
+
+transferable_to:
+  - "Ubiquiti/MikroTik/Cisco 等网络设备的管理 API 和插件安装功能"
+  - "嵌入式 Linux 设备的 Web 管理界面中文件操作相关 API"
+  - "NAS 设备（Synology/QNAP）的 Package Center / 扩展安装功能"
+  - "IoT 网关的固件升级/配置恢复 API"
+  - "任何允许低权限用户上传文件 + 存在高权限文件操作 API 的系统"
+
+cases:
+  - url: "https://hackerone.com/reports/239719"
+    title: "Privilege Escalation using API->Feature"
+    author: "hacknroll"
+    platform: "Ubiquiti (EdgeOS v1.9.1.1)"
+    severity: "Critical (CVSS 9.9)"
+    cve: "CVE-2017-0932"
+    note: >
+      operator（只读）账户通过 scp 上传恶意文件到 EdgeRouter X，
+      再调用 Feature API 利用路径穿越以 root 执行该文件。
+      no-content 报告，信息来源为研究者和团队的公开摘要。
+  - url: "https://hackerone.com/reports/330051"
+    title: "UniFi Video Server web interface admin user Firmware Update path traversal leading to local system compromise"
+    author: "ajxchapman"
+    platform: "Ubiquiti (UniFi Video Server)"
+    severity: "High (CVSS 8.4, CVE-2020-8144)"
+    note: >
+      no-content 公开。UniFi Video Server 的 Firmware Update 功能在下载固件时
+      未验证目标路径是否在预期目录树内。版本字段(version)中包含 ..\ 序列时，
+      固件文件可被写入目标目录树之外的任意路径，导致本地系统沦陷。
+      同一 Ubiquiti 产品线，与 EdgeOS Feature API 路径穿越属同一 approach。
+      (原文团队摘要: "The UniFi Video Server (for Windows) web interface Firmware Update
+      functionality... does not validate firmware download destinations to ensure they
+      are within the intended destination directory tree.")

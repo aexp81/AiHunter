@@ -1,0 +1,106 @@
+name: "新增 Package Registry API 的包名/版本号字段未过滤目录穿越——逐个审计每种新 registry 的文件写入路径"
+id: "PKG_REGISTRY_PATH_TRAVERSAL_CHAIN"
+applicable: "both"
+phase: "chain"
+also_phases: ["input"]
+tags: ["gitlab", "path-traversal", "package-registry", "maven", "nuget", "arbitrary-file-write", "arbitrary-file-read", "race-condition", "gitaly", "CWE-22", "url-encoding"]
+source: "https://hackerone.com/reports/822262"
+
+# ——— L3 核心 ———
+
+observation: >
+  GitLab 陆续新增多种 Package Registry（Maven、Nuget、npm 等），每种 registry 的
+  API 将用户提供的包名/版本号拼入文件系统路径。Maven registry 直接在 URL 路径中接受
+  编码后的 ../（%2e%2e%2f），Nuget registry 从上传的 .nupkg（zip 格式）内嵌的
+  .nuspec XML 中提取 id 和 version 字段拼接文件名。
+  (原文-733072: curl 请求使用
+  "/api/v4/projects/2/packages/maven/a%2fb%2fc%2fd%2fe%2ff%2fg%2fh%2fi%2f1/%2e%2e%2f%2e%2e%2f...%2f.ssh%2fauthorized_keys"
+  实现路径穿越)
+  (原文-822262: "The root cause of the path traversal lies at
+  ee/app/services/packages/nuget/metadata_extraction_service.rb...
+  It extracts the uploaded nupkg...for the contained nuspec file...
+  And then looks for attribute 'id' and 'version'.
+  Then the extracted package_name(id), and package_version(version) will be
+  concatenated into a new filename")
+
+hypothesis: >
+  同一平台新增的每种 Package Registry 都是独立实现的文件写入路径，
+  即使某种 registry 已被修复过路径穿越，新增的 registry 可能未复制相同的安全检查。
+  若能写入任意后缀文件到文件系统，可结合已知的 Gitaly 竞态条件实现任意文件读取。
+  (原文-822262: "There's a path traversal issue in Nuget package registry
+  which was released to GitLab-EE recently...
+  By combining the bug with a race condition in Gitaly which I used several times before
+  (#762421, #732330). It could finally be used to read sensitive files")
+  (原文-733072: "This one is similar to #732330 but much simpler.")
+
+action_result: >
+  成功执行两次（两种 registry）：
+  1. Maven（#733072）：通过 URL 编码的 ../ 在 PUT 请求中直接写入 authorized_keys，
+     获得 git 用户的 SSH shell。
+     (原文: "curl -H 'Private-Token: ...' .../maven/a%2fb%2fc%2f.../...%2f.ssh%2fauthorized_keys
+     -XPUT --path-as-is --data-binary @~/.ssh/id_rsa.pub
+     Then run ssh git@10.26.0.5 to enjoy a shell.")
+  2. Nuget（#822262）：XML payload 中 version 字段含 ../../../../../，
+     创建 .nupkg 后缀文件到任意位置，再结合 Gitaly 竞态条件读取
+     .gitlab_shell_secret 等敏感文件。
+     (原文: "<version>../../../../../nyangawa</version>...
+     will make GitLab to create a 'nyangawa.nupkg' somewhere in the filesystem")
+
+why_here_first: >
+  研究者持续审计 GitLab 同一代码库中新增的功能模块，已在之前报告（#762421 npm registry、
+  #732330 Maven registry）中发现相似漏洞和 Gitaly 竞态条件，因此每当 GitLab 新增
+  一种 Package Registry 就检查其路径拼接逻辑。
+  (原文-822262: "a race condition in Gitaly which I used several times before (#762421, #732330)")
+  (原文-822262: "For some context, a large part of the exploit were explained in #762421,
+  the npm registry issue. Here I will focus on the simple path traversal part
+  which makes a little bit difference.")
+  (原文-733072: "This one is similar to #732330 but much simpler.")
+
+chaining: >
+  两条串链路径：
+  1. Maven path traversal → 直接写入 authorized_keys → SSH RCE（无需第二步）
+  2. Nuget path traversal（受限后缀 .nupkg）→ 无法直接写可执行文件 →
+     结合 Gitaly 竞态条件将 .nupkg 文件用作 symlink pivot → 任意文件读取 →
+     读取 secrets.yml / .gitlab_shell_secret → 反序列化 RCE
+
+# ——— 落地检查清单 ———
+
+approach: >
+  针对支持多种 Package Registry 的平台，逐个审计每种 registry 的 API 中
+  包名、版本号、文件名等用户可控字段的路径拼接逻辑，检查是否有 ../ 过滤。
+  发现受限文件写入后，结合平台已知的竞态条件/symlink/文件操作漏洞升级为文件读取或 RCE。
+
+reasoning_chain:
+  - "问：目标平台支持哪些 Package Registry（Maven、npm、NuGet、PyPI、Go modules、Conan 等）？"
+  - "问：每种 registry 的 API 中，哪些参数最终拼入文件系统路径？（包名、版本号、文件名、group 路径）"
+  - "白盒：搜索 file_name、package_filename、store_dir 等方法，追踪用户输入如何拼接成文件路径"
+  - "问：URL 路径参数是否在拼接前做 URL decode + 路径规范化？能否用 %2e%2e%2f 绕过？"
+  - "问：从上传包内容（如 nuspec XML、pom.xml、package.json）中提取的元数据是否参与路径拼接？"
+  - "如果发现路径穿越 → 问：写入的文件后缀是否受限？（如 .nupkg、.gem 不可直接执行）"
+  - "如果后缀受限 → 问：平台是否有已知的文件操作竞态条件可配合？（如 Gitaly 的 rename race）"
+  - "问：同一代码库中之前的路径穿越修复是否覆盖了所有 registry？新增 registry 是否遗漏了检查？"
+  - "如果可写任意文件到用户可控路径 → 高价值目标：authorized_keys（SSH RCE）、crontab、.bashrc"
+  - "如果受限写入 + 竞态条件 → 组合为任意文件读取 → 读 secrets.yml / .env / credentials"
+
+vuln_root: >
+  每种 Package Registry 独立实现文件路径拼接逻辑，开发者假设 URL 路径或 XML 元数据中的
+  包名/版本号是合法标识符，未对 ../ 做过滤或规范化，且新增 registry 未复用已有的路径安全检查。
+
+transferable_to:
+  - "任何支持多种包格式的 Registry 平台（GitLab、Artifactory、Nexus、GitHub Packages）"
+  - "用户提供的包元数据（名称、版本）参与服务端文件路径构建的场景"
+  - "同一平台新增功能未继承旧功能安全修复的 patch gap 模式（与 SYMLINK_INJECTION_IN_ARCHIVE_EXTRACTION 类似）"
+  - "文件写入后缀受限时，结合平台特有的文件操作竞态/重命名漏洞升级利用"
+
+cases:
+  - url: "https://hackerone.com/reports/733072"
+    note: >
+      GitLab 12.4.2-ee，Maven Package Registry API path traversal，
+      通过 URL 编码 ../ 直接写入 authorized_keys 获得 SSH shell，
+      saltyyolk 报告，$12,000 赏金，High。
+  - url: "https://hackerone.com/reports/822262"
+    note: >
+      GitLab 12.8.7-ee，Nuget Package Registry path traversal，
+      从 .nuspec XML 的 version 字段注入 ../，受限 .nupkg 后缀，
+      结合 Gitaly 竞态条件（#762421）实现任意文件读取，
+      saltyyolk 报告，$12,000 赏金，High，CVE-2020-12448。

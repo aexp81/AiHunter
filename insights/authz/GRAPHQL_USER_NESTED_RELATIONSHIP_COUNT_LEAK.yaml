@@ -1,0 +1,50 @@
+name: "GraphQL user(username:) 嵌套关系字段泄露他人私有项目计数"
+id: "GRAPHQL_USER_NESTED_RELATIONSHIP_COUNT_LEAK"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["recon"]
+tags: ["graphql", "info-disclosure", "authorization-bypass", "nested-field", "total-count", "private-program", "enumeration", "hackerone"]
+source: "https://hackerone.com/reports/310946"
+
+# ——— L3 核心 ———
+
+observation: >
+  HackerOne 将邀请系统从链接方式升级为 token 方式后，用 GraphQL user(username:"jobert")
+  查询他人嵌套关系字段 soft_launch_invitations(state:[...]) 时，total_count 返回了实际数值。
+  (原文: "The old version of the invite program, looks simple. A link to the program in which you
+  need to log in. Now this looks through token.")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  查询任意用户名的 soft_launch_invitations，返回 total_count:27，揭示目标通过新系统
+  被邀请进入了 27 个私有程序。
+  (原文: "Result \"total_count\":27 — You have 27 private programs in which you have added through
+  the new system - using /invite/token")
+
+why_here_first: "未叙述（仅结果）"
+chaining: "N/A — 信息泄露"
+
+approach: >
+  通过 GraphQL 的 user(username:) 或类似「指定他人身份」的查询入口，
+  在嵌套关系字段（invitations / memberships / subscriptions 等）上拉取
+  聚合值（total_count / edges），检查是否因查询解析层与鉴权层分离
+  而泄露了本应私有的关系数据。
+
+reasoning_chain:
+  - "问：目标 GraphQL API 的 user(username:) / user(id:) 查询是否支持嵌套关系字段（connections）？"
+  - "问：这些嵌套字段是否返回了 total_count / edges？用自己账号先确认有哪些可查询字段"
+  - "问：换一个他人的 username/id 查询同样的嵌套字段，服务端是否正确返回 403/null？"
+  - "如果返回了数据 → 问：total_count 泄露了什么（私有项目数 / 订阅数 / 邀请数）？能否通过 edges 遍历具体条目？"
+  - "问：新增/变更的邀请/成员系统是否在嵌套字段的授权上有遗漏（新功能上线时授权不完整）？"
+
+vuln_root: "GraphQL 查询解析允许嵌套字段穿透到他人的关系数据，鉴权仅在顶层 user 对象而未深入嵌套关系"
+
+transferable_to:
+  - "任何暴露 GraphQL 的 SaaS/多租户平台（团队成员、订阅、邀请等关系字段）"
+  - "含 Relay Connection 分页的 GraphQL API（total_count 常被忽略的授权盲点）"
+  - "新上线的功能模块对应的 GraphQL type 经常缺少嵌套授权检查"
+
+cases:
+  - note: "HackerOne GraphQL user(username:\"jobert\") 嵌套 soft_launch_invitations total_count 泄露私有程序数量，$2,000"
+    source: "https://hackerone.com/reports/310946"

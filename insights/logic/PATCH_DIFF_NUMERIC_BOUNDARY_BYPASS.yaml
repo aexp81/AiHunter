@@ -1,0 +1,50 @@
+name: "审计安全补丁后寻找同族遗漏条件——数值库指数溢出绕过除零修复导致链停机"
+id: "PATCH_DIFF_NUMERIC_BOUNDARY_BYPASS"
+applicable: "whitebox"
+phase: "logic"
+also_phases: []
+tags: ["patch-diffing", "numeric-edge-case", "blockchain", "DoS", "incomplete-fix", "cosmos-sdk", "apd-exponent"]
+source: "https://hackerone.com/reports/3018307"
+
+observation: >
+  Cosmos SDK Groups 模块修复了 divide-by-zero 漏洞，但 Quo() 方法还会因
+  指数算术溢出（exponent out of range）返回 error，该条件未被补丁覆盖。
+  (原文: 补丁只防了 totalPower == 0，但 Quo() 因指数超出 [MinExponent, MaxExponent] 范围而返回 error)
+
+hypothesis: >
+  如果构造极端但合法的 weight 值使两个成员产生巨大指数差，
+  就能触发未被覆盖的 exponent out of range 错误导致链停机。
+  (原文: 成员权重 "1e-50000" + "1e50000" 触发)
+
+action_result: >
+  提交 Proposal → 投票 → EndBlocker 执行 doTallyAndUpdate → Quo() 返回
+  exponent out of range → panic → 链停机。
+  (原文: 确认触发 chain halt)
+
+why_here_first: >
+  研究者分析了针对 divide-by-zero 的安全补丁 commit，检查底层数学库
+  (cockroachdb/apd) 的 setExponent 函数所有返回 error 的条件。
+  (原文: 对照补丁确认哪些条件未被覆盖)
+
+chaining: "N/A — 单步 DoS（链停机）"
+
+approach: >
+  找到近期安全补丁，分析底层库源码列出修复函数的所有错误返回条件，
+  对照补丁确认哪些条件未被覆盖，构造极端但合法的输入触发未修复路径。
+
+reasoning_chain:
+  - "问：近期有哪些安全补丁修复了数值异常（除零/溢出）？"
+  - "白盒：阅读底层数学库源码，列出函数所有返回 error/panic 的条件"
+  - "问：补丁覆盖了哪些条件？哪些遗漏了？"
+  - "如果有遗漏 → 构造极端输入（如 1e-50000 与 1e50000）触发未覆盖条件"
+  - "问：该错误在共识关键路径中是否被捕获？（如果未捕获则 panic → 链停机）"
+
+vuln_root: "补丁只修已知 PoC 的具体触发条件，未对整个函数做全面错误处理审计。"
+
+transferable_to:
+  - "任何使用任意精度十进制库（apd/BigDecimal/mpmath）的区块链/金融系统"
+  - "补丁只修单一失败路径但同一运算还有其他异常输入空间的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/3018307"
+    note: "Cosmos SDK Groups 模块指数溢出链停机，$15,000。"

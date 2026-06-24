@@ -1,0 +1,79 @@
+name: "调用错误返回的操作端点副作用重置前置状态——二次请求获取已禁用的邀请链接"
+id: "API_SIDEEFFECT_STATE_RESET_BYPASS"
+applicable: "blackbox"
+phase: "logic"
+also_phases: ["authz"]
+tags: ["state-machine", "api-sequence", "side-effect", "invitation-link", "account-takeover", "shopify", "wholesale", "staff-permission"]
+source: "https://hackerone.com/reports/1266828"
+
+# ——— L3 核心 ———
+
+observation: >
+  Shopify Wholesale 店铺中，客户账户激活后 UI 禁用了 "Send invite" 和 "Get invite link"
+  按钮（直接点击会报错），但报告者发现通过 Burp 先发送 send_invite 请求
+  （虽然返回错误），再发送 invite_links 请求，服务器返回 201 Created 并生成有效邀请链接。
+  (原文: "Here we do 2 post requests using burpsuite...
+  POST /admin/shops/19596/accounts/{ID ACCOUNT}/send_invite...
+  POST /admin/shops/19596/accounts/{ID ACCOUNT}/invite_links...
+  Response: HTTP/2 201 Created... invite_link: https://...invitation_token=█████")
+
+hypothesis: >
+  未叙述（仅结果）。推断：send_invite 端点虽然返回错误，但在服务端产生了
+  重置/重新初始化邀请状态的副作用，使得后续 invite_links 端点绕过了
+  "账户已激活，不可生成邀请链接"的前置检查。
+
+action_result: >
+  成功：仅有 Apps and Channels 权限的 staff 通过两步 API 调用获取了
+  已激活客户账户的邀请链接，该链接可用于重置客户密码实现账户接管。
+  (原文: "Here we succes to get an invite link belonging to an active account
+  and now we can do an account takeover")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  send_invite（副作用）→ invite_links（生成 token）→ 邀请链接可重置密码 → ATO。
+  (原文: "the invitation link itself can be used to change the customer's account password")
+
+approach: >
+  对 UI 中灰掉/报错的操作（如"账户已激活，不可邀请"），
+  不只测试直接 replay 被禁用的端点，还测试相关联的其他端点的副作用：
+  先调用关联端点 A（即使报错），再调用目标端点 B，
+  检查 A 是否在服务端产生了重置前置条件的副作用。
+
+reasoning_chain:
+  - "问：UI 中是否有因为某种前置条件（如账户已激活/已使用/已过期）而被禁用的操作？"
+  - "问：直接 replay 该端点的 API 请求是否也被服务端拒绝？"
+  - "问：该功能是否有关联的其他端点（如 send_invite / resend / reset）？"
+  - "问：先调用关联端点（即使返回错误），是否会在服务端产生副作用（重置状态/重新初始化 token）？"
+  - "问：副作用发生后，再调用目标端点是否能绕过前置检查？"
+  - "问：生成的 token/链接是否有超越当前用户权限的能力（如重置密码/ATO）？"
+
+vuln_root: >
+  关联操作端点（send_invite）在执行失败时仍在服务端产生了状态变更副作用（重新初始化邀请状态），
+  而开发者仅关注了 UI 层的按钮禁用和目标端点的直接校验，未考虑关联端点的副作用影响。
+
+transferable_to:
+  - "任何有'一次性操作'语义的功能：邀请链接/验证码/重置令牌/一次性密码"
+  - "SaaS 平台的多级 staff 权限体系中，低权限 staff 可访问 admin 子应用"
+  - "API 有多个相关端点（send/resend/revoke/generate）的场景"
+  - "电商平台的批发/合作伙伴门户"
+
+cases:
+  - url: "https://hackerone.com/reports/1266828"
+    platform: "Shopify"
+    severity: "Medium (4.2)"
+    bounty: "$1,600"
+    note: >
+      Wholesale 店铺：仅 Apps 权限的 staff 通过先 POST send_invite
+      再 POST invite_links 获取已激活客户的邀请链接，可重置密码实现 ATO。
+
+  - url: "https://hackerone.com/reports/1085042"
+    author: "ramsexy"
+    platform: "Shopify Plus"
+    severity: "Medium (CVSS 4.3)"
+    bounty: "赏金（h1-2102 赛事）"
+    note: >
+      Shopify Plus 的 GraphQL mutation UpdateOrganizationUserTfaEnforcement
+      用跨组织的用户 ID 调用时，响应返回错误但邮件副作用仍然触发，
+      向攻击者泄露受害者的 2FA 状态、姓名、邮箱和 shop ID。
+      变体：错误响应不阻止副作用执行（邮件通知）。

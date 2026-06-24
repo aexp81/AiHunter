@@ -1,0 +1,84 @@
+name: "多角色邀请同一用户产生隐藏持久权限——移除可见角色后不可见角色仍生效"
+id: "MULTI_ROLE_INVITE_HIDDEN_PERSISTENT_ACCESS"
+applicable: "blackbox"
+phase: "logic"
+also_phases: ["authz"]
+tags: ["rbac", "invite", "role-management", "hidden-access", "persistent-backdoor", "reddit", "ads", "multi-role"]
+source: "https://hackerone.com/reports/1596663"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。报告者描述了在 ads.reddit.com 的角色管理功能中，
+  同一邮箱用户可以被同一组织多次邀请且分配不同角色。
+  (原文: "a user with the same email can get invited to the same organization
+  multiple times if the user is assigned with different roles")
+
+hypothesis: >
+  未叙述（仅结果）。推断思路：如果同一用户在同一组织下可以同时持有多个角色记录，
+  那么移除其中一个可见角色后，另一个角色记录是否仍然有效？
+  如果后台按"最后接受的邀请"显示在 members 列表中，
+  那么移除该可见记录后，先前接受的 admin 角色可能仍然生效但不可见。
+
+action_result: >
+  成功：
+  1. Admin 邀请恶意用户为 admin 角色 → 恶意用户接受
+  2. Admin 再次邀请同一恶意用户为 analyst 角色 → 恶意用户接受
+  3. 此时 members 列表中该用户显示为 analyst
+  4. Admin/Owner 将该用户角色改为 None（移除）→ members 列表中用户消失
+  5. 恶意用户使用之前复制的 Authorization token，仍可以调用 POST /api/v2.0/accounts/{id}/invitations
+     邀请其他用户加入组织——说明原始 admin 权限仍然生效
+  6. Owner 无法在 members 页面看到或移除这个隐藏的管理员账户
+  无扑空叙述（报告直接给出成功路径）。
+  (原文: "Now you are able to invite other users to the organization even
+  though you are not a member of that organization")
+
+why_here_first: >
+  未叙述（仅结果）。报告者提到 "Testing around the role management functionalities"
+  时发现同一邮箱可被多次邀请。
+  (原文: "Testing around the role management functionalities, I have noticed
+  that a user with the same email can get invited to the same organization
+  multiple times")
+
+chaining: >
+  多角色邀请 → 隐藏 admin 持久化 → 即使被 owner 移除，仍可执行管理操作
+  （邀请/移除其他用户），形成不可检测的后门。
+  (原文: "the owner of the organization can not detect and remove this
+  malicious user from the organization")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在支持角色邀请的多租户系统中，测试同一用户能否被同一组织以不同角色多次邀请，
+  然后检查移除最后一个可见角色后，先前的高权限角色是否仍然生效——
+  核心是角色记录的增删是否独立管理还是只操作最新的那条。
+
+reasoning_chain:
+  - "问：目标系统的组织/团队管理功能是否允许邀请成员并分配角色？"
+  - "问：同一用户（同一邮箱）能否被同一组织以不同角色多次邀请？"
+  - "如果可以 → 问：用户同时接受两个不同角色的邀请后，members 列表中显示哪个角色？"
+  - "问：管理员移除该用户（或降级为无权限）后，之前的高权限角色记录是否也被清除？"
+  - "问：使用移除前获取的 token/session，是否仍可调用需要高权限的 API？"
+  - "如果仍可调用 → 确认角色移除逻辑存在缺陷：只删除了最后一条角色记录，历史角色记录仍有效"
+  - "问：这个隐藏权限是否会在 members 列表或审计日志中留下痕迹？（不可检测 = 更高危害）"
+
+vuln_root: >
+  角色管理系统允许同一用户持有多条角色记录，但移除/修改操作只作用于最新的一条，
+  导致历史角色记录仍然生效但在 UI 中不可见——形成隐藏持久权限。
+
+transferable_to:
+  - "任何支持邀请成员并分配角色的 SaaS/多租户平台（Slack、Notion、Jira、广告平台等）"
+  - "企业管理后台中的团队成员角色管理"
+  - "API 密钥/Service Account 权限管理——多次授权后撤销最后一次是否真正撤销所有权限"
+  - "数据库中使用非唯一约束（user_id + org_id + role 而非 user_id + org_id）存储角色的系统"
+
+cases:
+  - url: "https://hackerone.com/reports/1596663"
+    title: "Admin can create a hidden admin account which even the owner can not detect and remove"
+    platform: "Reddit (ads.reddit.com)"
+    severity: "High"
+    bounty: "有奖金（金额未公开）"
+    note: >
+      ads.reddit.com 角色管理：同一用户被邀请为 admin 和 analyst 两个角色后，
+      移除 analyst 角色时仅清除了最新记录，admin 角色仍生效但在 members 列表中不可见。
+      恶意 admin 可以在被移除后继续邀请/移除其他用户，owner 无法检测或移除该隐藏账户。

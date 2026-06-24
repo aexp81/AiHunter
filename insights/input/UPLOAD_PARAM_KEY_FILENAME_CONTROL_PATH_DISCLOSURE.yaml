@@ -1,0 +1,70 @@
+name: "上传接口参数名作为文件名——修改 key 字段控制服务端存储文件名并触发路径泄露"
+id: "UPLOAD_PARAM_KEY_FILENAME_CONTROL_PATH_DISCLOSURE"
+applicable: "blackbox"
+phase: "input"
+also_phases: []
+tags: ["file-upload", "filename-control", "path-disclosure", "theming", "nextcloud", "parameter-tampering"]
+source: "https://hackerone.com/reports/1781751"
+
+# ——— L3 核心 ———
+
+observation: >
+  Nextcloud 主题设置的 logo/favicon 上传接口中，请求参数 key 被直接用作
+  服务端存储的文件名，攻击者可修改此参数控制文件名。
+  错误响应中还泄露了服务器完整文件路径。
+  (原文: "When uploading a logo or favicon the filename can be controlled
+  by attacker since the key can be modified which serves as the filename...
+  Due to an error the path is also disclosed")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  成功：拦截上传请求后修改 key 参数值，文件以攻击者指定的名称存储在服务器上。
+  错误响应泄露完整服务器路径。
+  (原文: "The attacker can upload any files directly in the webapp
+  and path disclosure. Combining both information can be useful
+  in later attacks.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  文件名控制 + 路径泄露 → 为后续攻击（如路径穿越、webshell 写入）提供前置条件。
+  (原文: "Combining both information can be useful in later attacks.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在文件上传接口中寻找作为文件名/文件标识的请求参数（key/name/filename 等），
+  修改该参数值（如添加路径穿越 ../、改为 .php/.jsp 等危险扩展名），
+  检查服务端是否原样使用。同时观察错误响应是否泄露存储路径。
+
+reasoning_chain:
+  - "问：目标平台有文件上传功能吗（头像/logo/附件/导入）？"
+  - "问：上传请求中除 Content-Disposition 的 filename 外，是否有额外的参数控制文件名/标识（如 key/name/path）？"
+  - "问：修改该参数值后，服务端是否原样使用该值作为存储文件名？"
+  - "问：能否使用路径穿越字符（../）改变文件存储位置？"
+  - "问：能否将扩展名改为可执行格式（.php/.jsp/.py/.sh）？"
+  - "问：上传错误时，响应中是否泄露服务器文件路径/内部结构？"
+  - "如果文件名可控 + 路径已知 → 评估是否可串链为 webshell/覆盖配置文件。"
+
+vuln_root: >
+  开发者将用户可控的请求参数（key）直接用作文件存储名称，
+  未做白名单过滤或规范化处理。错误处理逻辑中还泄露了文件系统路径。
+
+transferable_to:
+  - "CMS/博客平台的主题自定义上传（logo/favicon/背景图）"
+  - "企业应用的品牌定制/白标上传接口"
+  - "文件管理系统的批量上传/导入功能"
+  - "任何将请求参数（非 multipart filename）作为文件标识的上传端点"
+
+cases:
+  - url: "https://hackerone.com/reports/1781751"
+    author: "ctulhu"
+    platform: "Nextcloud"
+    severity: "Low (CVSS 2.4)"
+    bounty: "有赏金"
+    cve: "CVE-2023-28833"
+    note: >
+      Nextcloud /settings/admin/theming 上传 logo/favicon 时，
+      key 参数被直接用作文件名。错误响应泄露完整服务器路径。
+      2022-11 报告，2023-04 公开。6 votes。

@@ -1,0 +1,91 @@
+name: "公开状态徽章端点绕过父资源可见性限制——通过 SVG 徽章泄露受限 CI/CD 状态"
+id: "BADGE_STATUS_ENDPOINT_VISIBILITY_BYPASS"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["recon"]
+tags: ["information-disclosure", "access-control", "badge", "ci-cd", "pipeline", "svg", "visibility-bypass", "gitlab"]
+source: "https://hackerone.com/reports/477222"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。GitLab CI 支持为某分支生成构建状态/覆盖率徽章（SVG），
+  但当项目设置限制了 pipeline 可见性或完全禁用仓库后，
+  badge 端点仍然向未授权用户返回实际的构建状态信息。
+  (原文: "with restricted access, where users do not have access to pipelines,
+  users still have access to the build/coverage status of any branch")
+
+hypothesis: >
+  未叙述（仅结果）。推断：badge 端点作为独立路由处理 SVG 渲染，
+  未继承父资源（project/pipeline）的可见性限制，直接查询数据库返回最新状态。
+
+action_result: >
+  未叙述（仅结果）。验证了三种配置下的泄露：
+  1) public 项目+受限 pipeline 访问 → 未认证用户可见；
+  2) internal 项目+受限 pipeline → 任意已认证用户可见；
+  3) private 项目 → Guest 用户可见。
+  即使完全禁用 repo 和 pipeline，最后一次构建状态仍可通过 badge 获取。
+  (原文: "Even if repos and therefore also pipelines are completely disabled,
+  the last build status/coverage still can be retrieved via the badges link.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  N/A。影响限于信息泄露——构建状态可辅助攻击者判断分支活跃度、
+  CI 配置是否正常、代码覆盖率水平等，为后续攻击提供侧信道信息。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对限制了资源可见性（如 pipeline 仅项目成员可见）的系统，
+  测试其派生的公开子端点（status badge、embed widget、RSS feed、webhook 回调等）
+  是否继承了父资源的访问控制——关键在于这些"展示用"端点通常被视为无害而遗漏鉴权。
+
+reasoning_chain:
+  - "问：目标系统是否提供了资源状态的公开展示端点（SVG badge、embed iframe、RSS、widget）？"
+  - "问：父资源（如 pipeline、repo、project）是否有独立的可见性/权限设置？"
+  - "问：当父资源设为受限/私有时，badge/widget 端点的响应是否仍返回实际状态数据？"
+  - "问：badge 端点的路由是否位于统一鉴权中间件的保护范围内？（通常 .svg/.png 等静态资源路径会被排除）"
+  - "问：即使资源本身被禁用/归档，其最后一次状态快照是否仍可通过缓存/历史 badge 获取？"
+  - "问：除了状态文字（passing/failing），badge 是否还泄露了其他信息（覆盖率百分比、分支名）？"
+
+vuln_root: >
+  开发者将 badge/status 端点视为"公开展示"组件，
+  未将其纳入父资源可见性限制的统一鉴权范围，
+  导致受限资源的状态信息通过派生端点泄露。
+
+transferable_to:
+  - "GitLab CE/EE 的所有 badge 端点（pipeline.svg、coverage.svg）"
+  - "GitHub Actions 的 workflow status badge 是否尊重 private repo 权限？"
+  - "Jenkins Blue Ocean 的 badge 端点在 project-based security 下的行为"
+  - "任何 CI/CD 系统的 embeddable status widget / badge API"
+  - "项目管理系统的公开看板/进度 widget 是否泄露私有项目信息"
+  - "文档平台的 embed 分享端点是否绕过文档权限设置"
+
+cases:
+  - url: "https://hackerone.com/reports/477222"
+    title: "Last build status and coverage leaked to unauthorized users"
+    author: "xanbanx"
+    platform: "GitLab"
+    severity: "Low (CVE-2019-5463)"
+    bounty: "有奖金（金额未公开）"
+    note: >
+      GitLab CI 的 /badges/BRANCH/pipeline.svg 和 /badges/BRANCH/coverage.svg
+      端点在项目设置限制 pipeline 可见性或完全禁用 repo 后，
+      仍向未授权用户返回实际的构建状态和覆盖率信息。
+      影响 public+restricted、internal+restricted、private+guest 三种配置。
+  - url: "https://hackerone.com/reports/667408"
+    title: "Head pipeline leaked to unauthorized users via blocking merge request feature"
+    author: "xanbanx"
+    platform: "GitLab"
+    severity: "Low (CVE-2019-15580)"
+    bounty: "有奖金（金额未公开）"
+    note: >
+      GitLab 新增 blocking merge request 功能后，/merge_requests/N/widget.json
+      端点在序列化 blocking MR 信息时包含了 head_pipeline 完整对象，
+      即使项目设置将 pipeline 可见性限制为仅项目成员。
+      未认证用户访问 widget.json 即可获取 pipeline ID、SHA、状态、用户信息等。
+      纯结果文，无 L3 导航叙事。
+      (原文: "Notice, there is a head_pipeline pipeline field for the blocking MR,
+      thus leaking the pipeline information although the unauthenticated user does
+      not have access to the pipeline information.")

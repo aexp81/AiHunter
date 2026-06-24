@@ -1,0 +1,26 @@
+name: "OAuth grant 模式切换：拿到凭证后换 grant_type 突破'无用户'困局"
+id: "OAUTH_GRANTTYPE_PIVOT"
+applicable: "blackbox"
+phase: "auth"
+also_phases: [authz]
+tags: [oauth, grant-type, token, registration]
+approach: "token 有效却无权限时，换 grant_type（client_credentials→password）+ 自助注册补出用户身份"
+source: "https://mp.weixin.qq.com/s/R-3uPkL88iBndFoWnw9lpA"
+
+observation: 'client_credentials 拿到了 token 但访问接口提示无权限 (原文: "此时可以获取到token...显示失败，没有权限")'
+hypothesis: "client_credentials 是机器身份无用户上下文；改用 password 模式可能拿到带用户权限的 token"
+action_result: 'password 模式因没有系统内用户而失败 → 回头看 api.js 发现注册接口 → 注册一个普通用户 → 用 password 模式对该用户授权拿到有效 token (原文: "我们发现是有一个注册接口，那么我们可能通过注册一个用户，然后给他授权password模式，就可以获取有权限的token了")'
+why_here_first: "token 拿到但无权限时，问题在 grant 模式而非凭证本身；OAuth 多模式各自的权限上下文不同，逐个试是自然的下一步"
+chaining: "见 OAUTH_CRED_TO_ADMIN_CHAIN（第二环：从机器身份转为用户身份）"
+
+reasoning_chain:
+  - "问：当前 token 是用哪种 grant_type 拿的？它带用户上下文吗（client_credentials 不带）？"
+  - "问：换 password 模式需要系统内用户，目标有开放注册接口吗（翻 api.js/路由）？"
+  - "如果有注册：问：注册账号后用 password 模式授权，新 token 能访问到 client_credentials 访问不了的接口吗？"
+vuln_root: "OAuth 多 grant 模式权限上下文不同 + 开放注册，使攻击者可自助获得'用户级'身份"
+transferable_to:
+  - "任何启用 OAuth 多 grant_type 且开放注册的系统"
+  - "M2M token vs 用户 token 权限边界混淆的 API 网关"
+cases:
+  - note: "护网实战：client_credentials→password 模式 + 自助注册拿用户 token"
+    source: "https://mp.weixin.qq.com/s/R-3uPkL88iBndFoWnw9lpA"

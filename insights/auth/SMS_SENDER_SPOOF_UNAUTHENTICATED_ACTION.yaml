@@ -1,0 +1,74 @@
+name: "SMS 发送者号码伪造绕过认证——短信命令通道信任来电号码身份执行敏感操作"
+id: "SMS_SENDER_SPOOF_UNAUTHENTICATED_ACTION"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["logic"]
+tags: ["sms-spoofing", "caller-id", "legacy-channel", "unauthenticated", "2fa-bypass", "account-takeover", "twitter", "telecom-trust"]
+source: "https://hackerone.com/reports/470749"
+
+# ——— L3 核心 ———
+
+observation: >
+  Twitter 支持通过短信发送命令（如发推、DM、关注/取关、关闭 2FA）来控制账户，
+  且这些命令仅依靠发送者的手机号码来确认身份。
+  (原文: "I can do everything that is listed here: https://help.twitter.com/en/using-twitter/sms-commands
+  on an account, completely unauthenticated")
+
+hypothesis: >
+  如果平台仅信任 SMS 的来源号码作为身份验证，那么通过伪造发送者号码
+  （caller ID spoofing）就可以冒充任何用户执行短信命令。
+  未叙述（仅结果）——报告者直接陈述了攻击方法。
+
+action_result: >
+  成功：伪造目标用户的手机号码，向 Twitter 短信服务的特定短代码发送命令，
+  成功以朋友的账户发送推文，无需密码或任何认证。
+  (原文: "Spoof target number, send an SMS to a special short code for the geographical location"
+  及 "https://twitter.com/___Sh4rk___/status/1076204152546619392 this is a tweet I sent from my
+  close friends account. She did not reveal her password or authenticate it at all.")
+
+why_here_first: >
+  未叙述（仅结果）——报告者直接知晓 Twitter SMS 命令功能，
+  并测试了 caller ID spoofing 的可行性。
+
+chaining: >
+  伪造号码 → 发送 SMS 命令 → 可执行：发推/DM/关注/取关/删推/关闭 2FA/屏蔽举报。
+  关闭 2FA 后可进一步降低账户安全等级；批量号码脚本可实现大规模恶意举报。
+  (原文: "Remove 2FA... Tweet on someones behalf... DM Someone... Delete someones tweets...
+  Block/Report people - with a little script I could get 10000 phone numbers all reporting
+  innocent tweets. Controlling media etc")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  检查目标平台是否支持 SMS/短信命令通道（legacy 功能），
+  验证该通道是否仅依靠发送者号码（caller ID）作为身份验证——
+  若是，则 caller ID 可被 VoIP/电信服务伪造，实现无密码操作。
+
+reasoning_chain:
+  - "问：目标平台的帮助文档/API 文档中是否提及 SMS 命令功能（发送特定关键词到短代码执行操作）？"
+  - "问：SMS 命令通道的身份验证机制是什么？是否仅依靠发送者手机号码（无 PIN/token 二次验证）？"
+  - "如果仅靠号码 → caller ID spoofing 在电信层面是已知可行的攻击"
+  - "问：通过 SMS 命令可执行哪些敏感操作？（发布内容/DM/修改安全设置/关闭 2FA）"
+  - "问：是否可以通过 SMS 命令关闭 2FA 或修改绑定邮箱，为后续账户接管铺路？"
+  - "问：平台的 SMS 服务短代码在哪些国家/地区可用？不同地区的安全策略是否一致？"
+
+vuln_root: >
+  平台将 SMS 发送者号码视为可信的身份标识，但电信网络中 caller ID 可被伪造，
+  导致 SMS 命令通道成为无认证的操作入口。
+
+transferable_to:
+  - "任何支持 SMS 命令/短信指令的社交平台或通信服务"
+  - "银行/金融服务的 SMS 交易确认通道（仅靠回复 YES/NO）"
+  - "物联网/智能家居设备的 SMS 远程控制功能"
+  - "电话/语音通道中依赖 caller ID 进行身份验证的系统"
+  - "legacy 短信网关服务未迁移到 app-based 认证的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/470749"
+    title: "Ability to perform actions (Tweet, Retweet, DM) unauthenticated on any account with SMS enabled"
+    platform: "Twitter/X"
+    severity: "Critical (CVSS 9.4)"
+    bounty: "未公开"
+    note: >
+      通过伪造目标手机号向 Twitter 短代码发送 SMS 命令，可无认证发推/DM/删推/关闭2FA。
+      影响所有开启 SMS 功能的 Twitter 账户。

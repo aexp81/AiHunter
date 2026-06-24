@@ -1,0 +1,80 @@
+name: "第三方应用内部 GraphQL 端点在响应中泄露宿主平台的 Access Token——离职员工持续访问全部数据"
+id: "THIRD_PARTY_APP_GRAPHQL_TOKEN_LEAK_PERSISTENT_ACCESS"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["recon"]
+tags: ["access-token-leak", "graphql", "third-party-app", "shopify", "flow", "staff-permission", "persistent-access", "api-response", "over-exposure"]
+source: "https://hackerone.com/reports/700831"
+
+# ——— L3 核心 ———
+
+observation: >
+  Shopify Flow App 在用户点击 Connectors 标签页时，向 flow.shopifycloud.com/graphql
+  发送 shopInfo 查询，响应中返回了 shopifyToken 字段，即 Flow App 用于操作店铺的
+  Access Token（等价于店铺密码）。
+  (原文: "Taking a closer look, you can spot that the Access Token is being returned
+  in the response: shopifyToken: '████████'")
+
+hypothesis: >
+  Access Token 一旦泄露就不会过期——即使管理员将该 staff 从店铺中移除，
+  被移除的员工仍可用已获取的 token 通过 Shopify REST API 读写全部数据。
+  (原文: "The removed staff member can use the Access Token with the Shopify REST API
+  to get unauthorized access to read and modify all the information in the store,
+  whenever he wants.")
+
+action_result: >
+  成功：
+  1. 以仅有 Apps 权限的 staff 身份登录
+  2. 打开 DevTools 监控 HTTPS 请求
+  3. 导航到 Flow App 的 Connectors 标签页
+  4. 在 graphql 请求响应中找到 shopInfo → shopifyToken
+  5. 被移除后使用 GET /admin/orders.json + X-Shopify-Access-Token 头
+     成功获取全部订单数据
+  (原文: "Let's do a GET request to the /admin/orders.json endpoint using the
+  Access Token... We just received as a response all the orders")
+
+why_here_first: >
+  报告者明确叙述了深度审计 Flow App 的方法论——逐行阅读每个 JS 文件和每个 HTTP 请求响应。
+  (原文: "I've been working very hard and paying a lot of attention to the Flow app.
+  Fully reading every line on every single javascript file it calls, every single
+  HTTP request and response, and yes, my eyes look like raccoon eyes now.")
+
+chaining: >
+  Token 泄露 → 离职员工持续访问 → 可读写全部资源：
+  订单/客户PII/产品/库存/销售渠道/draft orders/gift cards/管理员通知。
+  (原文: "The ex-employee can access and modify the following store's data:
+  Modify orders, transactions, and fulfillments... Read users... Read all orders")
+
+approach: >
+  对平台上已安装的第三方应用（尤其是高权限应用如自动化/工作流工具），
+  系统性审计其内部 API（GraphQL / REST）的响应体，
+  寻找是否在响应中暴露了宿主平台的 Access Token / API Key / Secret。
+  重点关注：(1) 应用的管理/配置/连接器页面通常传递认证材料；
+  (2) 泄露的 token 在 staff 被移除后是否仍然有效（token 不与会话绑定）。
+
+reasoning_chain:
+  - "问：目标平台是否有可安装的第三方应用/集成？该应用需要什么级别的 API 权限？"
+  - "问：该应用的内部通信（前端→应用后端、应用后端→平台 API）走什么协议？GraphQL？REST？"
+  - "问：在应用的管理/配置/连接器页面，DevTools 中是否能看到敏感字段（token/secret/key）出现在响应中？"
+  - "问：如果发现了 token，它是否绑定了当前会话/用户？还是静态的、可独立使用的 API 凭证？"
+  - "问：将当前用户从平台移除后，该 token 是否仍然有效？是否可通过 API 直接调用？"
+
+vuln_root: >
+  第三方应用的后端将宿主平台的 Access Token 作为普通字段返回给前端——
+  开发者假设只有被授权的 staff 能看到响应，但忽略了 token 一旦泄露即可脱离会话独立使用，
+  且 staff 被移除后 token 不会被撤销。
+
+transferable_to:
+  - "任何支持第三方应用/集成的 SaaS 平台（Shopify / Salesforce / HubSpot / Slack）"
+  - "工作流自动化工具（Zapier / Make / Flow）需要高权限 token 操作数据"
+  - "OAuth 应用的 /connectors 或 /settings 页面可能暴露 refresh_token 或 API key"
+  - "CRM / ERP 集成中间件的管理界面"
+
+cases:
+  - url: "https://hackerone.com/reports/700831"
+    platform: "Shopify"
+    severity: "Medium (4.8)"
+    bounty: "$0 (not stated, resolved)"
+    note: >
+      Flow App 的 Connectors 页面 GraphQL 响应泄露 shopifyToken，
+      仅有 Apps 权限的 staff（甚至被移除后）可读写全店数据。

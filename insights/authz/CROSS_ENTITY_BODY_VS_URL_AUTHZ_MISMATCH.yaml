@@ -1,0 +1,95 @@
+name: "请求体资源 ID 与 URL 路径不一致——鉴权检查 URL 中的实体但操作应用到 body 中的另一实体"
+id: "CROSS_ENTITY_BODY_VS_URL_AUTHZ_MISMATCH"
+applicable: "blackbox"
+phase: "authz"
+also_phases: []
+tags: ["idor", "authz-mismatch", "parameter-tampering", "cross-entity", "github", "security-settings", "url-vs-body"]
+source: "https://hackerone.com/reports/3560256"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。GitHub Enterprise Server 的
+  /settings/security_analysis/bypass_reviewers 端点在 URL 路径中指定目标仓库，
+  但实际操作的仓库由请求体中的 owner_id 参数决定。
+  (原文团队摘要: "Authorization was verified against the repository in the URL,
+  but the action was applied to a different repository specified in the request body")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  攻击者对自己有 admin 权限的仓库 A 发起请求（URL 中为仓库 A），
+  但在请求体中将 owner_id 替换为另一个仓库 B 的 ID，成功修改了
+  仓库 B 的 secret scanning push protection delegated bypass reviewer 列表。
+  影响范围限于将已有受信用户指定为 bypass reviewer，不能添加任意外部用户。
+  (原文团队摘要: "allowed an attacker with admin access on one repository to modify
+  the secret scanning push protection delegated bypass reviewer list on another repository
+  by manipulating the owner_id parameter in the request body")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  跨仓库 IDOR → 篡改安全扫描的 bypass reviewer 列表 → 降低目标仓库的安全审查门槛。
+  (原文: CVE-2026-3307, 影响 GHES 3.21 之前全部版本)
+
+approach: >
+  对含 "设置/安全/权限管理" 功能的多实体平台，在 URL 路径中指定一个自己有权限的实体，
+  但将请求体中的实体标识符（owner_id/repo_id/org_id/project_id）替换为
+  另一个无权限的实体 ID，检查服务端是否仅对 URL 路径中的实体做鉴权
+  而将操作应用到 body 中的实体。
+
+reasoning_chain:
+  - "问：目标平台的设置/管理 API 中，URL 路径和请求体是否同时包含实体标识符？"
+  - "问：这两个标识符是否指向同一实体？如果不一致会怎样？"
+  - "问：将请求体中的实体 ID 替换为另一个自己无权限的实体 ID 后，操作是否成功？"
+  - "如果成功 → 确认 URL/body 鉴权不一致。问：操作的实际效果是什么？（修改设置/删除/授权）"
+  - "问：反向操作是否也可行？（URL 指向 B，body 指向 A）"
+  - "扩展：同一控制器下的其他端点是否有类似的 URL/body 实体分离问题？"
+  - "扩展：PUT/PATCH/DELETE 方法是否比 POST 更容易出现此类不一致？"
+
+vuln_root: >
+  服务端在鉴权中间件中根据 URL 路径中的实体 ID 校验权限（如 /repos/:repo_id/settings），
+  但在业务逻辑层使用请求体中的另一个实体 ID（owner_id）执行实际操作，
+  两个 ID 未做一致性校验。
+
+transferable_to:
+  - "代码托管平台（GitHub/GitLab/Bitbucket）的仓库安全设置 API"
+  - "多租户 SaaS 的组织/项目级别设置端点"
+  - "任何 RESTful API 中 URL 路径参数与 body 参数指向不同资源的场景"
+  - "CI/CD 平台的 pipeline/runner/secret 管理 API"
+  - "云平台的 IAM/策略/角色管理端点"
+
+cases:
+  - url: "https://hackerone.com/reports/3560256"
+    author: "ahacker1"
+    platform: "GitHub Enterprise Server"
+    severity: "Medium"
+    bounty: "有赏金（具体金额未公开）"
+    cve: "CVE-2026-3307"
+    note: >
+      GitHub /settings/security_analysis/bypass_reviewers 跨仓库 IDOR：
+      URL 鉴权仓库 A，body 的 owner_id 操作仓库 B，修改 secret scanning
+      bypass reviewer 列表。影响 GHES 3.21 之前全部版本。
+      2026-02 报告，2026-05 公开。95 votes。
+  - url: "https://hackerone.com/reports/867052"
+    title: "Access Control: Inject tasks into other users decks (Nextcloud)"
+    author: "dedoc"
+    platform: "Nextcloud (Deck app)"
+    severity: "Medium (CVSS 4.1)"
+    bounty: "有赏金"
+    cve: "CVE-2020-8179"
+    note: >
+      PUT /apps/deck/cards/{id} 更新卡片时，请求体中的 stackId 参数可替换为
+      他人的 stack ID，服务端未校验目标 stack 的所有权，卡片直接被移入他人看板。
+      纯结果文，无导航叙事。2020-05 报告，2021-02 公开。15 votes。
+  - url: "https://hackerone.com/reports/1322334"
+    title: "Ability to subscribe to inactive Post+ creators (Tumblr)"
+    author: "ajoekerr"
+    platform: "Tumblr (Post+)"
+    severity: "Low"
+    bounty: "有赏金"
+    note: >
+      替换 Post+ 支付 checkout URL 中的 blogMembershipsId 为已停用创作者的 ID，
+      完成支付后该创作者的 Post+ 页面被重新激活。token 绑定原实体但
+      membership ID 可自由替换，服务端未校验目标实体的激活状态。
+      纯结果文，研究者自认低影响，一次性可用。2021-08 报告，2021-10 公开。15 votes。

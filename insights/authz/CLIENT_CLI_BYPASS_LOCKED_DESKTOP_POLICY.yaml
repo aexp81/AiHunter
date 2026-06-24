@@ -1,0 +1,59 @@
+name: "锁定的桌面客户端通过 CLI 工具旁路断开——信任 SSID 白名单绕过 WARP 锁"
+id: "CLIENT_CLI_BYPASS_LOCKED_DESKTOP_POLICY"
+applicable: "blackbox"
+phase: "authz"
+also_phases: []
+tags: ["client-side-enforcement", "vpn", "warp", "cloudflare", "zero-trust", "cli-bypass", "endpoint-security", "policy-bypass"]
+source: "https://hackerone.com/reports/1635748"
+
+observation: "未叙述（仅结果）"
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  使用 warp-cli 命令 add-trusted-ssid 将当前 WiFi 网络标记为可信 SSID，
+  触发 WARP 客户端自动断开连接，成功绕过管理员设置的 "Lock WARP switch" 策略，
+  导致 Zero Trust 策略在该端点上不再执行。
+  (团队摘要: "Using warp-cli command 'add-trusted-ssid', a user was able to disconnect
+  WARP client and bypass the 'Lock WARP switch' feature resulting in Zero Trust policies
+  not being enforced on an affected endpoint.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: "N/A — 单步策略绕过"
+
+approach: >
+  对锁定的桌面安全客户端（VPN/EDR/ZeroTrust），枚举其 CLI 工具暴露的子命令，
+  寻找可在 GUI 锁定状态下仍执行的旁路命令（如信任 SSID/排除规则/代理设置），
+  以绕过管理员强制执行的连接/安全策略。
+
+reasoning_chain:
+  - "问：目标端点安全客户端（VPN/WARP/EDR）是否提供 CLI 工具？CLI 是否可被非管理员用户调用？"
+  - "问：CLI 工具有哪些子命令？是否有 trust/exclude/whitelist/bypass 类命令？"
+  - "问：当管理员启用 Lock/强制连接策略时，CLI 的这些子命令是否受到同等限制？"
+  - "如果不受限制 → 问：执行该命令后客户端是否断开连接或切换到非保护模式？"
+  - "如果客户端断开 → 确认策略绕过：Zero Trust/VPN 策略不再执行"
+  - "扩展：问：是否可通过修改客户端配置文件、注册表/plist、环境变量等方式达到相同效果？"
+
+vuln_root: >
+  GUI 层面的 "Lock WARP switch" 策略未覆盖 CLI 接口——
+  开发者假设终端用户只通过 GUI 交互，但 CLI 工具的 add-trusted-ssid 命令
+  不受同一策略约束，允许用户绕过管理员强制执行的连接锁定。
+
+transferable_to:
+  - "企业 VPN 客户端（Pulse Secure/GlobalProtect/FortiClient）的 CLI 接口是否绕过 always-on 策略"
+  - "EDR/XDR 代理的 CLI 或本地 API 是否可在 tamper protection 下仍执行卸载/暂停"
+  - "MDM 管理的设备上本地 CLI 命令是否可绕过 MDM 配置文件的限制"
+  - "浏览器扩展的 native messaging 接口是否受扩展权限约束"
+
+cases:
+  - url: "https://hackerone.com/reports/1635748"
+    title: "Ability to bypass locked Cloudflare WARP on wifi networks"
+    author: "oracularhades"
+    platform: "Cloudflare (Zero Trust/WARP)"
+    severity: "High"
+    cve: "CVE-2022-3512"
+    bounty: "$1,000"
+    note: >
+      warp-cli add-trusted-ssid 绕过 Lock WARP switch 策略。
+      no-content 公开，仅团队摘要。2022-07 报告，2022-11 公开。

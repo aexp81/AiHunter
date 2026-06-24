@@ -1,0 +1,76 @@
+name: "POS 子应用内嵌管理链接逐级导航逃逸到主管理后台提权"
+id: "POS_EMBEDDED_APP_NAVIGATION_ESCAPE_PRIVESC"
+applicable: "blackbox"
+phase: "authz"
+also_phases: []
+tags: ["privilege-escalation", "pos", "shopify", "ui-boundary", "embedded-app",
+       "navigation-escape", "breadcrumb", "physical-access", "staff-management"]
+source: "https://hackerone.com/reports/985150"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。报告者发现 Shopify POS 应用中拥有 Manage Staff 权限的 POS 用户
+  可以通过 "Manage POS Roles" 链接跳转到 POS 渠道管理页面，
+  再从该页面的 "Manage Shopify admin access" 链接跳到 Plan & Permissions 页面。
+  (原文: "Within the Point Of Sale application, a staff with full admin permissions
+  can open the Point Of Sale channel using the embedded Manage POS roles link.
+  By doing so and by using some nested links, it is possible to navigate up to
+  the Plan & Permissions admin view")
+
+hypothesis: >
+  未叙述（仅结果）。推断：POS 子应用认为内嵌的管理链接仅在 POS 上下文内使用，
+  但这些链接最终导航到的是主 Shopify admin 页面，而主 admin 页面的权限校验
+  使用的是 POS 终端当前物理认证用户的 session（即店主 session），
+  导致 POS 用户获得店主级别的管理权限。
+
+action_result: >
+  1. 用 Manage Staff 权限的 POS 用户修改 Full Permissions 员工的 PIN →
+     用该 PIN 重新登录获得 Full Permissions。
+  2. 进入 Staff → 编辑员工 POS APP ACCESS → 点击 "Manage POS Roles" →
+     在角色页面找到 Assigned Staff → 点击员工 → "Manage Shopify admin access" →
+     面包屑导航到 "Plan and Permissions" 页面。
+  3. 在该页面可以：添加员工、管理员工、更新登录服务、转移店铺所有权。
+  (原文: "At the top of the page, click on breadcrumb navigation
+  Plan and Permissions link bringing you to
+  https://shop.myshopify.com/admin/settings/account")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  POS PIN 替换(Low) → 内嵌链接逐级跳转逃逸到 admin 面板(Medium)
+  → 利用店主 session 执行高权限操作(High)。
+  前提：POS 终端当前需以店主身份登录。
+
+approach: >
+  在受限子应用（POS、嵌入式面板、合作伙伴门户）中，遍历所有管理链接，
+  特别关注那些"管理角色/管理权限/管理访问"类型的链接，检查是否能通过
+  多级跳转（内嵌链接 → 面包屑 → 设置页面）逃逸到主应用的高权限管理界面。
+
+reasoning_chain:
+  - "问：子应用（POS/嵌入面板/移动端）中是否有链接指向主应用的管理页面？"
+  - "问：这些管理链接是否有独立的权限校验，还是复用了当前 session 的权限？"
+  - "问：子应用当前 session 的身份是谁？是子应用用户自己还是更高权限的宿主用户（如店主）？"
+  - "如果是宿主用户 session → 问：通过链接跳转到的主应用页面能执行哪些操作？"
+  - "问：跳转后的面包屑导航是否允许进一步横向移动到其他管理页面（如 Plan & Permissions、Billing）？"
+  - "问：子应用的物理认证（PIN）与 Web session 之间是否存在权限不一致？"
+
+vuln_root: >
+  子应用（POS）复用了宿主用户（店主）的 Web session 来渲染内嵌管理页面，
+  但未限制导航范围——用户可以通过 nested links 和面包屑逃逸到子应用边界之外的
+  高权限管理页面。
+
+transferable_to:
+  - "电商 POS 系统——物理终端通常复用店主 session，嵌入的管理链接可能逃逸"
+  - "SaaS 的嵌入式合作伙伴/经销商面板——内嵌管理链接可能导航到主租户管理"
+  - "移动端 WebView 应用——WebView 中的链接可能跳转到浏览器打开的管理后台"
+  - "任何子应用/频道应用复用主应用 session 的架构"
+
+cases:
+  - source: "https://hackerone.com/reports/985150"
+    title: "Privilege Escalation in Point Of Sale Application from POS Manage Staff Role to potentially Store Owner"
+    context: >
+      Shopify POS 应用中，Manage Staff 权限的 POS 用户通过 Manage POS Roles →
+      Assigned Staff → Manage Shopify admin access → Plan & Permissions 面包屑，
+      逐级跳转逃逸到主管理后台，获得添加员工、转移所有权等店主级功能。
+      前提是 POS 终端以店主身份登录。纯结果文，未叙述思考过程。

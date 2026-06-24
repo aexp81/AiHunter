@@ -1,0 +1,48 @@
+name: "前端 JS 里的角色-ID 映射：注册时注入 ownerId 直接拿管理员"
+id: "FRONTEND_ROLE_MAPPING_PRIVESC"
+applicable: "blackbox"
+phase: "authz"
+also_phases: [recon]
+tags: [privesc, mass-assignment, registration, frontend-trust]
+approach: "低权限确认后，回前端 JS 找角色↔ID 映射表，注册请求注入高权限参数（ownerId）提权"
+source: "https://mp.weixin.qq.com/s/R-3uPkL88iBndFoWnw9lpA"
+related_pattern: "openwebui-patterns-blackbox.yaml#MASS_ASSIGN_BLACKBOX"
+
+observation: '注册得到的是普通账号 roleType=GUEST，访问全部用户接口 403 (原文: "可以看到右边 roleType=GUEST...显示权限低")'
+hypothesis: "权限既然分级，注册时的角色大概率由某个前端可控参数决定，前端 JS 里应有角色↔ID 的映射"
+action_result: '回前端翻 main.js，发现其中划分了不同权限对应的 id，且注册需传 ownerId → 用管理员对应的 ownerId 重新注册 → 再走 OAuth 授权 → 访问之前 403 的接口成功 (原文: "代码在main.js里，划分了不同权限对应的id...所有注册的时候需要传入ownerId")'
+why_here_first: "低权限确认后，提权线索最可能藏在'决定权限的那个注册参数'里；而参数取值映射往往写死在前端 JS"
+chaining: "见 OAUTH_CRED_TO_ADMIN_CHAIN（终环：普通用户→管理员）"
+
+reasoning_chain:
+  - "问：注册/创建用户的响应里有没有暴露 role/roleType/ownerId 这类权限字段？"
+  - "问：前端 JS 里能否找到角色与某个 id/参数的映射表（搜 role/owner/admin/type）？"
+  - "如果找到映射：问：注册请求里把该参数改成高权限取值，新账号的 roleType 是否变化？"
+  - "问：拿高权限账号重新走认证流程，之前 403 的接口现在 200 吗？"
+vuln_root: "后端用前端传入的参数（ownerId）决定账号权限，未做服务端校验（前端信任 + Mass Assignment）"
+transferable_to:
+  - "任何注册/建户接口接收角色相关参数（role/group/ownerId/orgId）的系统"
+  - "权限取值映射硬编码在前端的 SPA"
+cases:
+  - note: "护网实战：ownerId 注入注册管理员账号"
+    source: "https://mp.weixin.qq.com/s/R-3uPkL88iBndFoWnw9lpA"
+  - note: >
+      WordPress bbPress 插件：注册请求的 POST 参数 bbp-forums-role 可直接指定
+      bbp_keymaster 角色，且 wp-login.php?action=register 端点无 CSRF 保护，
+      攻击者可通过 CSRF 诱导已认证管理员触发注册并赋予最高论坛权限。
+      (原文: "The bbp_user_add_role_on_register function assigns a user role
+      based on a user-controlled POST parameter (bbp-forums-role).")
+    source: "https://hackerone.com/reports/2999394"
+  - note: >
+      Stripo Inc: admin 角色用户看到角色下拉输入框在前端被 disabled，通过 DevTools
+      启用后发送 PUT /organizations/{id}/users 请求，将 owner 的 role 改为 admin，
+      导致 owner 无法再登录。后端未校验请求者是否有权修改 owner 角色。
+      纯结果文，无 L3 导航叙述。
+    source: "https://hackerone.com/reports/751299"
+  - note: >
+      U.S. DoD 教育申请系统（ColdFusion）：注册页面默认 user_type=5（普通申请者），
+      拦截注册请求将 user_type 改为 4 即可获得管理员权限。
+      同时 fname/lname 字段注入 <% 似乎也触发了提权（研究者自己也不确定具体原因）。
+      获得管理员后可访问全部申请者 PII（SSN、姓名、电话、邮箱）。
+      approach 同源：注册时篡改角色/类型参数（user_type / ownerId / role）直接提权。
+    source: "https://hackerone.com/reports/796379"

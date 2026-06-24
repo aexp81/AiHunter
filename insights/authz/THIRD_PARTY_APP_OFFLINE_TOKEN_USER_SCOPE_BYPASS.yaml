@@ -1,0 +1,76 @@
+name: "第三方应用 offline 令牌继承店铺全量权限——低权限员工通过打开应用绕过 RBAC"
+id: "THIRD_PARTY_APP_OFFLINE_TOKEN_USER_SCOPE_BYPASS"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["auth"]
+tags: ["oauth", "offline-access", "app-ecosystem", "rbac-bypass", "shopify", "staff-permission", "third-party-app"]
+source: "https://hackerone.com/reports/64164"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。团队摘要揭示：Shopify 应用生态的 OAuth 令牌以"离线访问"模式发放，
+  绑定的是店铺（而非具体用户），导致第三方应用在代表用户请求 API 时使用的是店铺全量权限。
+  (原文团队摘要: "Shopify's app ecosystem has no built-in way of verifying who
+  is using an app, and therefore most apps do not verify user privileges
+  when requesting and displaying a store's data.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：如果一个低权限员工（如无 ORDERS 访问权限的 MEMBER）打开
+  已安装的第三方应用（如 Order Printer），该应用的 API 请求使用的是店铺级别的
+  offline OAuth token，不携带当前用户的身份和权限约束，因此应用可以代表
+  低权限用户访问本不允许看到的 Orders 数据。
+
+action_result: >
+  成功：一个没有 ORDERS 访问权限的 MEMBER 通过 Order Printer APP 仍然可以访问订单数据。
+  Shopify 的修复方案：实现了"在线访问（online access）"模式——应用可以请求临时的
+  用户级令牌，API 请求会根据该用户的权限进行过滤。
+  (原文团队摘要: "We implemented an 'online access' mode in which an app can
+  request temporary access tied to an individual user account. API requests
+  in this mode may fail depending on the privileges that were granted to the user.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  N/A — 单步权限绕过。低权限员工打开任何已安装的第三方应用即可访问店铺全量数据
+  （取决于应用请求的 API scope）。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在有第三方应用生态 + 多角色 RBAC 的平台上，以低权限用户打开已安装的第三方应用，
+  检查应用展示的数据是否超出当前用户的权限范围——如果应用使用的是"离线/永久"
+  OAuth 令牌（绑定到租户而非用户），低权限用户可通过应用代理绕过 RBAC。
+
+reasoning_chain:
+  - "问：目标平台是否有第三方应用生态（app store / marketplace / plugin），且应用通过 OAuth 获取 API 访问权限？"
+  - "问：应用的 OAuth token 是绑定到 租户/店铺/组织（offline access）还是绑定到 具体用户（online access）？"
+  - "问：平台的 RBAC 是否对 staff/member 做了细粒度权限限制（如某些员工无 Orders/Finances 权限）？"
+  - "如果 token 绑定到租户 → 以低权限用户登录，打开一个需要敏感数据的已安装应用（如订单管理、财务报表）"
+  - "问：应用是否成功展示了当前用户在平台原生 UI 中无法看到的数据？"
+  - "如果成功 → 确认漏洞：应用的 API 调用使用了租户级全量 token，完全绕过了用户级 RBAC"
+  - "扩展：平台上其他已安装应用是否也存在同样问题？（系统性设计缺陷 vs 单个应用问题）"
+
+vuln_root: >
+  开发者假设"第三方应用只展示管理员授权的数据范围"，但应用使用的 OAuth offline token
+  绑定到租户而非个人用户，缺少用户级 scope 降权机制，
+  任何能打开应用的用户都继承了租户所有者的完整 API 权限。
+
+transferable_to:
+  - "Shopify / WooCommerce / BigCommerce 等电商平台的应用生态"
+  - "Slack / Microsoft Teams / Discord 等协作平台的 Bot/App 集成"
+  - "Salesforce / HubSpot 等 CRM 的第三方集成应用"
+  - "任何有 App Marketplace + 多角色 RBAC 且应用使用组织级 OAuth token 的 SaaS 平台"
+  - "企业内部 SSO 平台的第三方应用 SAML/OAuth 集成"
+
+cases:
+  - url: "https://hackerone.com/reports/64164"
+    title: "Privilege Escalation - A MEMBER with no ACCESS to ORDERS can still access the orders by using Order Printer APP"
+    author: "coolboss"
+    platform: "Shopify"
+    severity: "Privilege Escalation"
+    bounty: "$1,000"
+    note: >
+      no-content 报告。团队摘要详述了系统性设计缺陷：Shopify 应用生态的 OAuth
+      offline token 绑定到店铺而非用户，无 ORDERS 权限的 MEMBER 通过 Order Printer
+      APP 仍可访问订单数据。修复方案：引入 "online access" 模式，令牌绑定到个人用户。

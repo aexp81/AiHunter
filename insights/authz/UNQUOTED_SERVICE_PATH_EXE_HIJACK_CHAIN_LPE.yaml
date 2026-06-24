@@ -1,0 +1,76 @@
+name: "Windows 服务未引用路径——通过任意文件写入植入 Program.exe 从服务提权到 SYSTEM"
+id: "UNQUOTED_SERVICE_PATH_EXE_HIJACK_CHAIN_LPE"
+applicable: "both"
+phase: "authz"
+also_phases: ["chain"]
+tags: ["lpe", "windows", "unquoted-path", "exe-hijacking", "service", "privilege-escalation", "acronis", "arbitrary-file-write", "program-files"]
+source: "https://hackerone.com/reports/971610"
+
+# ——— L3 核心 ———
+
+observation: >
+  Acronis True Image 2021 的 Scheduler2 Service 以 SYSTEM 权限运行，
+  其 ImagePath 未用引号包裹（形如 C:\Program Files\Acronis\... 而非 "C:\Program Files\Acronis\..."），
+  导致 Windows SCM 在解析路径时按空格分词，先尝试 C:\Program.exe 再尝试
+  C:\Program Files\Acronis\...。
+  未叙述（仅结果）——报告正文不可见（no-content 公开）。
+
+hypothesis: >
+  如果攻击者能在 C:\ 根目录放置名为 Program.exe 的恶意文件，
+  当 Scheduler2 Service 启动时 Windows SCM 会优先加载 C:\Program.exe，
+  以 SYSTEM 权限执行攻击者代码。
+  但 C:\ 默认 ACL 需要管理员写入权限——因此需要链式组合一个任意文件写入/移动漏洞。
+  (原文评论: "it can be abused by a low privileged user which is able to chain
+  an arbitrary file Creation or Move to place the file and escalate further to SYSTEM")
+
+action_result: >
+  未叙述（仅结果）——报告正文不可见。从评论推断：
+  研究者确认 Program.exe 可被 Scheduler2 Service 加载，
+  但团队认为默认权限下 C:\ 不可写，需已有管理员权限，降低为 Low。
+  研究者反驳称若与任意文件写入漏洞串联则低权限用户可利用。
+  (原文评论: "@mmg: Already having Administrator rights defeats the purpose...
+  I have reported this because it can be abused by a low privileged user which
+  is able to chain an arbitrary file Creation or Move")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  任意文件写入/移动漏洞（低权限触发）→ 在 C:\ 创建 Program.exe →
+  SYSTEM 服务因未引用路径加载 Program.exe → SYSTEM 级代码执行。
+  单独此漏洞（无任意文件写入前提）需已有管理员权限，利用价值低。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  枚举目标系统上所有 Windows 服务的 ImagePath 注册表值，筛选未用引号包裹
+  且路径中包含空格的条目（如 C:\Program Files\...），确认服务运行权限（SYSTEM/Admin）。
+  若已有任意文件写入/移动漏洞，可在路径截断点（如 C:\Program.exe）植入恶意
+  可执行文件，等待服务重启加载实现提权。
+
+reasoning_chain:
+  - "问：目标系统上有哪些以 SYSTEM/高权限运行的第三方 Windows 服务？"
+  - "问：这些服务的 ImagePath（注册表 HKLM\\SYSTEM\\CurrentControlSet\\Services\\<name>\\ImagePath）是否未用引号包裹？"
+  - "问：未引用的路径中是否包含空格（通常是 C:\\Program Files\\... 路径）？"
+  - "问：攻击者是否能在路径截断点（如 C:\\、C:\\Program Files\\SomeDir\\ 等）写入文件？（默认 C:\\ 需管理员，但可通过任意文件写入漏洞串联）"
+  - "如果能写入 → 放置同名 EXE → 服务重启或系统重启时 SCM 加载恶意 EXE"
+  - "问：服务是否设置了自动重启策略（sc qfailure 检查 recovery actions）？"
+
+vuln_root: >
+  开发者在注册服务时未将包含空格的 ImagePath 用引号包裹，
+  依赖 C:\ 根目录默认 ACL 作为安全屏障——但忽视了与任意文件写入漏洞串联的场景。
+
+transferable_to:
+  - "任何在 C:\\Program Files 下安装且服务 ImagePath 未引用的 Windows 桌面软件"
+  - "企业安全软件（杀毒、备份、VPN）的 SYSTEM 级服务"
+  - "任意文件写入/移动漏洞的提权变现点（从低危升级为 SYSTEM RCE）"
+
+cases:
+  - url: "https://hackerone.com/reports/971610"
+    title: "Local Privilege Escalation via EXE hijacking with Acronis True Image 2021 - Acronis Scheduler2 Service"
+    author: "mmg"
+    platform: "Acronis True Image 2021 (Scheduler2 Service)"
+    severity: "Low"
+    note: >
+      no-content 公开。Scheduler2 Service 以 SYSTEM 运行，ImagePath 未引用，
+      默认需管理员权限写入 C:\，团队降为 Low。
+      研究者指出可与任意文件写入漏洞串联实现低权限提权。

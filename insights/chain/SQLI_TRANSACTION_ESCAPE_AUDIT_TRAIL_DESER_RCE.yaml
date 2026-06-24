@@ -1,0 +1,105 @@
+name: "内部调试工具SQL注入逃逸事务——通过ORM审计表YAML反序列化链实现RCE"
+id: "SQLI_TRANSACTION_ESCAPE_AUDIT_TRAIL_DESER_RCE"
+applicable: "whitebox"
+phase: "chain"
+also_phases: ["input"]
+tags: ["sql-injection", "transaction-escape", "yaml-deserialization", "rce", "paper-trail", "audit-log", "internal-tool", "debug-endpoint", "hackerone", "jobert"]
+source: "https://hackerone.com/reports/1663299"
+
+# ——— L3 核心 ———
+
+observation: >
+  HackerOne 内部后台有一个 SQL Query Analyzer 功能，允许工程师对数据库执行
+  EXPLAIN ANALYZE 查询。代码用 Ruby 字符串插值将用户 SQL 拼入
+  "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) #{raw_sql}"，
+  并在外层包裹 ActiveRecord transaction + ROLLBACK 以防止副作用。
+  (原文: "One of the features is the ability to run EXPLAIN ANALYZE queries against
+  a connected database. This feature is accessible by a handful of engineers.")
+  (原文: "explain_analyze = \"EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) #{raw_sql}\"")
+  (原文: "The code is written so that it would wrap each analyze query in a transaction.
+  This avoids permanent side effects of running the query")
+
+hypothesis: >
+  如果在注入的 SQL 中先执行 SELECT 1; ROLLBACK; 逃逸当前事务，
+  随后的 INSERT 语句就会在新事务中持久化。
+  目标表选 paper_trail 的 user_versions（ORM 审计跟踪表），
+  它有一个 object 字段存储 YAML 序列化的历史对象快照，
+  而 reify 方法会反序列化该 YAML 并实例化 item_type 指定的类——
+  如果注入恶意 YAML payload 到 object 字段，就能通过 reify 触发任意代码执行。
+  (原文: "The interpolation of the raw_sql variable can be used to escape the current
+  transactions and make any changes persist.")
+  (原文: "The user_versions table keeps a paper trail of changes on User objects...
+  This gem comes with a useful function to reinstantiate an old version of an object,
+  called reify. When this method is called, the YAML from the object attribute is
+  deserialized and is used to initialize the class stored in the item_type column.
+  This method inherently trusts the object stored in object however.")
+
+action_result: >
+  成功：
+  1. 在 SQL Analyzer 中注入 SELECT 1; ROLLBACK; INSERT INTO user_versions
+     (item_type, item_id, event, email, object) VALUES ('User', 2, 'update',
+     'uniquekeyword@hackerone.com', '<恶意YAML>'); --
+  2. YAML payload 使用 Stratum Security 2021 年发布的 Gem::Installer 链执行
+     sleep 600 命令
+  3. 访问 /support/historic_users?historic_user_input=uniquekeyword@hackerone.com
+     → 页面挂起 600 秒后返回 500 错误，证明 sleep 命令被执行
+  (原文: "visit http://localhost:8080/support/historic_users?historic_user_input=
+  uniquekeywordtotriggercode@hackerone.com and observe that the page will hang
+  for 600 seconds and then result in a 500 internal server error,
+  proving that it executes the sleep 600 command")
+
+why_here_first: >
+  内部调试工具通常为了便捷性而降低安全标准——SQL Analyzer 直接拼接用户输入，
+  虽然用事务包裹试图防止副作用，但这种防御可以被 SQL 层面的 ROLLBACK 语句绕过。
+  (原文: "The code is written so that it would wrap each analyze query in a transaction.
+  This avoids permanent side effects of running the query, because EXPLAIN ANALYZE
+  will still execute the SQL query.")
+
+chaining: >
+  三环链：
+  1. SQL 注入逃逸事务 → 在 EXPLAIN ANALYZE 中注入 ROLLBACK 终结外层事务，
+     后续 INSERT 在新事务中持久化
+  2. 审计表 YAML 注入 → 将恶意 YAML 反序列化 payload 写入 paper_trail 的
+     user_versions.object 字段，控制 email 字段以便定向触发
+  3. YAML 反序列化 RCE → 访问 historic_users 页面触发 UserVersion#reify，
+     反序列化恶意 YAML 执行任意 Ruby 代码/系统命令
+  (原文: "Because the attacker can persist a new version, it can control the object
+  that would be deserialized")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在拥有（或发现）内部调试/管理工具的 SQL 执行功能时，
+  测试其事务包裹机制是否可通过注入 ROLLBACK/COMMIT 语句逃逸，
+  然后搜索应用中使用 YAML/Marshal/JSON 反序列化重建对象的 ORM 审计表
+  （如 paper_trail、audited、logidze），向审计表注入恶意序列化 payload
+  并找到触发反序列化的入口点实现 RCE。
+
+reasoning_chain:
+  - "问：目标应用是否有内部/管理工具允许执行 SQL 查询（EXPLAIN ANALYZE、查询分析器、报表工具）？"
+  - "白盒：grep -rn 'EXPLAIN\\|execute.*raw_sql\\|exec_query' --include='*.rb' app/ lib/"
+  - "问：SQL 查询是否用字符串插值/拼接而非参数化？"
+  - "问：是否用事务（BEGIN/ROLLBACK）包裹查询以防止副作用？是否可以通过注入 ROLLBACK 语句逃逸？"
+  - "构造 PoC：SELECT 1; ROLLBACK; INSERT INTO ... 观察是否持久化"
+  - "问：应用是否使用 ORM 审计库（paper_trail、audited、logidze）将对象序列化存储到数据库？"
+  - "白盒：grep -rn 'has_paper_trail\\|reify\\|yaml_column_permitted_classes' --include='*.rb'"
+  - "问：审计表中的序列化数据（YAML/Marshal/JSON）是否会被反序列化重建对象？入口点在哪？"
+  - "问：反序列化时是否限制了允许的类？是否可以构造已知的反序列化 gadget chain？"
+
+vuln_root: >
+  开发者假设用事务包裹 SQL 执行就能防止副作用，
+  但攻击者可以通过注入 ROLLBACK 语句逃逸事务边界。
+  同时 paper_trail 的 reify 方法无条件信任数据库中存储的 YAML 数据，
+  使注入的恶意 payload 在被访问时触发代码执行。
+
+transferable_to:
+  - "使用 paper_trail/audited 等 ORM 审计 gem 且有管理后台的 Ruby on Rails 应用"
+  - "任何有 SQL 查询分析/调试工具且用事务包裹防护的管理面板"
+  - "具有对象版本历史功能（object versioning）且使用 YAML 序列化的系统"
+  - "Redash、Metabase、Blazer 等嵌入式 SQL 查询工具"
+
+cases:
+  - source: "https://hackerone.com/reports/1663299"
+    title: "Ability to escape database transaction through SQL injection, leading to arbitrary code execution (HackerOne)"
+    bounty: "N/A（团队成员自报）"
+    note: "Jobert 在 HackerOne 内部调试工具发现，EXPLAIN ANALYZE 的事务包裹被 ROLLBACK 逃逸，利用 paper_trail 的 reify YAML 反序列化实现 RCE"

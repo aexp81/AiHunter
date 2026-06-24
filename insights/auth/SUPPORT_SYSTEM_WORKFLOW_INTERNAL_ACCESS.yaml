@@ -1,0 +1,47 @@
+name: "支持系统工作流穿透——借 Ticket 集成访问内部知识库"
+id: "SUPPORT_SYSTEM_WORKFLOW_INTERNAL_ACCESS"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["recon"]
+tags: ["misconfiguration", "confluence", "support-system", "ticket-workflow", "internal-docs", "zendesk", "jira-service-desk"]
+source: "https://hackerone.com/reports/3113398"
+
+observation: >
+  HackerOne 的支持系统存在配置缺陷，外部用户可以通过支持工作流访问内部 Confluence 文档。
+  (原文: "This vulnerability allowed external access to HackerOne's internal Confluence documentation through a support system misconfiguration.")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  成功访问了内部文档，并具有查看和有限修改 Confluence 实例内容的能力。
+  (原文: "Access to internal documentation that wasn't intended for public viewing"
+  以及 "The ability to view and modify limited content within the Confluence instance")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  支持系统配置缺陷 → 穿透到内部 Confluence → 读取/修改内部文档。
+  (原文: "support system workflows could be leveraged to gain unauthorized access to internal resources")
+
+approach: >
+  探测目标的支持/工单系统（Zendesk、Jira Service Desk、Intercom 等）
+  与内部知识库（Confluence、Notion、Wiki）之间的集成链路，
+  利用工作流中的信任传递获取内部资源访问权。
+
+reasoning_chain:
+  - "问：目标使用了哪些客户支持系统？（support.xxx.com、help.xxx.com 子域）"
+  - "问：支持系统是否与内部知识库（Confluence、Notion、SharePoint）存在集成？"
+  - "问：提交工单或使用支持门户时，返回的链接/嵌入内容是否包含内部资源引用？"
+  - "问：支持系统的认证边界是否正确划分？外部用户 session 能否穿透到内部集成？"
+  - "如果可以穿透 → 枚举可访问的内部文档范围，评估信息敏感度"
+
+vuln_root: "支持系统与内部知识库之间的集成未正确划分外部/内部用户的访问边界，外部用户可通过工作流链路穿透到内部资源。"
+
+transferable_to:
+  - "使用 Confluence + Zendesk/Jira Service Desk 集成的企业"
+  - "客户门户与内部 Wiki 共享认证或 SSO 的场景"
+  - "任何 SaaS 支持系统与内部工具间有自动化集成的目标"
+
+cases:
+  - url: "https://hackerone.com/reports/3113398"
+    note: "HackerOne 支持系统配置缺陷导致外部访问内部 Confluence 文档，$12,500。"

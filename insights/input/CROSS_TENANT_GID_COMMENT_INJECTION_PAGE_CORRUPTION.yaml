@@ -1,0 +1,71 @@
+name: "评论中注入跨租户 GID 引用——触发未处理服务端异常导致页面持久损坏"
+id: "CROSS_TENANT_GID_COMMENT_INJECTION_PAGE_CORRUPTION"
+applicable: "blackbox"
+phase: "input"
+also_phases: ["logic"]
+tags: ["graphql", "gid", "cross-tenant", "comment", "error-handling", "dos", "shopify"]
+source: "https://hackerone.com/reports/629150"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。报告者在测试 GraphQL 时偶然发现，
+  在 Shopify 后台折扣码的评论字段中，GraphQL mutation TimelineCommentCreate
+  的 message 参数支持内联引用标签（如 [#V12345| text]），
+  该标签引用了一个不属于当前店铺的 Reference page/产品变体 GID。
+  (原文: "I found this cool behavior by mistake when I was testing for some GraphQL")
+
+hypothesis: >
+  未叙述（仅结果）。推断：当评论内容包含跨店铺的资源 GID 引用时，
+  服务端尝试解析该引用会抛出未处理的内部错误（因无权访问另一店铺资源），
+  且该错误可能导致包含该评论的页面永久无法正常渲染。
+
+action_result: >
+  成功：在 TimelineCommentCreate mutation 的 message 字段注入
+  `[#V12221027811351| ]`（另一店铺的产品变体 GID）→
+  请求返回 Internal error → 刷新折扣码页面后返回错误 →
+  唯一访问方式是从 /admin/discounts/ 列表点击，此时页面加载但评论区（Timeline）
+  完全消失，所有 staff 和 admin 均受影响。
+  (原文: "the response will return with an error...the only way to browser the
+  discount code...is from /admin/discounts/ and then click on the discount code
+  and it will open without include/show the comment section")
+
+why_here_first: >
+  未叙述（仅结果）。偶然发现于 GraphQL 测试中。
+
+chaining: "N/A — 独立 DoS/功能破坏漏洞，无串链。"
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在支持内联资源引用（如 [#ID| text]）的评论/消息字段中，
+  注入当前租户无权访问的跨租户资源 GID，触发服务端未处理异常，
+  检查是否导致包含该内容的页面持久性渲染故障。
+
+reasoning_chain:
+  - "问：目标系统的评论/消息/描述字段是否支持内联引用标签（如 [#ID| text]、@mention、[[link]]）？"
+  - "如果支持：问：引用的资源 ID 是否可替换为当前租户/组织/项目不拥有的资源 ID？"
+  - "黑盒：构造包含跨租户 GID 引用的评论，发送请求，观察响应是否返回 Internal Error。"
+  - "如果返回错误：问：包含该评论的页面是否仍能正常加载？评论区是否消失？"
+  - "问：该影响是否持久？刷新页面后是否恢复？其他用户（含 admin）是否同样受影响？"
+  - "问：是否可以在多个关键页面（订单、产品、客户等）的评论区重复此操作？"
+
+vuln_root: >
+  开发者假设评论中的资源引用标签始终指向当前租户的合法资源，
+  未对跨租户引用做异常捕获或优雅降级，导致未处理异常持久破坏页面渲染。
+
+transferable_to:
+  - "任何 SaaS 后台支持内联资源引用（GID、mention、embed）的评论/消息/描述字段"
+  - "GraphQL 系统中 Timeline/Activity feed 的 mutation 端点"
+  - "多租户系统中资源 GID 可预测或可枚举的场景"
+  - "Issue tracker、项目管理、CRM 等系统的评论区"
+
+cases:
+  - url: "https://hackerone.com/reports/629150"
+    title: "Staff can disable comment section on discounts via cross-store GID reference"
+    platform: "Shopify"
+    severity: "Low"
+    bounty: "N/A（无赏金）"
+    note: >
+      触发点：TimelineCommentCreate mutation 的 message 字段。
+      注入不属于当前店铺的产品变体 GID 引用导致 Timeline 区域永久消失。

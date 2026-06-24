@@ -1,0 +1,340 @@
+name: "B2B 合作伙伴门户中替换资源 ID 跨租户获取全部敏感资源（CD key/license/凭证）"
+id: "PARTNER_PORTAL_CROSS_TENANT_RESOURCE_ID_IDOR"
+applicable: "blackbox"
+phase: "authz"
+also_phases: []
+tags: ["idor", "access-control", "multi-tenant", "partner-portal", "resource-id", "cross-tenant", "steam", "valve", "cd-key"]
+source: "https://hackerone.com/reports/391217"
+
+observation: >
+  Steam 合作伙伴管理门户的 /partnercdkeys/assignkeys/ 端点允许已认证合作伙伴下载自己游戏的 CD key。
+  (原文团队摘要: "a path to download previously-generated CD keys for a game which they would not
+  normally have access by passing specific parameters to the /partnercdkeys/assignkeys/ endpoint")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  成功获取任意游戏的全部已生成 CD key。
+  (原文标题: "Getting all the CD keys of any game"，
+  团队摘要: "an authenticated user could download previously-generated CD keys
+  for a game which they would not normally have access")
+
+why_here_first: "未叙述（仅结果）"
+chaining: "N/A — 单步 IDOR 即可获取全部 CD key"
+
+approach: >
+  在 B2B/合作伙伴管理门户中，识别涉及敏感资源分配或下载的端点
+  （密钥分发/license 管理/报表导出），以合法低权限账户抓取正常请求后
+  替换资源标识符（appid/gameid/packageid）为其他租户的资源 ID，
+  检查服务端是否缺少所有权/归属验证。
+
+reasoning_chain:
+  - "问：目标是否有 B2B 管理门户（partner.*、admin.*、manage.* 等子域）？"
+  - "问：门户中有哪些涉及敏感资源分配/下载的端点（密钥/license/凭证/报表）？"
+  - "问：正常请求中哪些参数是资源标识符（数字 ID、UUID、slug）？"
+  - "问：将资源标识符替换为其他租户的 ID 后，服务端是否返回了数据而非拒绝？"
+  - "如果返回 → 确认跨租户 IDOR，评估可获取的数据量和批量可利用性"
+
+vuln_root: "合作伙伴门户假设认证即授权，未在资源操作时验证资源归属。"
+
+transferable_to:
+  - "多租户 SaaS/PaaS 合作伙伴管理门户"
+  - "游戏平台的发行商/开发者后台"
+  - "涉及 license/密钥/凭证分发的管理接口"
+  - "电商平台的商家后台订单/库存管理"
+  - "任何 B2B 平台的跨租户数据访问场景"
+
+cases:
+  - url: "https://hackerone.com/reports/391217"
+    note: "Steam partner.steamgames.com，$20,000，Critical。报告者 moskowsky。"
+  - url: "https://hackerone.com/reports/1777095"
+    title: "Unauthorized access to resumes stored on LinkedIn"
+    author: "headhunter"
+    platform: "LinkedIn"
+    severity: "High (CVSS 7.5)"
+    note: >
+      no-content 公开。招聘者简历下载端点存在顺序文件 ID IDOR，攻击者可遍历
+      file ID 下载任意求职者/被上传的简历。团队确认 2022 年 10 月引入，
+      24 小时内修复，未发现滥用证据。approach 相同：替换资源 ID 获取跨用户资源。
+  - url: "https://hackerone.com/reports/2374730"
+    title: "Broken Access Control (IDOR) in Booking Detail and Bids Could Leads to Sensitive Information Disclosure"
+    author: "back2arie"
+    platform: "Bykea"
+    severity: "High"
+    note: >
+      打车平台 API 端点 /api/v1/bookings/{booking_id} 和 /api/v2/bids/{booking_id}
+      缺少所有权验证，替换 booking_id 即可获取其他用户的行程详情（GPS 坐标、地址、费用）。
+      approach 相同：替换资源 ID 获取跨用户数据。
+  - url: "https://hackerone.com/reports/3506183"
+    title: "Missing Access Control in MigrationFile allows attacker to upload files to any Migration"
+    author: "ahacker1"
+    platform: "GitHub Enterprise Server"
+    severity: "High"
+    cve: "CVE-2026-1355"
+    note: >
+      GitHub 仓库迁移文件上传端点缺少授权检查，攻击者提供其他用户的 migration ID
+      即可上传/覆盖受害者的迁移归档文件，导致受害者在 restore/import 时
+      下载攻击者控制的仓库数据。no-content 公开，仅有团队摘要。
+      approach 相同：替换资源 ID（migration identifier）操作跨用户资源。
+  - url: "https://hackerone.com/reports/2944357"
+    title: "Unauthorized Reservation Cancellation Through IDOR Vulnerability"
+    author: "no-need"
+    platform: "Yelp"
+    severity: "High (CVSS 8.6)"
+    note: >
+      no-content 公开，Duplicate。预订功能不要求用户登录，知道 reservation_id
+      即可取消他人预订。团队摘要："It is possible to cancel a reservation by knowing
+      the reservation id, this is because the reservation feature does not require
+      users to login." approach 相同：替换资源 ID 操作跨用户资源（写操作变体：取消而非读取）。
+  - url: "https://hackerone.com/reports/2746709"
+    title: "Broken Access Control leads to disclosure of transaction history via /v2/rechargeTransactionHistory endpoint"
+    author: "hafiz-ng"
+    platform: "MTN Group (myMTN NG mobile app)"
+    severity: "High"
+    note: >
+      full-content 公开，纯结果文。移动端 API 端点 /api/v2/rechargeTransactionHistory
+      请求体中替换 customer_id 为任意 MTN 号码即可获取受害者充值交易历史
+      （rechargeDate, amountBefore, amountAfter, transactionId）。
+      无 why_here_first / 扑空 / 串链叙事。
+      approach 相同：替换用户标识符获取跨用户数据。
+  - url: "https://hackerone.com/reports/1392630"
+    title: "IDOR the ability to view support tickets of any user on seller platform"
+    author: "lewaperbb"
+    platform: "TikTok (seller platform)"
+    bounty: "$2,500"
+    severity: "Medium (CVSS 6.5)"
+    note: >
+      no-content 公开。团队摘要："Due to an Insecure Direct Object Reference (IDOR)
+      vulnerability, an attacker could have potentially viewed support tickets on
+      seller platform." approach 相同：替换资源 ID 跨用户查看工单。
+  - url: "https://hackerone.com/reports/2867022"
+    title: "Improper Access Control Allows Trip Hijacking and Passenger/Driver PII Disclosure"
+    author: "grassye"
+    platform: "Bykea"
+    severity: "Medium"
+    note: >
+      no-content 公开。团队摘要："The /acknowledged_the_offer and /accept endpoints
+      failed to properly validate user ownership of a trip_id, allowing an attacker
+      to substitute a victim's ID into the requests." 替换 trip_id 可强制乘客进入行程
+      或强制司机接单，暴露双方 PII。approach 相同：替换资源 ID 跨用户操作（写操作变体）。
+  - url: "https://hackerone.com/reports/1556950"
+    title: "Exposure of Private Personal Information to an Unauthorized Actor - PII and soldier data (U.S. Dept Of Defense)"
+    author: "hxhbrofessor"
+    platform: "U.S. DoD SelfService portal"
+    severity: "Critical"
+    note: >
+      full-content 公开。军人自助服务门户 /SelfService/Home/dynamicdata/section/
+      URL 末尾含 section ID 和 user ID，已认证用户替换 section ID（枚举 1-9）
+      和 user ID 即可查看任意军人的 Personnel/ATRRS/Education/Training 等标签页，
+      包含 SSN 后四位、Home of Record、MOS（军职）、学校等 PII。
+      (原文: "start manipulating URL requests to view the following tabs:
+      Personnel, Active Duty Tours, ADOS, Assignments, ATRRS...")
+      approach 相同：替换 URL 路径中的资源 ID 获取跨用户数据。
+  - url: "https://hackerone.com/reports/2319586"
+    title: "Broken Access Control (Horizontal Privilege Escalation) — MTN Nigeria offers portal"
+    author: "aliyueka"
+    platform: "MTN Group (mtn.ng)"
+    severity: "Medium (CVSS 6.5)"
+    note: >
+      full-content 公开。MTN Nigeria 优惠门户 https://mtn.ng/offers/list?phone=
+      经 OTP 验证后，URL 中的 phone 参数直接替换为任意 MTN 号码即可查看该号码
+      的优惠信息，并代其订阅流量/话费。无服务端二次鉴权。
+      (原文: "I changed the number that i logged in with my alternative number and
+      it works successfully")
+      approach 相同：替换 URL 参数中的用户标识符（手机号）获取/操作跨用户资源。
+  - url: "https://hackerone.com/reports/490782"
+    title: "Missing Authorization on Private Message replies (BuddyPress)"
+    author: "klmunday"
+    platform: "WordPress (BuddyPress)"
+    severity: "Low"
+    bounty: "有奖金（金额未公开）"
+    note: >
+      BuddyPress 私信回复的 messages_send_reply AJAX action 中，攻击者替换
+      thread_id 参数即可向任意私信会话注入消息，被注入的会话参与者可见该消息
+      但攻击者不出现在参与者列表中。thread_id 为顺序 ID，攻击者可创建一个会话
+      获取当前最大 ID 后遍历 1→max 批量注入所有私信线程。
+      (原文: "Users can reply to private message threads which they are not
+      participants of by changing the thread_id parameter in the
+      messages_send_reply ajax action")
+      2019-02 报告，2019-03 公开。纯结果文（有 Python PoC 脚本），未叙述挖掘思路。
+  - url: "https://hackerone.com/reports/1096560"
+    title: "Ability to add arbitrary images/descriptions/titles to other people's issues via IDOR on getrevue.co"
+    author: "mirhat"
+    platform: "Twitter / Revue (getrevue.co)"
+    severity: "Critical"
+    note: >
+      Revue newsletter 平台的 /app/items 端点 POST 请求体中 issue ID 替换为其他用户的
+      issue ID，即可向受害者的 newsletter issue 添加任意图片/标题/描述。
+      (原文: "On the request change the ID to your other account's issue ID")
+      纯结果文，无导航叙事。approach 相同：替换 POST 请求体中资源 ID 操作跨用户资源。
+  - url: "https://hackerone.com/reports/2962056"
+    title: "IDOR Vulnerability Allowing Unauthorized Profile Picture Change"
+    author: "l1ackersalman"
+    platform: "Autodesk"
+    severity: "Medium (CVSS 5.3)"
+    note: >
+      no-content 公开。Autodesk 用户资料编辑端点通过 id 参数标识用户，
+      替换 id 可修改他人头像。团队摘要确认已修复。
+      (团队摘要: "An IDOR vulnerability was found on Autodesk User Profile, through the
+      'id' parameter which could have allowed an attacker to edit another user's photo.")
+      approach 相同：替换用户标识符（id 参数）操作跨用户资源。
+  - url: "https://hackerone.com/reports/1505567"
+    author: "naaash"
+    platform: "TikTok (business.tiktok.com)"
+    bounty: "有奖金（金额未公开）"
+    severity: "Medium (CVSS 5.3)"
+    note: >
+      no-content 公开。TikTok 广告管理平台端点中 org_id 和 account_id 参数存在 IDOR，
+      拥有 Analyst 权限的用户可关闭其他用户的广告账户。
+      (团队摘要: "An IDOR vulnerability was found on the org_id and account_id
+      parameters on a Business.TikTok.com endpoint, which could have resulted
+      in an authenticated user with Analyst level permissions to close another
+      user's ads accounts.")
+      approach 相同：替换资源 ID（org_id/account_id）操作跨用户资源（写操作变体：关闭账户）。
+  - url: "https://hackerone.com/reports/2357113"
+    title: "Unauthorized Access to Offline Publication Cover Pages via SOURCE_DOCUMENT_ID"
+    author: "giwadaoud"
+    platform: "Publitas"
+    severity: "Medium (CVSS 5.3)"
+    note: >
+      出版物管理平台端点接受 sourceDocumentId 参数，替换为其他用户的离线出版物 ID
+      后返回该出版物封面页 URL，且 URL 中包含用户 ID 和 main ID。
+      离线出版物本应仅账户持有者可见。无赏金。纯结果文，无导航叙事。
+      (原文: "When sending a request with the source ID, the system responds
+      with a URL to the cover page of that publication. However, the cover page
+      is intended to be offline and not publicly accessible.")
+  - url: "https://hackerone.com/reports/478621"
+    title: "Privilege Escalation удаляем все созданные ссылки с okl.lt"
+    author: "iframe"
+    platform: "ok.ru (okl.lt URL shortener)"
+    severity: "Critical"
+    note: >
+      no-content 公开。IDOR at okl.lt 允许隐藏其他用户 dashboard 中的短链接。
+      短链接本身仍可正常工作。
+      (团队摘要: "IDOR at okl.lt allowed to hide links in another user's dashboard.
+      The short link itself remained functional.")
+      approach 相同：替换资源 ID 操作跨用户资源（写操作变体：隐藏/删除）。
+  - url: "https://hackerone.com/reports/3445710"
+    title: "Broken Access Control allows advertiser accounts to delete trackers they do not own"
+    author: "0xjad"
+    platform: "Revive Adserver"
+    severity: "High (CVSS 7.1)"
+    cve: "CVE-2026-21641"
+    note: >
+      no-content 公开。tracker-delete.php 脚本未验证 clientid 参数的所有权，
+      拥有删除 tracker 权限的用户可删除其他账户的 tracker。
+      (团队摘要: "The Revive Adserver tracker-delete.php script was not properly
+      checking ownership of the clientid parameter before deleting the resource.")
+      approach 相同：替换资源 ID（clientid）操作跨用户资源（写操作变体：删除）。
+  - url: "https://hackerone.com/reports/243943"
+    title: "IDOR [partners.shopify.com] - User with ONLY Manage apps permission is able to get shops info and staff names"
+    author: "inhibitor181"
+    platform: "Shopify (partners.shopify.com)"
+    severity: "Medium (CVSS 5.0)"
+    bounty: "$500"
+    note: >
+      Shopify 合作伙伴门户中，仅有 "Manage apps" 权限的成员可通过直接访问
+      development store 详情 URL（/stores/{incremental_id}）查看店铺信息和员工列表。
+      错误提示 "You're missing the Manage apps permission" 而非 "Manage stores"，
+      暴露了权限检查逻辑混乱。store ID 为顺序递增数字，可通过关联
+      business_id 和 store_id 范围进行猜测/枚举。
+      (原文: "because these are incremental ids, one can predict with a somewhat accuracy
+      what should come next by correlating the business id and the store id,
+      then making some math calculations")
+      approach 相同：替换资源 ID（store_id）获取跨权限边界的数据。
+  - url: "https://hackerone.com/reports/3650582"
+    title: "Missing access control when linking trackers to campaigns"
+    author: "darky_os"
+    platform: "Revive Adserver 6.0.6"
+    severity: "Medium (CVSS 4.3)"
+    cve: "CVE-2026-34913"
+    note: >
+      no-content 公开。campaign-trackers.php 脚本未验证 campaign 归属，
+      低权限用户可将自己的 tracker 关联到其他 manager 的 campaign。
+      (团队摘要: "A low‑privileged user could link their trackers to campaigns
+      owned by other managers on the same instance, resulting in inconsistent
+      ownership relationships.")
+      approach 相同：替换/指定跨所有权资源 ID（campaign_id）操作跨用户资源绑定。
+  - url: "https://hackerone.com/reports/1063022"
+    title: "Cross-Tenant IDOR on Business allowing escalation privilege, invitation takeover, and edition of any other Businesses' employees"
+    author: "freesec"
+    platform: "Uber (business.uber.com)"
+    severity: "Medium (CVSS 5.4)"
+    note: >
+      no-content 公开。Uber Business 管理门户的 /_rpc?rpc=updateEmployees 端点中，
+      已知 employeeUuid 即可跨租户提升其他 Business 的员工权限从 user 到 admin。
+      (团队摘要: "A Business employee with the user role was able to escalate their privilege
+      to admin using a crafted request to the updateEmployees endpoint, as long as the
+      employeeUuid is known.")
+      approach 相同：替换资源 ID（employeeUuid）操作跨租户资源（写操作变体：权限提升）。
+  - url: "https://hackerone.com/reports/172545"
+    title: "IDOR - Ability to view unlisted products"
+    author: "yaworsk"
+    platform: "Reverb.com"
+    severity: "未公开"
+    bounty: "有奖金（金额未公开）"
+    note: >
+      创建商品时代理自身流量，观察到 /api/listings/ID/product_bundle 请求，
+      将 ID 替换为其他用户未发布的商品 ID 即可获取完整商品详情。
+      (原文: "I noticed there is a call to /api/listings/65905/product_bundle...
+      if I use a proxy, create my own product and intercept the call to
+      /api/listing/MYID/product_bundle and replace MYID with an unlisted product,
+      I will receive the product details")
+      approach 相同：代理自身工作流，替换资源 ID 获取跨用户未发布资源。
+  - url: "https://hackerone.com/reports/916704"
+    title: "Access control missing while viewing the attachments in the 'All boards'"
+    author: "dpx01"
+    platform: "Nextcloud (Deck app)"
+    severity: "Medium (CVSS 6.5)"
+    cve: "CVE-2020-8235"
+    bounty: "$150"
+    note: >
+      Nextcloud Deck 应用的任务附件端点 /apps/deck/cards/{cardId}/attachment/{attachmentId}
+      未验证当前用户是否有权访问该 card/attachment。附件 ID 为顺序递增数字，
+      任意已认证用户替换 attachmentId 即可下载其他用户上传到任意 board 的文件。
+      纯结果文，无导航叙事。
+      approach 相同：替换顺序递增的资源 ID（attachment ID）获取跨用户文件。
+  - url: "https://hackerone.com/reports/317332"
+    title: "Improper access control on adding a Register to an Outlet"
+    author: "al88nsk"
+    platform: "Vend (vendhq.com)"
+    severity: "Medium (CVSS 4.9)"
+    note: >
+      Cashier 角色用户在自己的 store B 发起 POST /register/create/outlet_id/{id}，
+      将请求体中的 vend_register[outlet_id] 替换为 store A 的 outlet ID，
+      成功向 store A 的 outlet 添加收银机。利用条件：攻击者需同时拥有两个 store 账户。
+      纯结果文，无导航叙事。approach 相同：替换资源 ID（outlet_id）跨店操作。
+  - url: "https://hackerone.com/reports/1175980"
+    title: "Improper authorization at tmss.gsa.gov leads to data exposure of all registered users"
+    author: "alexandrio"
+    platform: "U.S. GSA (tmss.gsa.gov)"
+    severity: "Critical"
+    note: >
+      GSA 运输管理系统 TMSS 2.0 的 /tmssserver/api/public/customerregistration/{id}/userId/
+      端点无需认证即可访问，替换顺序递增的 id（0-4800+）可获取全部注册用户的
+      邮箱、电话、全名、安全问题等 PII。另有 /emailId/ 端点可按邮箱查询。
+      纯结果文，无导航叙事。approach 相同：替换顺序递增资源 ID 获取跨用户数据。
+  - url: "https://hackerone.com/reports/276976"
+    title: "Information Disclosure and Privilege Escalation in app.goodhire.com/member/developers/api-settings"
+    author: "hackedbrain"
+    platform: "Inflection (GoodHire)"
+    severity: "High (CVSS 8.5)"
+    note: >
+      no-content 公开。购买背景调查报告的端点缺少授权检查，任意有效用户可代替
+      其他账户下单购买报告（但无法获取结果）。团队摘要："missing authorization check
+      when purchasing a report...any valid user with ordering privileges could place an
+      order on behalf of any other account (although would not be able to receive the
+      results of the order)." approach 相同：替换账户标识符操作跨用户资源（写操作变体：代下单）。
+  - url: "https://hackerone.com/reports/31383"
+    title: "Ability to see common response titles of other teams (limited)"
+    author: "prakharprasad"
+    platform: "HackerOne"
+    severity: "Low (Information Disclosure)"
+    note: >
+      HackerOne Trigger 创建 API 中 common_response_id 参数未验证团队归属，
+      替换为其他团队的 common_response ID（顺序数字）后可在 Trigger 标题中
+      看到其他团队的常用回复标题。
+      (原文: "tamper the request and change JSON variable common_response_id to
+      say 24 and after trigger gets added I see a title of [REDACTED] which is
+      not in my default team template")
+      approach 相同：替换资源 ID（common_response_id）获取跨租户数据。

@@ -1,0 +1,89 @@
+name: "邮件确认链接发送到错误收件箱导致可确认任意邮箱"
+id: "EMAIL_CONFIRM_SENT_TO_WRONG_INBOX"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["logic", "chain"]
+tags: ["account-takeover", "email-verification", "email-routing", "sso", "shopify"]
+source: "https://hackerone.com/reports/791775"
+
+# ——— L3 核心 ———
+
+observation: >
+  修改账户邮箱时，系统发出的确认链接不是发到"新邮箱"（需要被验证的那个），
+  而是发到了"旧邮箱"（当前登录账户的邮箱）。
+  (原文: "The bug is that Shopify email system mistakenly send the confirmation link
+  of the new email address, to the one that is used to signed up.")
+
+hypothesis: >
+  未叙述（仅结果）。报告者直接发现了此行为并意识到：
+  如果确认链接到达攻击者控制的旧邮箱，攻击者就能确认任意目标邮箱地址，
+  无需真正拥有那个邮箱。
+
+action_result: >
+  成功：注册账户（attacker@gmail.com）→ 修改邮箱为目标邮箱（victim@example.com）→
+  等待确认邮件发到 attacker@gmail.com → 点击链接后邮箱更新为 victim@example.com →
+  利用 SSO 合并功能接管受害者的所有店铺。
+  无扑空叙述（报告直接给出成功路径）。
+  注：第一次修复后发现第二个变种——在初始验证邮件发出前就修改邮箱，
+  仍可触发相同效果，Shopify 进行了第二次修复并单独奖励。
+
+why_here_first: >
+  未叙述（仅结果）。报告者明确提到"I told Pete I would take a look at Shopify"，
+  表明是有针对性地测试 Shopify 账户系统的邮件变更流程，
+  属于对"邮件验证流程"的系统性测试，而不是偶然发现。
+  (原文: "I told Pete I would take a look at Spotify")
+
+chaining: >
+  单独的"可确认任意邮箱"本身允许伪装成任意邮箱用户。
+  结合 Shopify SSO 的账户合并功能（多个店铺共享同一邮箱可合并为同一主账户）：
+  确认受害者邮箱 → 触发 SSO 合并提示 → 合并后设置统一密码 →
+  接管受害者邮箱下的所有店铺（包括 Partner 账户）。
+  (原文: "you will be able to takeover all other stores by changing the master password
+  for all of the stores under that email address")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  测试邮件变更流程中"确认链接的发送目标"：
+  确认链接应该发到新邮箱（待验证的），还是实际发到了旧邮箱（已登录的）；
+  若发到旧邮箱，则攻击者可在不拥有目标邮箱的情况下完成对任意邮箱的验证。
+
+reasoning_chain:
+  - "问：平台是否允许登录后修改账户邮箱？如果允许，这是邮件验证流程的高价值测试点。"
+  - "问：修改邮箱时，确认邮件发到哪里？是新邮箱（待验证）还是当前邮箱（旧邮箱）？"
+  - "黑盒：用攻击者账户（attacker@example.com）修改邮箱为任意目标地址（target@example.com），观察 attacker@example.com 是否收到确认邮件。"
+  - "如果攻击者旧邮箱收到确认链接：点击链接，检查账户邮箱是否已变更为 target@example.com。"
+  - "问：平台是否有 SSO / 账户合并功能？同一邮箱下多个账户是否可合并为主账户？"
+  - "如果可确认任意邮箱 + 存在账户合并：尝试用已验证的目标邮箱触发合并流程，测试是否可接管受害者账户。"
+  - "问：存在变种吗？在初始验证邮件（注册确认）发出之前就修改邮箱，是否也能触发'确认链接发到旧邮箱'的行为？"
+
+vuln_root: >
+  开发者假设"确认邮件应发到新邮箱以证明所有权"；
+  实际实现中将确认链接发到了已登录账户的邮箱（旧邮箱），
+  导致无需拥有目标邮箱即可完成对任意邮箱的验证。
+
+transferable_to:
+  - "任何支持登录后变更邮箱的平台（SaaS、电商、社交平台）"
+  - "支持 SSO 或多账户合并功能的平台——确认任意邮箱后危害倍增"
+  - "多租户平台（店铺/工作区/团队共享邮箱），因邮箱是资源归属的核心标识"
+  - "提供 Partner/Agency 账户的平台，这类账户通常可管理多个子账户"
+
+cases:
+  - url: "https://hackerone.com/reports/791775"
+    title: "Email Confirmation Bypass in myshop.myshopify.com that Leads to Full Privilege Escalation to Any Shop Owner by Taking Advantage of the Shopify SSO"
+    platform: "Shopify"
+    severity: "Critical"
+    bounty: "$25,000 (含两个独立 bounty：主漏洞 + 修复后发现的变种)"
+    note: >
+      第一个变种：修改邮箱后，确认链接发到旧邮箱。
+      第二个变种：在注册初始验证邮件发出前就修改邮箱，仍可触发同样效果。
+      两个变种被 Shopify 分别修复并单独奖励 bounty。
+  - url: "https://hackerone.com/reports/796808"
+    title: "[Part II] Email Confirmation Bypass in myshop.myshopify.com that Leads to Full Privilege Escalation"
+    platform: "Shopify"
+    severity: "Critical"
+    note: >
+      #791775 修复后的第二个变种（独立报告）：在初始验证邮件发出前修改邮箱，
+      仍可触发确认链接发到旧邮箱的行为。Shopify 二次修复，单独奖励。
+      (原文: "I found user can change their email prior to receiving the
+      verification message on their original email. i.e. the same technique")

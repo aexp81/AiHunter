@@ -1,0 +1,91 @@
+name: "Apache Files 指令保护单个 PHP 文件时，%3F 后缀绕过认证模块但 PHP-FPM 仍执行目标文件"
+id: "APACHE_REWRITE_PERCENT3F_ACL_BYPASS"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["input"]
+tags: ["apache", "mod_proxy", "php-fpm", "acl-bypass", "files-directive", "percent-encoding", "question-mark"]
+source: "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/"
+
+# ——— L3 核心 ———
+
+observation: >
+  Apache HTTP Server 使用 Files 指令保护单个 PHP 文件（如 admin.php、adminer.php、xmlrpc.php）。
+  当 Apache + PHP-FPM 组合运行时，mod_proxy 处理请求时将 r->filename 视为 URL（包含查询参数），
+  而认证/ACL 模块将 r->filename 视为文件路径（精确匹配）。
+  (原文: "this type of configuration can be bypassed directly under the default PHP-FPM installation!
+  It's also worth mentioning that this is one of the most common ways to configure authentication
+  in Apache HTTP Server!")
+
+hypothesis: >
+  若向 admin.php 发送带 %3F 后缀的请求（如 admin.php%3Fooo.php），
+  认证模块看到的文件名是 admin.php?ooo.php（含问号），不匹配 Files 指令中的 admin.php，
+  于是跳过认证；但 PHP-FPM 接收到 proxy:fcgi://127.0.0.1:9000/var/www/html/admin.php?ooo.php 后，
+  会在问号处截断，实际执行 admin.php。
+
+action_result: >
+  攻击：http://server/admin.php%3Fooo.php
+  效果：认证模块匹配失败（admin.php?ooo.php ≠ admin.php），不要求认证；
+  PHP-FPM 截断问号后执行 /var/www/html/admin.php。
+
+  受影响的常见配置（GitHub 可找到大量实例）：
+  - <Files "admin.php"> Require valid-user </Files>（Basic 认证保护）
+  - <Files adminer.php> Order Allow,Deny; Deny from all </Files>（Adminer DB 管理）
+  - <Files xmlrpc.php> Order Allow,Deny; Deny from all </Files>（WordPress xmlrpc）
+  - <Files php-info.php> Require ip 10 172 192.168 </Files>（IP 白名单）
+  - <Files cron.php> Deny from all </Files>（定时任务接口）
+  (原文: "all the above examples can be successfully bypassed with just a ?")
+
+why_here_first: >
+  Files 指令是 Apache 中保护"单个敏感 PHP 文件"最常见的配置方式。
+  当目标使用 Apache + PHP-FPM 时，mod_proxy 负责转发请求，其对 r->filename 的 URL 语义
+  与认证模块的文件路径语义之间存在根本性的歧义——这是 Apache 多模块架构的结构性缺陷。
+  (原文: "the modules do not fully understand each other, yet they are required to cooperate.
+  Each module might be implemented by different people, with the code undergoing years of iterations")
+
+chaining: >
+  通常单独利用即可直接访问受保护页面（Adminer、phpinfo、admin panel）。
+  串链升级路径：
+  1. 访问 Adminer/phpMyAdmin → 数据库凭证 → 数据泄露或写 webshell
+  2. 访问 xmlrpc.php（WordPress）→ 暴力破解或 SSRF
+  3. 访问 phpinfo → 泄露 secret key / upload_tmp_dir 等敏感配置
+  4. 访问 cron.php / console.php → 执行任意命令
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在 Apache + PHP-FPM 环境下，对所有受 Files 指令保护的敏感 PHP 文件，
+  尝试在文件名后附加 %3F（URL 编码的 ?）加任意后缀（如 %3Ftest.php），
+  观察是否绕过认证/IP 限制直接获得响应。
+
+reasoning_chain:
+  - "问：目标 web 服务器是否是 Apache + PHP-FPM 组合（响应头 Server: Apache，或配置文件中有 SetHandler proxy:unix:/...php-fpm.sock）？"
+  - "问：目标是否存在被 Files 指令保护的 PHP 文件？（常见：adminer.php、admin.php、phpinfo.php、xmlrpc.php、phpMyAdmin、cron.php）"
+  - "黑盒测试：直接访问受保护文件，观察是否返回 401/403。"
+  - "绕过测试：在文件名后附加 %3F 后缀，如 http://target/adminer.php%3Ftest.php，观察是否绕过认证直接返回 200。"
+  - "如果返回 200：问：目标文件是否执行（如 phpinfo 显示 PHP 信息，或 Adminer 显示登录界面）？"
+  - "扩展：检查其他 PHP 文件是否也受同样保护且存在相同绕过——批量枚举常见受保护文件名。"
+  - "白盒：搜索 httpd.conf / .htaccess 中的 <Files ...> 块，检查每个被保护文件在 PHP-FPM 转发路径上是否存在此绕过。"
+  - "问：目标是否有 ModSecurity？若有，尝试错误 Content-Length 触发 Handler Confusion（见 CVE-2024-38476 变种）。"
+
+vuln_root: >
+  Apache 认证/ACL 模块将 r->filename 视为文件系统路径（精确匹配），
+  而 mod_proxy 将其视为 URL（含查询参数）；
+  PHP-FPM 在接收到带问号的路径后截断问号执行实际文件。
+  三个组件对同一字段的语义歧义导致安全假设失效。
+
+transferable_to:
+  - "任何 Apache + PHP-FPM 部署，使用 <Files 'xxx.php'> 指令保护单个文件"
+  - "WordPress 站点保护 xmlrpc.php 或 wp-login.php 的常见配置"
+  - "使用 Adminer、phpMyAdmin 等数据库管理工具但通过 .htaccess 限制 IP 的场景"
+  - "Apache + PHP-FPM + ModSecurity 组合（Handler Confusion 变种）"
+  - "Nginx + PHP-FPM 类似配置（需验证 Nginx 是否有相同 %3F 处理）"
+
+cases:
+  - source: "https://blog.orange.tw/posts/2024-08-confusion-attacks-en/"
+    author: "Orange Tsai (Black Hat USA 2024)"
+    cves: ["CVE-2024-38474", "CVE-2024-38473"]
+    note: >
+      核心 primitive：Filename Confusion Primitive 1-2 (ACL Bypass)。
+      Apache + PHP-FPM 默认安装即受影响（/etc/apache2/mods-enabled/php8.2-fpm.conf）。
+      经过 GitHub 搜索，发现大量真实项目存在此类易受攻击的 Files 配置。
+      修复：Apache 2.4.60 (2024-07-01)。

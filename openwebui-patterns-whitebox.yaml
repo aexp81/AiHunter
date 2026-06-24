@@ -1,0 +1,1421 @@
+# Open WebUI 漏洞挖掘模式库 - 白盒代码审计版
+# 从 30+ 真实 CVE 中提炼，适用于有源码访问权限的代码审计场景
+
+version: "1.0-whitebox"
+source: "Open WebUI GitHub Advisory 2024-2026"
+target_scenario: "代码审计 / 内部安全评估 / SDL 安全审查"
+assumption: "有完整源码访问权限，通过代码逻辑分析定位漏洞"
+
+# ============================================================
+# 白盒审计工具链
+# ============================================================
+whitebox_tools:
+  static_analysis:
+    - tool: "Semgrep"
+      usage: "规则化漏洞检测，可自定义规则"
+      example: "semgrep --config=auto ."
+    - tool: "CodeQL"
+      usage: "数据流分析，追踪污点传播"
+      example: "codeql database analyze"
+    - tool: "Bandit (Python)"
+      usage: "Python 代码安全扫描"
+    - tool: "gosec (Go)"
+      usage: "Go 代码安全扫描"
+
+  manual_review_patterns:
+    file_operations:
+      - "grep -r 'open(' --include='*.py'"
+      - "grep -r 'shutil.copy' --include='*.py'"
+      - "grep -r 'os.path.join' --include='*.py'"
+
+    auth_bypass:
+      - "grep -r 'ldap.simple_bind' --include='*.py'"
+      - "grep -r 'password.*=.*None' --include='*.py'"
+      - "grep -r '@login_required' -A 5 --include='*.py'"
+
+    permission_checks:
+      - "grep -r 'current_user' -B 3 -A 3 --include='*.py'"
+      - "grep -r 'owner_id\\|user_id' --include='*.py'"
+      - "grep -r 'DELETE\\|PUT\\|PATCH' --include='*.py' | grep -v 'permission\\|check\\|owner'"
+
+    dangerous_functions:
+      - "grep -r 'eval(' --include='*.py'"
+      - "grep -r 'exec(' --include='*.py'"
+      - "grep -r 'pickle.loads' --include='*.py'"
+      - "grep -r 'yaml.load' --include='*.py' | grep -v 'safe_load'"
+
+  git_forensics:
+    - "git log --all --grep='security\\|fix\\|vuln\\|race' --oneline"
+    - "git log -p --all -S 'password' --since='1 year ago'"
+    - "git blame -L <start>,<end> <file>  # 追踪代码历史"
+    - "git diff <commit1> <commit2> -- '*.py'  # 对比版本差异"
+
+# ============================================================
+# 模式 1: 用户可控字符串 → 文件系统操作
+# ============================================================
+patterns:
+  - name: "用户可控路径直接用于文件操作"
+    id: "PATH_TRAVERSAL_FILE_OP"
+    cwe: "CWE-22"
+    severity: "Critical"
+
+    trigger:
+      - "看到文件上传 API"
+      - "看到文件下载 API"
+      - "任何接受 filename / filepath / path 参数的接口"
+      - "代码中有 open(user_input, ...) / shutil.copy(user_input, ...)"
+
+    attacker_mindset: |
+      我控制了文件名，那它写入哪里？
+      → 检查：路径是字符串拼接 还是 安全 API（如 pathlib.resolve）
+      → 检查：有没有 basename() / 白名单过滤 / 路径规范化
+      → 没有？尝试 ../../ 穿越
+
+    reasoning_chain:
+      - "问：上传的文件最终存储在服务器什么位置？(追踪数据流)"
+      - "问：存储路径是完全硬编码，还是包含了用户可控输入（如 filename）？"
+      - "问：如果包含用户输入，拼接方式是什么？(f-string / os.path.join / pathlib)"
+      - "问：拼接前有没有路径规范化？检查点："
+      - "  - os.path.basename() 提取纯文件名？"
+      - "  - pathlib.Path().resolve() + 边界检查？"
+      - "  - os.path.abspath() + startswith(BASE_DIR) 验证？"
+      - "如果答案是：用户输入参与 + 字符串拼接 + 无规范化 → 漏洞存在"
+      - "构造 payload: ../../tmp/pwned.txt 验证是否穿越成功"
+      - "问：若用了 startswith 做边界检查，base 末尾是否带 os.sep？"
+      - "白盒：grep -rn 'startswith' --include='*.py' | grep -iE 'abspath|dir|path'"
+      - "如果 startswith(BASE) 缺 trailing os.sep → sibling-prefix 绕过（/cache 放行 /cache_evil）"
+      - "问：扩展名/路径段是否用 filename.split('.')[-1] 提取而未过滤 '/'？"
+      - "白盒：grep -rn \"split('\\\\.')\\[-1\\]\\|split(\\\".\\\")\\[-1\\]\" --include='*.py'"
+      - "如果命中：filename 含 / 可注入路径段（绕过 basename 的另一 sink）"
+
+    access_required: "已认证用户（需要上传权限）"
+
+    prerequisite:
+      - "目标存在文件上传功能"
+      - "Web 服务进程有写入权限（否则穿越也写不进去）"
+
+    practical_notes:
+      - "Windows 环境用 ..\\..\\，Linux/Mac 用 ../../"
+      - "某些框架会自动 basename，测试前先确认"
+      - "即使有 basename，也要测试双重编码：%2e%2e%2f"
+      - "写入位置选择：/tmp（测试用）、~/.ssh/authorized_keys（持久化）、/var/www/html（webshell）"
+      - "startswith 边界检查 off-by-one：'看似有校验'比'无校验'更隐蔽，必须验证校验的精确语义"
+      - "httpx/浏览器客户端会规范化 ..，测 sibling-prefix 类要用 raw HTTP / ASGI 投递 payload"
+
+    verify:
+      - "curl -H 'Authorization: Bearer TOKEN' -F 'file=@/tmp/test.txt;filename=../../tmp/pwned.txt' http://target/rag/api/v1/doc"
+      - "确认 /tmp/pwned.txt 出现在服务器上"
+      - "sibling-prefix：base 名为 cache 时发 /cache/../cache_backup/x，看 200/404"
+
+    vuln_root: "信任了用户提供的文件名，没有在 I/O 操作前规范化路径（或规范化逻辑边界有缺陷）"
+
+    transferable_to:
+      - "任何 Web 应用的文件上传接口"
+      - "文件下载接口中的 path 参数"
+      - "日志写入路径中包含用户输入"
+      - "任何 open(user_input) 的代码路径"
+      - "ZIP/TAR 解压（Zip Slip 变种）"
+      - "任何用 startswith 做路径/前缀边界检查的场景"
+
+    cases:
+      - cve: "CVE-2026-44566"
+        ghsa: "GHSA-9pgh-j74g-qj6m"
+        note: "Open WebUI /rag/api/v1/doc，KoreLogic 发现，PoC 公开"
+        affected_version: "<= 0.1.123"
+      - cve: "CVE-2026-54014"
+        note: "startswith 缺 trailing os.sep，sibling-prefix 绕过读 /cache_x"
+      - cve: "CVE-2026-44565"
+        note: "upload filename 直接拼接无 basename，任意写/删 (KoreLogic)"
+      - cve: "CVE-2026-28786"
+        note: "扩展名 split('.')[-1] 含 / 注入路径，错误回显泄露 DATA_DIR"
+
+  # ============================================================
+  # 模式 2: 局部修复未同步到所有代码路径（Fix Inconsistency）
+  # ============================================================
+  - name: "局部安全修复未覆盖所有等效代码路径"
+    id: "FIX_INCONSISTENCY"
+    applicable: "whitebox"
+    cwe: "CWE-269 + CWE-362"
+    severity: "High"
+
+    trigger:
+      - "代码中看到安全相关注释（'avoid race', 'prevent bypass', 'security fix'）"
+      - "某个功能有多条执行路径（如 email注册/LDAP/OAuth/SSO 并存）"
+      - "Changelog/commit 中有安全修复，但只改了一处"
+      - "不同版本的相似功能实现不一致"
+
+    attacker_mindset: |
+      开发者在注释里说"已修复 X 漏洞"，证明他知道这类问题存在。
+      → 搜索相同功能的其他入口点：是否都同步了这个修复？
+      → 如果没有，那些未同步的路径就是漏洞点。
+
+    reasoning_chain:
+      - "问：代码中有没有安全相关注释或修复标记？(grep 'security', 'race', 'fix', 'bypass', 'prevent')"
+      - "问：这个注释/修复针对的是什么功能点？(如：首次用户分配 admin)"
+      - "问：实现同一功能的入口点有几个？(如：email注册 / LDAP / OAuth / SSO / API)"
+      - "问：每个入口点都有相同的防护措施吗？逐一对比实现"
+      - "如果发现某个入口缺少相同的防护 → 该入口存在未修复的同类漏洞"
+      - "验证：使用未防护的入口重现已知漏洞"
+
+    access_required: "未认证（首次用户注册场景）或低权限用户"
+
+    prerequisite:
+      - "必须能访问源代码或 commit 历史（本模式核心依赖阅读代码注释/changelog，纯黑盒不适用）"
+      - "系统存在多个等效入口（如 LDAP/OAuth 并存的认证）"
+
+    practical_notes:
+      - "git blame 和 git log 是发现局部修复的最快方式，先于读代码"
+      - "竞态验证工具：Turbo Intruder（Burp）/ ffuf 并发请求"
+      - "不只是认证：密码重置、邮件验证、激活码等都有多路径问题"
+      - "白盒定位漏洞后，验证阶段可退化为黑盒（用未修复入口重放攻击）"
+
+    verify:
+      - "部署全新实例（无用户）"
+      - "并发发送多个 LDAP/OAuth 认证请求"
+      - "检查数据库：是否有多个 admin 用户"
+
+    vuln_root: "安全修复只应用到部分代码路径，相同逻辑的其他路径未同步"
+
+    transferable_to:
+      - "多种登录方式并存的系统（SAML + LDAP + 本地账号）"
+      - "新旧 API 版本共存（/api/v1 修了，/api/v2 没修）"
+      - "移动端 + Web 端共享后端，但逻辑不一致"
+      - "微服务架构中，某个服务修了但其他服务没修"
+
+    cases:
+      - cve: "CVE-2026-45675"
+        ghsa: "GHSA-h3ww-q6xx-w7x3"
+        note: "Open WebUI LDAP/OAuth，signup 已修但其他路径未同步"
+        affected_version: "<= 0.8.12"
+      - cve: "CVE-2026-44567"
+        note: "部分端点用 get_current_user（只验 JWT）而非 get_verified_user（验 role!=pending），依赖用错导致 pending 用户绕过"
+
+  # ============================================================
+  # 模式 3: LDAP 空密码认证绕过
+  # ============================================================
+  - name: "LDAP Simple Bind 空密码匿名绑定"
+    id: "LDAP_NULL_PASSWORD"
+    cwe: "CWE-287"
+    severity: "Critical"
+
+    trigger:
+      - "目标启用了 LDAP 认证"
+      - "使用 Simple Bind 方式（而非 SASL）"
+      - "登录表单未强制校验密码非空"
+
+    attacker_mindset: |
+      LDAP Simple Bind 有一个协议级特性：空密码 = Unauthenticated Bind。
+      → 是否生效取决于服务器配置（OpenLDAP 2.5+ / AD 2019+ 默认拒绝，旧版或宽松配置可能允许）
+      → 应用层如果没在传入 LDAP 前校验密码非空，就会把这个判断完全交给服务器。
+      → 尝试：任意有效用户名 + 空密码
+
+    reasoning_chain:
+      - "问：目标是否使用 LDAP 认证？(检查登录表单或配置文件)"
+      - "问：LDAP 使用 Simple Bind 还是 SASL？(Simple Bind 才有此问题)"
+      - "问：应用在调用 LDAP bind 前是否验证了密码非空？"
+      - "  - 检查：password != '' / len(password) > 0 / required 验证"
+      - "问：目标 LDAP 服务器是否允许 Unauthenticated Bind？"
+      - "如果：未校验密码 + 服务器允许 Unauthenticated Bind → 认证绕过"
+      - "验证：提交空密码，观察是否登录成功"
+
+    access_required: "未认证（公开登录页面）"
+
+    prerequisite:
+      - "目标 LDAP 服务器允许 Unauthenticated Bind（OpenLDAP 2.5+ 默认拒绝，AD Windows Server 2019+ 默认拒绝，需确认目标版本和配置）"
+      - "应用使用 Simple Bind（ldap.simple_bind_s / ldap3 simple bind）"
+      - "注意：Unauthenticated Bind ≠ 匿名绑定，是 RFC 4513 §5.1.2 规定的特殊行为"
+
+    technical_details:
+      rfc_reference: "RFC 4513 Section 5.1.2 - Unauthenticated Authentication Mechanism"
+      mechanism: |
+        - DN 非空 + password 空 → Unauthenticated Bind (resultCode=0)
+        - DN 空 + password 空 → 匿名绑定 (另一个变种)
+        - LDAP 服务器返回 success 不代表用户被认证，只是 bind 操作成功
+        - 应用如果只检查 resultCode==0 就放行，即存在漏洞
+
+    variants:
+      - attack: "空密码 Unauthenticated Bind"
+        condition: "DN 非空，password 为空字符串"
+      - attack: "匿名绑定"
+        condition: "DN 和 password 都为空"
+      - attack: "空格密码"
+        condition: "某些实现将纯空格也视为空密码"
+
+    practical_notes:
+      - "测试时用 Burp 直接删除 password 字段或设为空字符串"
+      - "有些前端会阻止空密码提交，抓包绕过前端验证"
+      - "AD 默认配置可能禁用了 Unauthenticated Bind，OpenLDAP 默认允许"
+      - "Python python-ldap / Go ldap / Java JNDI 都受影响"
+
+    verify:
+      - "尝试登录：任意有效用户名，密码留空"
+      - "或用 Burp 将 password 字段置空发送"
+
+    vuln_root: "没有在 LDAP bind 操作前验证密码非空，触发了 LDAP 协议的匿名绑定特性"
+
+    transferable_to:
+      - "所有使用 LDAP Simple Bind 认证的 Web 应用"
+      - "任何调用 ldap.simple_bind_s() 但未预校验的代码"
+
+    cases:
+      - cve: "CVE-2026-44551"
+        ghsa: "GHSA-2r4p-jpmg-48f4"
+        note: "Open WebUI LDAP 认证模块，空密码触发匿名绑定"
+        affected_version: "<= 0.8.12"
+
+  # ============================================================
+  # 模式 4: 第三方库安全配置过于宽松
+  # ============================================================
+  - name: "第三方渲染库的宽松安全配置"
+    id: "THIRD_PARTY_LOOSE_CONFIG"
+    cwe: "CWE-1188 / CWE-79"
+    severity: "High"
+
+    trigger:
+      - "应用使用富文本渲染（Markdown/Mermaid/MathJax）"
+      - "用户输入会被直接送入第三方渲染库"
+      - "看到 marked.js / mermaid.js / highlight.js 等库的初始化配置"
+      - "库的 securityLevel / sanitize / allowHtml 等选项设置不当"
+
+    attacker_mindset: |
+      Mermaid/Markdown 渲染器默认的安全级别是什么？
+      → 如果配置为 securityLevel: 'loose' / allowHtml: true，意味着允许注入
+      → 查看初始化代码中是否启用了严格模式
+      → 没有？尝试在图表/Markdown 中嵌入 <script> 或 onclick
+
+    reasoning_chain:
+      - "问：应用前端使用了哪些富文本渲染库？"
+      - "白盒：grep -r 'mermaid.initialize\\|marked\\|KaTeX' --include='*.js' --include='*.jsx' --include='*.ts'"
+      - "问：库的初始化配置在哪？参数是什么？"
+      - "白盒：定位到初始化代码（如 mermaid.initialize({ ... })），查看 securityLevel / allowHtml / sanitize 等选项"
+      - "问：配置是否为宽松模式？"
+      - "  Mermaid: securityLevel === 'loose'？(默认 'strict')"
+      - "  Markdown: allowHtml === true / sanitize === false？"
+      - "  KaTeX: trust === true？"
+      - "如果是宽松模式且用户输入会被渲染 → 存储型 XSS 风险"
+      - "问：渲染前是否有额外清理层（如 DOMPurify）？"
+      - "白盒：grep -r 'DOMPurify\\|sanitizeHtml' --include='*.js'"
+      - "如果无清理 → 漏洞确认，构造 payload 验证"
+
+    verify:
+      - "在聊天消息或文档中插入 Mermaid 代码块，嵌入 JavaScript"
+      - "以其他用户身份查看，观察是否执行脚本"
+
+    access_required: "已认证用户（能发布内容的权限）"
+
+    prerequisite:
+      - "应用使用了第三方渲染库（Mermaid/Markdown/KaTeX）"
+      - "用户输入会被送入渲染库"
+      - "渲染库配置为宽松模式（securityLevel: loose / allowHtml: true）"
+
+    practical_notes:
+      - "先检查前端引入的库版本和初始化配置"
+      - "Mermaid 的 loose 模式允许 click 回调和内联 HTML"
+      - "Markdown 的 allowHtml: true 允许任意 HTML 标签"
+      - "测试不只是 <script>，试试 onclick / onerror / <svg> 等事件处理"
+
+    vuln_root: "第三方渲染库配置为宽松模式，未启用内置的安全限制"
+
+    transferable_to:
+      - "所有使用 Mermaid / PlantUML / KaTeX 的应用"
+      - "Markdown 渲染器未配置 DOMPurify 清理"
+      - "Jupyter Notebook / Notion 类工具的富文本渲染"
+      - "WYSIWYG 编辑器未限制 HTML 标签"
+
+    cases:
+      - cve: "CVE-2026-54011"
+        ghsa: "GHSA-v8qj-hxv7-mgvv"
+        note: "Open WebUI Mermaid 图表渲染，securityLevel: loose 导致 XSS"
+      - cve: "CVE-2025-64495"
+        note: "'Insert Prompt as Rich Text' 开启时 prompt body 经 marked 后直赋 innerHTML 无 sanitize"
+      - cve: "CVE-2025-46719"
+        note: "MarkdownTokens.svelte 对特定 iframe src 前缀 token 走 {@html} 白名单逃逸"
+      - cve: "CVE-2024-8017"
+        note: "HTML tooltip 构造函数注入 (<=0.3.8)"
+        affected_version: "<= 0.8.12"
+      - cve: "CVE-2026-44549"
+        ghsa: "GHSA-jwf8-pv5p-vhmc"
+        note: "Excel 文件预览，单元格内容未转义直接渲染"
+
+  # ============================================================
+  # 模式 5: 权限检查缺失或不完整
+  # ============================================================
+  - name: "资源操作缺少所有权验证"
+    id: "MISSING_OWNERSHIP_CHECK"
+    cwe: "CWE-639 / CWE-862"
+    severity: "High"
+
+    trigger:
+      - "看到 /api/xxx/{id} 格式的 API，接受对象 ID"
+      - "操作资源（读取/修改/删除）时只验证登录，不验证所有权"
+      - "没有 user_id == resource.owner_id 的检查"
+
+    attacker_mindset: |
+      这个 API 接受一个 ID，它会检查这个资源是不是我的吗？
+      → 抓包改 ID，尝试访问其他用户的资源
+      → 如果能成功，说明缺少所有权检查（IDOR）
+
+    reasoning_chain:
+      - "问：API 端点接受对象 ID 参数？(路径参数 /{id} 或 query ?id=)"
+      - "问：这个操作是读取、修改还是删除？(DELETE/PUT 比 GET 危害更大)"
+      - "问：后端代码是先查数据库，还是直接按 ID 操作？"
+      - "  - 安全: db.get(id, user=current_user) 带所有权过滤"
+      - "  - 不安全: db.get(id) 不带所有权过滤"
+      - "如果不带所有权过滤 → IDOR 存在"
+      - "验证：用账户 B 的 token + 账户 A 的资源 ID，发起请求"
+
+    access_required: "低权限认证用户（测试横向）/ 任意账户（测试纵向）"
+
+    prerequisite:
+      - "能注册至少两个账户（横向 IDOR）"
+      - "或能访问到其他用户资源的 ID"
+
+    practical_notes:
+      id_discovery:
+        - "注册两个账户，A 创建资源，用 B 的 token 访问 A 的资源 ID"
+        - "通过 API 响应中泄露的其他用户 ID（列表接口、共享内容）"
+        - "UUID 不代表安全，只要能获取到 ID 就能测"
+        - "先测 GET（确认 ID 存在），再测 DELETE/PUT（实际危害）"
+      vertical_idor:
+        - "用普通用户 token 访问 /api/admin/{id} 类管理接口"
+        - "修改请求中的 role/permission 字段（如果没有服务端验证）"
+        - "访问 /api/user/{other_user_id} 读取他人个人信息"
+      common_mistakes:
+        - "只测了主资源，没测子资源（/api/chat/{id}/messages）"
+        - "只测了 GET，没测 DELETE / PUT / PATCH"
+        - "只测了数字 ID，没测 UUID（UUID 同样可以枚举如果能获取到）"
+        - "只测了横向（用户间），没测纵向（权限提升）"
+
+    vuln_root: "资源操作只验证了用户已登录，未验证用户对该资源的所有权"
+
+    transferable_to:
+      - "所有 RESTful API 的资源操作"
+      - "对象存储中的文件删除（S3 key 可被枚举）"
+      - "多租户 SaaS 应用的跨租户访问"
+
+    cases:
+      - note: "Open WebUI 中大量 API 存在此类问题（批量学习 2026-06-19 新增以下确认案例）"
+        pattern: "delete_chat / update_prompt / delete_file 等均缺少所有权检查"
+      - cve: "CVE-2026-45301"
+        note: "全部 /files/ 端点仅 get_verified_user，可列/读/删全实例文件"
+      - cve: "CVE-2026-28788"
+        note: "process/files/batch 内部 helper 暴露为路由，任意覆写+RAG投毒"
+      - cve: "CVE-2026-45666"
+        note: "notes {id} 端点枚举 UUID 读他人笔记"
+      - cve: "CVE-2026-44570"
+        note: "memories API 跨用户查/删/恢复并回显内容"
+      - cve: "CVE-2026-45345"
+        note: "models update?id= 改他人 private 模型（含 access_control 提权）"
+      - cve: "CVE-2026-45349"
+        note: "chat/completions 用他人 chat_id 继续他人对话"
+      - cve: "CVE-2026-44554"
+        note: "process/web overwrite 默认 True 删除替换他人 KB"
+      - cve: "CVE-2026-45399 / CVE-2025-63681"
+        note: "tasks/stop 全局命名空间无 owner 检查，越权停他人任务"
+      - cve: "CVE-2024-7048"
+        note: "v0.3.8 documents 端点低权用户覆写 admin 文件"
+      - cve: "CVE-2026-45387"
+        note: "模型 read 权限即可读取其 system prompt（机密泄露）"
+      - cve: "CVE-2026-45351"
+        note: "/api/models 响应向普通用户泄露所有模型 system prompt"
+      - cve: "CVE-2026-34222"
+        note: "tools valves 端点无 read 权限检查，泄露工具 API key"
+
+  # ============================================================
+  # 模式 6: Socket.IO 会话状态未同步更新
+  # ============================================================
+  - name: "长连接会话权限降级后未失效"
+    id: "STALE_SESSION_PRIVILEGE"
+    cwe: "CWE-613"
+    severity: "High"
+
+    trigger:
+      - "应用使用 WebSocket / Socket.IO / SSE 等长连接"
+      - "有权限降级功能（admin → user）"
+      - "会话池维护在内存中"
+
+    attacker_mindset: |
+      管理员降权后，他的现有 WebSocket 连接会刷新吗？
+      → 如果不刷新，那连接内的权限状态就是陈旧的
+      → 尝试：被降权后保持连接，看能否继续执行管理员操作
+
+    reasoning_chain:
+      - "问：应用是否使用长连接？(WebSocket / Socket.IO / SSE)"
+      - "白盒：grep -rn 'socketio\\|SocketIO\\|websocket\\|WebSocket\\|EventSource' --include='*.py' --include='*.js'"
+      - "问：连接建立时，用户角色/权限是否被缓存进会话池或连接对象？"
+      - "白盒：定位 connect/on_connect 处理函数，查看是否存 role/permission 到内存(如 SESSION_POOL[sid] = {...})"
+      - "问：处理 socket 事件时，权限是实时查库还是读缓存的连接状态？"
+      - "白盒：grep -rn '@sio.on\\|@socketio.on' -A 15，检查事件处理内是否重新查询 user.role"
+      - "问：降权/封禁用户的代码路径，是否同步断开或刷新其现有连接？"
+      - "白盒：grep -rn 'role\\s*=\\|update.*role\\|ban\\|deactivate' --include='*.py' -A 10 | grep -i 'disconnect\\|socket\\|session'"
+      - "如果：权限读缓存 + 降权时未断开/刷新连接 → 陈旧会话保留旧权限"
+      - "验证：建连接 → 被降权 → 通过旧连接重试高权限操作"
+
+    verify:
+      - "建立 Socket.IO 连接后被管理员降权"
+      - "保持连接，尝试执行需要 admin 权限的操作"
+
+    access_required: "已认证用户（且需要先拥有高权限才能被降权）"
+
+    prerequisite:
+      - "应用使用 WebSocket/Socket.IO 长连接"
+      - "权限状态缓存在连接内存中（非每次请求实时查数据库）"
+      - "需要有管理员能修改自己角色的场景（或等待被降权）"
+
+    practical_notes:
+      - "测试步骤：建立连接 → 记录权限 → 等待或触发降权 → 重试高权限操作"
+      - "JWT 场景：JWT 未过期时降权不生效，这是同类问题"
+      - "推广测试：不只是降权，还有封禁账户后已有连接是否立即断开"
+      - "修复验证：降权后应立即收到 disconnect 或权限更新事件"
+
+    vuln_root: "长连接会话的权限状态未与数据库实时同步，降权后未失效会话"
+
+    transferable_to:
+      - "所有使用 WebSocket 做实时通信的应用"
+      - "SSE (Server-Sent Events) 维护的长连接"
+      - "gRPC 流式连接中的权限管理"
+
+    cases:
+      - cve: "CVE-2026-44553"
+        ghsa: "GHSA-45m8-cpm2-3v65"
+        note: "Socket.IO 会话池权限未刷新，降权后仍保留 admin"
+      - cve: "CVE-2024-7053"
+        note: "Session Fixation: SameSite=Lax + 无 Secure，markdown 图片跨站发 cookie 致 admin ATO (v0.3.8)"
+      - cve: "CVE-2024-7049"
+        note: "Pending-role 用户登录即发可用 token，未校验审批状态，绕过 admin 确认 (v0.3.8)"
+
+  # ============================================================
+  # 模式 7: 文件扩展名决定渲染方式（Content Sniffing）
+  # ============================================================
+  - name: "依赖文件扩展名决定 Content-Type"
+    id: "FILE_EXTENSION_TRUST"
+    cwe: "CWE-434 + CWE-79"
+    severity: "High"
+
+    trigger:
+      - "应用根据文件扩展名决定如何渲染/返回文件"
+      - "没有服务端 Content-Type 强制校验"
+      - "支持文件预览功能"
+
+    attacker_mindset: |
+      我可以上传 .jpg，但内容是 HTML + JavaScript（polyglot file）
+      → 服务器设置了 X-Content-Type-Options: nosniff 吗？没有？
+      → 文件预览是 inline 渲染还是 attachment 下载？inline 才能执行
+      → 浏览器会识别真实内容类型触发 XSS
+
+    reasoning_chain:
+      - "问：文件上传后如何提供给用户访问？(inline 渲染 vs attachment 下载)"
+      - "问：服务器响应是否有 X-Content-Type-Options: nosniff 头？(有则此攻击失效)"
+      - "问：Content-Type 是根据扩展名设置还是根据文件内容检测？"
+      - "问：文件 URL 和主应用是否同源？(跨域 CORB 会阻止 sniffing)"
+      - "如果：inline 渲染 + 无 nosniff + 同源 + 基于扩展名的 Content-Type → 漏洞存在"
+      - "构造 polyglot 文件验证"
+
+    access_required: "已认证用户（需要上传权限）"
+
+    prerequisite:
+      - "服务器响应未设置 X-Content-Type-Options: nosniff（必要条件）"
+      - "文件以 inline 方式在浏览器中展示（非 attachment 下载）"
+      - "文件 URL 与应用主域同源（跨域 CORB 会阻止）"
+      - "现代浏览器 Chrome 85+ 已大幅限制 Content Sniffing，需结合其他条件"
+
+    technical_details:
+      browser_behavior: |
+        - Chrome 85+ 基本关闭跨域 Content Sniffing
+        - 加了 nosniff 的响应不会被嗅探（任何浏览器）
+        - 更常见触发方式：服务器直接以 text/html 返回文件内容（非 sniffing 问题）
+        - 检查响应头比构造 polyglot 文件更重要
+
+    practical_notes:
+      - "先用 curl -I 检查 X-Content-Type-Options 响应头"
+      - "检查文件访问 URL 是否设置 Content-Disposition: attachment（设了就无法 inline）"
+      - "SVG 文件上传是另一个高效的 XSS 向量（浏览器天然支持 SVG 中的 JavaScript）"
+      - "实际更有效：直接上传 .html 或 .svg 而不是 polyglot"
+
+    transferable_to:
+      - "所有文件托管/分享平台"
+      - "CMS / 文档管理系统"
+      - "CDN 的文件服务"
+
+    cases:
+      - cve: "CVE-2026-45315"
+        ghsa: "GHSA-m8f9-9whg-f4xr"
+        note: "文件预览依赖扩展名，polyglot file 触发 XSS"
+      - cve: "CVE-2025-46571"
+        note: "低权用户上传 .html，经 files content/html 直接渲染执行"
+      - cve: "CVE-2026-45318"
+        note: "Excel/DOCX/PPT 转 HTML 后 {@html} 无 DOMPurify，文件类型信任失败"
+
+  # ============================================================
+  # 模式 8: 权限级别混淆（读权限执行写操作）
+  # 来源：批量学习 2026-06-19，12 个协作功能越权 CVE
+  # ============================================================
+  - name: "权限级别混淆：读权限被当作写权限使用"
+    id: "PERMISSION_LEVEL_CONFUSION"
+    applicable: "both"
+    cwe: "CWE-863"
+    severity: "High"
+
+    trigger:
+      - "同一资源有 read / write 分级共享（AccessGrants）"
+      - "某端点执行状态修改操作（pin/unpin/update/delete/toggle/save/restore）"
+      - "看到写操作的鉴权检查用了 permission='read'"
+
+    reasoning_chain:
+      - "问：哪些端点是状态修改操作（pin/update/delete/toggle/save）？"
+      - "白盒：grep -rn \"permission='read'\\|type=\\\"read\\\"\" routers/ | grep -iE 'pin|update|delete|toggle|save'"
+      - "问：同文件内 update/delete 用的是 read 还是 write？（横向对比兄弟端点）"
+      - "白盒：grep -rn 'has_access\\|channel_has_access' <file>，逐个比对 permission 实参"
+      - "如果：写操作端点检查 read 而兄弟端点检查 write → 漏洞存在"
+
+    verify:
+      - "以 read-only 共享身份调 update → 预期 403（确认基线）"
+      - "同身份调 pin/save/toggle/restore → 若仍 200 则读写错位"
+
+    access_required: "对目标资源有 read（只读共享）权限的认证用户"
+    prerequisite:
+      - "目标资源支持 read/write 分级共享"
+      - "存在只读共享给攻击者的途径"
+
+    practical_notes:
+      - "把同一资源所有写端点的 permission 实参拉成一张表横向对比，最快定位"
+      - "Socket.IO 事件处理器与 HTTP 端点的权限检查常不一致，两边都要查"
+
+    vuln_root: "写操作的鉴权误用了 read 权限级别，读权限被提升为写权限"
+    transferable_to:
+      - "任何 RBAC 分级资源：文档协作、看板、wiki、工单系统"
+      - "Notion/Drive 类'只读共享'被提升为可编辑"
+
+    cases:
+      - cve: "CVE-2026-45316"
+        note: "notes pin 端点只检查 read 权限"
+      - cve: "CVE-2026-45386"
+        note: "channel 消息 pin 只检查 read"
+      - cve: "CVE-2026-44571"
+        note: "standard channel 消息 update 只需 read"
+      - cve: "CVE-2026-44564"
+        note: "Socket.IO 文档协作，read 权限可写"
+
+  # ============================================================
+  # 模式 9: 授权分支遗漏（类型/状态/前缀条件未覆盖）
+  # ============================================================
+  - name: "授权检查的类型/状态分支遗漏"
+    id: "AUTHZ_BRANCH_GAP"
+    applicable: "both"
+    cwe: "CWE-862 / CWE-863"
+    severity: "High"
+
+    trigger:
+      - "鉴权代码按资源类型分支：if channel.type in ['group','dm']"
+      - "成员资格检查未过滤 is_active（停用成员仍命中）"
+      - "前缀白名单授权：startswith('user-memory-') 无 else 兜底"
+
+    reasoning_chain:
+      - "问：鉴权 if/else 是否穷尽所有类型？有无 else 兜底拒绝？"
+      - "白盒：grep -rn \"type in \\['group'\\|\\.type ==\" routers/channels.py"
+      - "问：成员资格检查是否过滤 is_active？"
+      - "白盒：grep -rn 'is_user_channel_member\\|ChannelMember' models/ | grep -L 'is_active'"
+      - "问：前缀白名单是否覆盖所有命名空间（含裸 UUID 的 collection）？"
+      - "白盒：grep -n 'startswith\\|else' routers/retrieval.py"
+      - "如果：standard 分支无检查 / membership 不查 is_active / 前缀无 else → 漏洞"
+
+    verify:
+      - "在 standard channel（非 group/dm）重放 group 才被拦的操作"
+      - "被踢出/停用后用旧 channel_id 直接调 API，看是否仍 200"
+
+    access_required: "认证用户（曾是成员，或属非特判类型）"
+    prerequisite:
+      - "资源有多类型或成员可停用/离开"
+
+    practical_notes:
+      - "凡鉴权出现条件分支，必须验证每个分支独立完备且有兜底拒绝"
+      - "前缀 allowlist 是高危反模式：未匹配项应默认拒绝而非放行"
+
+    vuln_root: "授权按类型/状态/前缀分支，某分支落空或不检查，形成绕过缺口"
+    transferable_to:
+      - "多租户类型分支、软删除/停用账号、状态机驱动的权限系统"
+      - "基于命名前缀做 ACL 的对象存储 / 向量库"
+
+    cases:
+      - cve: "CVE-2026-44559"
+        note: "standard channel 成员端点漏检"
+      - cve: "CVE-2026-44561"
+        note: "deactivated 成员 is_active 未检查仍有权限"
+      - cve: "CVE-2026-44557"
+        note: "knowledge-bases 元集合前缀 allowlist 不完整，可全量枚举 UUID"
+      - cve: "CVE-2026-45398"
+        note: "KB collection UUID 不在前缀 allowlist，读写绕过"
+      - cve: "CVE-2026-45385"
+        note: "group/dm 分支只查 membership 不查 message 所有权"
+      - cve: "CVE-2026-44558"
+        note: "channel create/update 未调 filter_allowed_access_grants，可写 principal_id:'*' 绕过 public_channels 限制"
+      - cve: "CVE-2026-44569"
+        note: "channel 消息 update/delete 实现 channel 级授权但缺消息级所有权检查"
+
+  # ============================================================
+  # 模式 10: 间接对象引用链（借自有资源引用他人对象）
+  # ============================================================
+  - name: "间接对象引用链：通过自有容器引用他人对象 ID"
+    id: "INDIRECT_OBJECT_REF"
+    applicable: "both"
+    cwe: "CWE-639"
+    severity: "High"
+
+    trigger:
+      - "写接口接受对象 ID 引用（file_id / collection / base_model_id）写入调用者资源"
+      - "授权只校验外层资源所有权，未校验被引用对象的归属"
+      - "授权门有'共享链路'分支无条件 return True"
+      - "资源支持链式/嵌套引用（model chaining）"
+
+    reasoning_chain:
+      - "问：写 handler 是否把用户传入的对象 ID 存入调用者资源而未校验该 ID 归属？"
+      - "白盒：grep -rn 'file_id\\|base_model_id' --include='*.py' routers/ | grep -i 'add\\|update\\|attach\\|batch\\|import'"
+      - "问：被引用对象是否仅'因关联到我拥有的容器'就被授权函数放行？"
+      - "白盒：grep -rn 'has_access_to_file\\|check_model_access' utils/ routers/"
+      - "问：授权函数里有几条 return True？每条是否都校验了请求者身份与 access_type？"
+      - "白盒：grep -n 'return True' utils/access_control/*.py；grep -n 'access_type' <file>（声明却 body 不引用 = 形同虚设）"
+      - "问：解析 base_model_id / parent_id 后是否对父对象重新执行 check_access？"
+      - "如果：外层校验通过但内层对象无独立校验 → 引用链绕过"
+
+    verify:
+      - "把他人 file_id 写进自己的 folder/KB/chat，再通过自有资源读/删该文件"
+      - "创建 wrapper model 设 base_model_id=受限模型，访问 wrapper 看是否拿到受限数据"
+
+    access_required: "认证用户（拥有任一容器资源）"
+    prerequisite:
+      - "已知目标对象 ID（经文件列表、citation、URL、meta.knowledge 泄露）"
+      - "UUID 不构成防护——授权必须独立于 ID 保密性"
+
+    practical_notes:
+      - "同一对象常有多个读写入口（files/knowledge/retrieval/RAG middleware/chat completion），任一漏检即全局失守"
+      - "撤权后 RAG 层若不做请求时动态复核，仍可读取（时序盲区）"
+
+    vuln_root: "授权只验证外层资源所有权，未验证被嵌入引用的内层对象归属"
+    transferable_to:
+      - "容器-成员模型：购物车/收藏夹/播放列表/工单附件"
+      - "GraphQL 嵌套 mutation；云 IAM 资源嵌套（VPC→Subnet→Instance）"
+      - "model chaining / 模板继承 / 配置引用"
+
+    cases:
+      - cve: "CVE-2026-45402"
+        note: "file_id 跨用户引用，folder/KB attach 读+覆写"
+      - cve: "CVE-2026-45671"
+        note: "has_access_to_file 经 shared-chat 分支无条件放行，读/改/删全绕"
+      - cve: "CVE-2026-44555"
+        note: "base_model_id 模型链绕过访问控制"
+      - cve: "CVE-2026-44560"
+        note: "RAG 向量搜索 5 路径中 3 条无 access 检查，撤权后仍可读"
+      - cve: "CVE-2026-29070"
+        note: "KB file remove 删他人文件"
+      - cve: "CVE-2026-29071"
+        note: "user-memory/file collection 跨用户读取私有 memories"
+      - cve: "CVE-2026-45350"
+        note: "tool_ids/tool_servers 参数引用绕过工具访问控制"
+      - cve: "CVE-2026-44552"
+        note: "Redis 缓存键无实例前缀，多实例共享 Redis 时 tool_servers/terminal_servers 串扰"
+
+  # ============================================================
+  # 模式 11: 端点对等性缺失（create/update/import 检查不一致）
+  # ============================================================
+  - name: "端点对等性缺失：同资源不同操作端点权限检查不一致"
+    id: "ENDPOINT_PARITY_MISSING"
+    applicable: "both"
+    cwe: "CWE-862"
+    severity: "High"
+
+    trigger:
+      - "资源有多个变更端点（create / update / import / clone / responses / passthrough）"
+      - "create 端点有 workspace.* 或所有权检查，其他端点缺失"
+      - "import / alternate 端点假设'只有管理员调用'但实际授权给普通用户"
+
+    reasoning_chain:
+      - "问：该资源类型有哪些变更端点？"
+      - "白盒：grep -rn '@router.post.*<resource>' --include='*.py' | grep -E '(create|update|import|clone|duplicate|responses)'"
+      - "问：每个端点的权限检查（Depends 链 + 显式 has_permission）是否一致？"
+      - "白盒：对每个端点 grep -B5 -A15 '<endpoint_func>' | grep 'workspace\\.\\|has_access\\|admin'"
+      - "如果：create 有 workspace.* 检查而 update/import 只有 write grant 或无检查 → 漏洞"
+
+    verify:
+      - "低权用户调 create → 预期 403"
+      - "同用户改走 update / import / responses 端点修改同一资源，看是否成功"
+
+    access_required: "认证用户（对资源有 write grant 或 import 权限）"
+    prerequisite:
+      - "资源至少有 create + 一个其他变更入口"
+      - "某端点触发敏感操作（代码执行 / 访问控制变更 / 覆写）"
+
+    practical_notes:
+      - "import 端点最常被忽略：开发者默认它是管理操作，却授权给了普通用户"
+      - "区分元数据变更（name/desc）与特权变更（content/system_prompt/base_model）"
+      - "与 FIX_INCONSISTENCY 互补：那个看修复同步，这个看端点间检查对等"
+
+    vuln_root: "同一资源的多个变更端点权限逻辑不同步，弱检查端点成为绕过入口"
+    transferable_to:
+      - "REST 中 POST /resource 与 PUT /resource/:id 的权限差异"
+      - "GraphQL create vs update resolver 检查差异"
+      - "支持多种变更路径的配置/模板/文档系统"
+
+    cases:
+      - cve: "CVE-2026-45395"
+        note: "tools create 有 workspace.tools 检查，update 无"
+      - cve: "CVE-2026-44562"
+        note: "models import 无所有权检查，覆盖任意模型"
+      - cve: "CVE-2026-44563"
+        note: "ollama generate/embed 端点无访问控制，chat 有"
+
+  # ============================================================
+  # 模式 12: 内部参数经请求绑定暴露
+  # ============================================================
+  - name: "内部参数经框架自动绑定被外部可控"
+    id: "PARAMETER_BINDING_EXPOSURE"
+    applicable: "both"
+    cwe: "CWE-915"
+    severity: "High"
+
+    trigger:
+      - "路由处理器函数签名含非 body 参数（query/header/cookie）"
+      - "参数名未出现在文档化 API 规范中（bypass_/internal_/base_/override_）"
+      - "参数默认值为特权值（bypass=True / admin）"
+
+    reasoning_chain:
+      - "问：路由处理器函数签名中是否存在非 body 参数？"
+      - "白盒：grep -rn '@router\\.\\(post\\|get\\|put\\)' --include='*.py' -A 10 | grep 'bypass\\|base_model\\|admin\\|filter'"
+      - "问：该参数是否在 API 文档 / OpenAPI spec 中定义？"
+      - "白盒：grep -rn '<参数名>' docs/ openapi.json README.md"
+      - "问：调用方是否只在内部递归时传该参数（如 bypass_filter=True）？"
+      - "如果：参数在路由签名 + 未文档化 + 默认特权值 → 外部可经 query string 注入"
+
+    verify:
+      - "在请求追加 ?bypass_filter=true / ?base_model_id=X，观察响应从 403→200 或返回新数据"
+
+    access_required: "认证普通用户"
+    prerequisite:
+      - "框架使用自动参数绑定（FastAPI / Spring @RequestParam / ASP.NET [FromQuery]）"
+      - "端点权限检查依赖该参数值"
+
+    practical_notes:
+      - "FastAPI 把未声明来源的函数参数自动绑定到 query string"
+      - "内部参数常见命名：bypass_* / internal_* / base_* / override_*"
+      - "与 INDIRECT_OBJECT_REF 联动：递归调用中的 bypass_filter 经此暴露"
+
+    vuln_root: "框架自动绑定把本应内部使用的参数暴露到 HTTP 层，外部可控"
+    transferable_to:
+      - "任何自动参数绑定框架且未显式校验参数来源的系统"
+      - "微服务内部调用参数经 HTTP 传递的场景；GraphQL context 字段被客户端控制"
+
+    cases:
+      - cve: "CVE-2026-45365"
+        note: "bypass_filter 参数经 query string 绕过模型访问控制"
+      - cve: "CVE-2026-45339"
+        note: "x-api-key header 路径绕过 API key 端点限制（多认证路径只覆盖一条）"
+
+  # ============================================================
+  # 模式 13: SSRF URL 验证绕过
+  # ============================================================
+  - name: "SSRF：URL 验证不完备或缺失"
+    id: "SSRF_VALIDATION_BYPASS"
+    applicable: "both"
+    cwe: "CWE-918"
+    severity: "High"
+
+    trigger:
+      - "端点接受用户可控 URL，后端发起 HTTP 请求"
+      - "URL 验证只检查初始 URL，但客户端跟随重定向"
+      - "URL 解析库（urlparse）与 HTTP 客户端库（requests）解析不一致"
+      - "新增端点（OAuth/webhook/image/PDF）完全遗漏 validate_url 调用"
+
+    reasoning_chain:
+      - "问：哪些端点把用户 URL 传给 HTTP 客户端？"
+      - "白盒：grep -rn 'requests.get\\|aiohttp.*get\\|httpx\\|urlopen' --include='*.py' | grep -v test"
+      - "问：该 URL 传给客户端前是否调用 validate_url？"
+      - "白盒：grep -B20 '<HTTP_client_call>' <file> | grep 'validate_url\\|check_url'"
+      - "问：HTTP 客户端是否跟随 3xx 重定向（默认 allow_redirects=True）？"
+      - "白盒：grep -rn 'allow_redirects' --include='*.py' | grep -v 'False'"
+      - "问：验证用 urlparse 而执行用 requests？两者对 backslash/userinfo 解析不同"
+      - "问：IPv6 验证是否依赖 validators 库 private 参数（对 IPv6 无效）？"
+      - "白盒：grep 'validators.ipv6.*private\\|ipv4_mapped\\|is_private' <file>"
+      - "如果：验证缺失 / 只验初始 URL / 解析库不一致 / IPv6 检查有 bug → SSRF"
+
+    verify:
+      - "公网 302 重定向到内网（httpbin/redirect-to?url=http://127.0.0.1）看是否返回内网内容"
+      - "backslash 混淆 http://127.0.0.1\\@public.com；IPv6 http://[::1] / http://[::ffff:127.0.0.1]"
+      - "云元数据 http://169.254.169.254/latest/meta-data/"
+
+    access_required: "认证用户（多数仅需普通用户；OAuth 路径可能无需认证）"
+    prerequisite:
+      - "后端发起请求，响应体或 timing 可观察（full-read 或 blind 均适用）"
+
+    practical_notes:
+      - "绕过技巧：3xx 重定向、urlparse vs requests 解析差异、IPv4-mapped IPv6、IANA 保留段(100.64/10, 192.0.2/24 等 ipaddress.is_private 不覆盖)、DNS rebinding(TOCTOU)"
+      - "blind SSRF 仍可用响应时间做端口扫描、触发内网副作用"
+      - "httpx/浏览器会规范化 ..，测路径穿越类 SSRF 要用 raw HTTP 投递"
+
+    vuln_root: "URL 验证与实际请求分离，验证不覆盖重定向/解析差异/编码变体/保留地址"
+    transferable_to:
+      - "webhook / RSS / PDF 生成 / 图片代理 / OAuth profile fetch"
+      - "RAG / 知识库 URL 导入；OpenAI 兼容层自定义 base_url"
+      - "任何 requests/aiohttp/httpx 且未禁用重定向的路径"
+
+    cases:
+      - cve: "CVE-2026-45401"
+        note: "5 条路径 allow_redirects=True，302 绕过"
+      - cve: "CVE-2026-45400"
+        note: "urlparse vs requests backslash userinfo 解析差异"
+      - cve: "CVE-2026-45331"
+        note: "validators.ipv6(private=True) 无效 + IPv4-mapped + IANA 保留段未覆盖"
+      - cve: "CVE-2026-45338"
+        note: "OAuth picture URL 完全未调 validate_url"
+      - cve: "CVE-2026-45347"
+        note: "PDF 生成 <img> 触发 blind SSRF"
+      - cve: "CVE-2026-34225"
+        note: "image edit blind SSRF 端口扫描"
+      - cve: "CVE-2025-65958"
+        note: "/retrieval/process/web 无任何验证"
+      - cve: "CVE-2025-29446"
+        note: "ollama verify_connection 未验证"
+      - cve: "CVE-2024-7959"
+        note: "/openai/models 端点 URL 无检查"
+      - cve: "CVE-2026-45317"
+        note: "图片上传 image_url 不校验类型，可指向恶意端点（CSRF/SSRF 图片载体）"
+
+  # ============================================================
+  # 模式 14: Pydantic extra='allow' Mass Assignment
+  # ============================================================
+  - name: "Mass Assignment：Pydantic extra='allow' + 不安全 dict merge"
+    id: "MASS_ASSIGN_PYDANTIC_EXTRA"
+    applicable: "both"
+    cwe: "CWE-915"
+    severity: "High"
+
+    trigger:
+      - "Form 模型设了 ConfigDict(extra='allow')"
+      - "创建/写入端点用 dict 展开构造：{**server_fields, **form.model_dump()}"
+      - "form_dump 展开在 user_id 等敏感字段之后（后值覆盖）"
+
+    reasoning_chain:
+      - "问：Form 模型是否设了 extra='allow'？"
+      - "白盒：grep -rn \"ConfigDict(extra='allow')\" --include='*.py' models/"
+      - "问：insert/构造时 server 字段和 **form.model_dump() 谁在后面？"
+      - "白盒：grep -rn 'model_dump()' --include='*.py' | grep -B3 -A3 'user_id'"
+      - "如果：extra='allow' 且 form_dump 在 user_id 之后 → 后值胜出，Mass Assignment 成立"
+
+    verify:
+      - "正常请求体外注入 \"user_id\":\"<他人UUID>\"，看响应里 user_id 是否变成注入值"
+      - "再试注入 id / version / created_at 等字段"
+
+    access_required: "认证普通用户（目标 UUID 可从用户搜索等泄露）"
+    prerequisite:
+      - "使用 Pydantic（或 Rails strong_params 缺失 / Django fields='__all__'）"
+
+    practical_notes:
+      - "正确写法：**form_dump 放最前、server 字段放最后；或 extra='ignore'"
+      - "extra='allow' 让未声明字段穿透校验进入 model_dump"
+
+    vuln_root: "extra='allow' 让任意字段穿透校验，配合后置 dict 展开覆盖服务端字段"
+    transferable_to:
+      - "所有 FastAPI/Pydantic create 端点"
+      - "Rails strong_params 缺失、Django ModelForm fields='__all__'"
+
+    cases:
+      - cve: "CVE-2026-45396"
+        note: "feedback 端点伪造 user_id"
+      - cve: "CVE-2026-44550"
+        note: "FolderForm 注入字段在他人空间建文件夹"
+
+  # ============================================================
+  # 模式 15: Feature gate 仅 UI 层强制，API 未校验
+  # ============================================================
+  - name: "Feature gate 仅前端隐藏，API 端点未校验开关"
+    id: "FEATURE_GATE_UI_ONLY"
+    applicable: "both"
+    cwe: "CWE-602"
+    severity: "High"
+
+    trigger:
+      - "存在敏感功能开关（代码执行/RAG/上传），管理员可关闭"
+      - "开关只在前端隐藏入口，后端 handler 未读 config.*"
+
+    reasoning_chain:
+      - "问：handler 内是否检查对应 config flag？"
+      - "白盒：grep -rn 'ENABLE_CODE_EXECUTION' backend/ —— 看是否只在前端/config 出现而非 routers/*.py handler 体内"
+      - "如果：flag 仅在 svelte/config 出现，handler 无 'if not config.X: raise 403' → gate 可绕过"
+
+    verify:
+      - "管理员关掉开关后，直接 curl 对应 API 端点，看返回 200 还是 403"
+
+    access_required: "认证 verified 用户"
+    prerequisite:
+      - "功能在管理端显示为 disabled，但 API 路由仍注册"
+
+    vuln_root: "安全边界只在客户端强制，服务端未独立校验功能开关"
+    transferable_to:
+      - "任何 feature-flag 架构；SaaS 套餐限额；admin-only 功能的客户端隐藏"
+
+    cases:
+      - cve: "CVE-2026-45672"
+        note: "ENABLE_CODE_EXECUTION=false 仍可调 Jupyter 执行端点"
+
+  # ============================================================
+  # 模式 16: 未认证敏感端点（信息泄露 / 计费 DoS）
+  # ============================================================
+  - name: "未认证敏感端点：router 批量加鉴权时单点遗漏"
+    id: "UNAUTH_SENSITIVE_ENDPOINT"
+    applicable: "both"
+    cwe: "CWE-306"
+    severity: "High"
+
+    trigger:
+      - "同 router 多数端点有 Depends(get_*_user)，个别遗漏"
+      - "存在 debug/诊断遗留路由"
+
+    reasoning_chain:
+      - "问：哪些 handler 缺 Depends 鉴权？"
+      - "白盒：grep -rn '@router.\\(get\\|post\\)' routers/ —— 对照下一行是否有 Depends(get_verified_user/get_admin_user)"
+      - "问：缺 Depends 的 handler 是否读 config、调昂贵函数(EMBEDDING)、或解析用户输入(pdf/markdown)？"
+      - "如果：无 auth + 返回 config / 触发重计算 / 解析无大小限制 → 泄露或 DoS"
+
+    verify:
+      - "无 token curl 该端点，看返回 200 还是 401"
+      - "返回 200 且回显配置 → 信息泄露；重复/超大 payload 致 CPU 飙升 → DoS"
+
+    access_required: "无（未认证可达）"
+    prerequisite:
+      - "端点处理敏感数据或昂贵计算"
+
+    practical_notes:
+      - "诊断/debug 遗留路由是高发区"
+      - "鉴权遗漏是'逐端点'而非'逐应用'：有登录系统 ≠ 每个端点都受保护"
+
+    vuln_root: "按 router 批量加鉴权时单点遗漏 Depends，敏感端点裸露"
+    transferable_to:
+      - "任意按 router/controller 批量加鉴权的框架；遗留 debug 路由"
+
+    cases:
+      - cve: "CVE-2026-45397"
+        note: "未认证 RAG 配置泄露"
+      - cve: "CVE-2026-45667"
+        note: "未认证触发 embedding 生成（计费 DoS）"
+      - cve: "CVE-2026-0767"
+        note: "未认证凭据泄露"
+      - cve: "CVE-2024-8053"
+        note: "未认证 PDF 生成 DoS"
+      - cve: "CVE-2024-7983"
+        note: "未认证 markdown 转换 DoS"
+
+  # ============================================================
+  # 模式 17: 用户可控内容进入动态执行 → RCE
+  # ============================================================
+  - name: "RCE：用户可控代码/模块/命令进入动态执行"
+    id: "RCE_DYNAMIC_LOAD_EXEC"
+    applicable: "both"
+    cwe: "CWE-94 / CWE-78"
+    severity: "Critical"
+
+    trigger:
+      - "出现 exec/eval/new Function/importlib/subprocess(shell=True)/pip install"
+      - "参数含用户输入或来自外部 server 的 SSE 事件"
+
+    reasoning_chain:
+      - "问：代码中哪里有动态执行 sink？"
+      - "白盒：grep -rn 'exec(\\|eval(\\|new Function\\|importlib\\|shell=True\\|subprocess' backend/ src/"
+      - "问：被执行的字符串/模块 id/依赖名是否来自请求体或外部 SSE？"
+      - "问：SSE/WebSocket 事件类型是否经白名单校验？"
+      - "如果：用户内容直达 exec / 拼接进系统调用 / SSE 事件未白名单 → RCE"
+
+    verify:
+      - "创建 function/tool，后端在 import/toggle 时执行 __init__ 内代码，放 subprocess 验证回显"
+      - "外部 model server 回 execute 事件，看前端是否执行"
+
+    access_required: "认证用户可建 function（默认开）；SSE 需受害者启用 Direct Connections"
+    prerequisite:
+      - "插件/工具/Functions 内容会被加载执行，或信任外部 SSE 指令"
+
+    practical_notes:
+      - "service account 权限即攻击者所得权限"
+      - "CSRF 可作为入口（SameSite=Lax 下需 form 顶层导航或 GET 改状态）"
+
+    vuln_root: "用户/外部可控内容未经验证进入动态执行或系统调用"
+    transferable_to:
+      - "插件/工具市场架构；信任外部 SSE/WebSocket 指令的前端；CI 依赖安装"
+
+    cases:
+      - cve: "CVE-2026-0766"
+        note: "load_tool_module_by_id 动态加载 RCE (ZDI)"
+      - cve: "CVE-2026-0765"
+        note: "install_frontmatter_requirements 命令注入 (ZDI)"
+      - cve: "CVE-2025-64496"
+        note: "Direct Connections SSE execute 事件 → token 盗取 → Functions RCE"
+      - cve: "CVE-2024-7806"
+        note: "CSRF → model 创建 → RCE（SameSite=Lax 无 CSRF token）"
+
+  # ============================================================
+  # 模式 18: DOMPurify 清理顺序错误
+  # ============================================================
+  - name: "XSS：DOMPurify sanitize 在 markdown 渲染之前调用"
+    id: "DOMPURIFY_ORDER_XSS"
+    applicable: "both"
+    cwe: "CWE-79"
+    severity: "High"
+
+    trigger:
+      - "见到 {@html marked.parse(DOMPurify.sanitize(...))}"
+      - "sanitize 包在 marked 内层（先 sanitize 后渲染）"
+
+    reasoning_chain:
+      - "问：sanitize 和 markdown 解析谁先执行？"
+      - "白盒：grep -rn 'marked.parse(DOMPurify' --include='*.svelte'"
+      - "问：是否有裸 {@html} 完全不经 sanitize？"
+      - "白盒：grep -rn '@html' -A1 src/ | grep -i 'marked\\|sanitize'"
+      - "如果：sanitize 在 marked 内层 → 原始 markdown 无 HTML 标签原样通过，marked 再把 [t](javascript:) 转成 <a href=javascript:> → 漏洞"
+
+    verify:
+      - "在可控 markdown 字段（banner/overlay/model desc）提交 [x](javascript:alert(1))，渲染后点击看是否执行"
+
+    access_required: "能写入被渲染字段的用户（部分需 admin/model 创建权限）"
+    prerequisite:
+      - "字段经 marked 渲染且用户可控 markdown"
+
+    practical_notes:
+      - "javascript: URI 是绕过'只防尖括号'过滤的通用 primitive"
+      - "正确顺序：先 marked.parse 再 DOMPurify.sanitize 输出"
+
+    vuln_root: "sanitize 先于 markdown 渲染执行，渲染产生的危险 HTML 未再被清理"
+    transferable_to:
+      - "任何 markdown→HTML 富文本管道（评论、IM、wiki、工单）"
+
+    cases:
+      - cve: "CVE-2026-45665"
+        note: "Banner 组件 sanitize 顺序错"
+      - cve: "CVE-2026-44568"
+        note: "AccountPending overlay 同类"
+      - cve: "CVE-2026-44721"
+        note: "model description"
+      - cve: "CVE-2024-7990"
+        note: "model description (早期同类)"
+
+  # ============================================================
+  # 模式 19: SVG / data URI 作为 XSS 载体
+  # ============================================================
+  - name: "XSS：SVG / data URI 在同源渲染时执行脚本"
+    id: "SVG_DATAURI_XSS"
+    applicable: "both"
+    cwe: "CWE-79"
+    severity: "High"
+
+    trigger:
+      - "image_url / profile_image 接受 data:image/svg+xml"
+      - "服务端按 image/svg+xml + Content-Disposition: inline 直出"
+      - "前端用 innerHTML 注入 SVG"
+
+    reasoning_chain:
+      - "问：image 字段是否接受 data:image/svg+xml 或上传 .svg？"
+      - "白盒：grep -rn 'svg+xml\\|data:image' backend/ src/"
+      - "问：服务端返回该数据时 media_type 是否 svg、Content-Disposition 是否 inline、是否栅格化为 png？"
+      - "白盒：grep -rn 'StreamingResponse\\|media_type\\|Content-Disposition' backend/"
+      - "如果：inline SVG 未经栅格化/sanitize 且同源渲染 → 漏洞"
+
+    verify:
+      - "profile/webhook image 设 data:image/svg+xml;base64,<含 onload>，直接访问该 URL 看是否弹窗"
+
+    access_required: "能设置头像/图片字段的认证用户"
+    prerequisite:
+      - "SVG 在应用 origin 渲染（非跨域 <img>，否则脚本不执行）"
+
+    practical_notes:
+      - "<img src=svg> 跨域不执行脚本；必须是同源直接导航/inline 渲染才触发"
+      - "PDF 导出走 innerHTML 也属此类（CVE-2025-65959）"
+
+    vuln_root: "SVG 含可执行脚本，被同源 inline 渲染而非作为图片栅格化"
+    transferable_to:
+      - "头像/图标/webhook 图片/note 导出 PDF/任何接受 SVG 或 data URI 的图片字段"
+
+    cases:
+      - cve: "CVE-2026-45314"
+        note: "webhook profile SVG"
+      - cve: "CVE-2026-45346"
+        note: "SVG renderer"
+      - cve: "CVE-2025-65959"
+        note: "Note PDF 下载 innerHTML SVG"
+
+  # ============================================================
+  # 模式 20: iframe sandbox 失效
+  # ============================================================
+  - name: "XSS：iframe sandbox 同时含 allow-scripts 与 allow-same-origin"
+    id: "IFRAME_SANDBOX_NULLIFIED"
+    applicable: "both"
+    cwe: "CWE-79"
+    severity: "High"
+
+    trigger:
+      - "sandbox=\"allow-scripts allow-same-origin\" 二者并存"
+      - "sandbox 值硬编码而非读用户/管理员配置"
+      - "iframe srcdoc/embeds/html 用户可控（改 chat history JSON）"
+
+    reasoning_chain:
+      - "问：哪些 iframe 同时给了 scripts + same-origin？"
+      - "白盒：grep -rn 'allow-scripts' src/ | grep 'allow-same-origin'"
+      - "问：sandbox 值是否硬编码 true 而非读配置？"
+      - "白盒：grep -rn 'allowSameOrigin\\|allowScripts' src/"
+      - "问：iframe 内容是否用户可控（chat history embeds/html 字段）？"
+      - "如果：scripts+same-origin 并存 + 内容可控 → iframe 内脚本可读父级 localStorage token"
+
+    verify:
+      - "HTML 渲染视图/citation/embeds 注入 <script>fetch(...localStorage.token)，分享后他人打开看是否执行"
+
+    access_required: "能写入 iframe 内容字段的认证用户"
+    prerequisite:
+      - "用户可控 HTML 进入 iframe 且沙箱配置宽松"
+
+    practical_notes:
+      - "allow-scripts + allow-same-origin 并存 = 等于无沙箱，iframe 可访问父 origin"
+      - "可控数据源多为间接：改 chat history JSON、分享/克隆/导入放大为他人上下文"
+
+    vuln_root: "sandbox 同时放行脚本与同源，沙箱隔离形同虚设"
+    transferable_to:
+      - "任何 HTML 预览/embed/sandbox 渲染器"
+
+    cases:
+      - cve: "CVE-2026-45303"
+        note: "HTML 渲染视图"
+      - cve: "CVE-2026-26193"
+        note: "response embeds iframe"
+      - cve: "CVE-2026-26192"
+        note: "citations html iframe"
+
+# ============================================================
+# 如何使用这个模式库
+# ============================================================
+usage_guide:
+  step1_identify_features:
+    - "枚举目标的功能点：文件上传、认证方式、权限管理、富文本渲染"
+    - "列出所有 API 端点，标注哪些接受用户可控参数"
+
+  step2_match_triggers:
+    - "遍历上面 7 个模式的 trigger 列表"
+    - "看到文件上传 → 触发模式1（Path Traversal）"
+    - "看到安全注释 → 触发模式2（Fix Inconsistency）"
+    - "看到 LDAP 认证 → 触发模式3（Null Password）"
+    - "看到 Mermaid 渲染 → 触发模式4（Third Party Config）"
+    - "看到 /api/{id} → 触发模式5（IDOR）"
+
+  step3_run_reasoning_chain:
+    - "不直接去 fuzz，先跑推理链"
+    - "模式1 的链: filename 来自哪里 → 怎么拼接 → 有没有过滤"
+    - "模式2 的链: 这个修复注释说明了什么 → 其他路径同步了吗"
+    - "推理链结束后，心中已有假设"
+
+  step4_verify:
+    - "按照模式的 verify 步骤构造 PoC"
+    - "不要盲目测，先问：这个模式的前提条件满足吗"
+
+# ============================================================
+# 核心洞见
+# ============================================================
+key_insights:
+  - insight: "挖洞不是'找漏洞'，是'针对特定特征运行审查流程'"
+    example: "看到文件上传就检查 basename，看到注释就检查同步"
+
+  - insight: "漏洞挖掘者不是猜，是用固定流程逐步排除安全措施"
+    example: "Path Traversal 链: 可控? 拼接? basename? 路径规范化? 一步步排查"
+
+  - insight: "一个安全注释，就是一个挖洞切入点"
+    example: "'avoid TOCTOU' 注释暴露了开发者知道竞态，必然有其他路径未修"
+
+  - insight: "权限检查 != 身份认证，前者是'你是谁',后者是'你能做什么'"
+    example: "很多 API 只验证了 token 有效，没验证资源归属 → IDOR"
+
+  - insight: "第三方库的默认配置通常不够安全"
+    example: "Mermaid loose / Markdown allowHtml:true / CORS * 都是高危默认值"
+
+  - insight: "修复通常只覆盖主流路径，边缘路径是漏洞富矿"
+    example: "主注册入口修了，LDAP/OAuth/SSO 没修 → 去测边缘入口"
+
+# ============================================================
+# Open WebUI 总体安全问题画像
+# ============================================================
+openwebui_profile:
+  total_cves: 32
+  high_severity_plus: 30
+
+  vulnerability_distribution:
+    - type: "Authorization / IDOR"
+      count: 15
+      note: "API 层面缺少所有权验证，几乎所有资源操作都可跨用户访问"
+
+    - type: "XSS (Stored)"
+      count: 7
+      note: "富文本渲染未清理，Mermaid/Excel/Markdown 均有 XSS"
+
+    - type: "Authentication Bypass"
+      count: 3
+      note: "LDAP 空密码、TOCTOU 竞态、Socket 权限未同步"
+
+    - type: "Path Traversal / RCE"
+      count: 2
+      note: "文件名未过滤，可写任意路径"
+
+    - type: "Information Disclosure"
+      count: 3
+      note: "配置端点暴露、敏感路径泄露"
+
+    - type: "其他"
+      count: 2
+
+  root_causes:
+    - "权限系统设计缺陷：只做了 Authentication，没做 Authorization"
+    - "用户输入未经验证直接用于关键操作"
+    - "第三方库默认配置过于宽松"
+    - "安全修复未覆盖所有等效代码路径"
+
+  recommended_audit_order:
+    - "1. 枚举所有 API，测试 IDOR（模式5）"
+    - "2. 测试所有文件操作（模式1 + 模式7）"
+    - "3. 检查认证流程（模式2 + 模式3）"
+    - "4. 测试富文本渲染（模式4）"
+    - "5. 测试长连接权限管理（模式6）"
+
+# ============================================================
+# 白盒代码审计专用流程
+# ============================================================
+whitebox_audit_workflow:
+  phase1_reconnaissance:
+    steps:
+      - "阅读 README / 架构文档，理解系统设计"
+      - "识别技术栈：框架/语言/数据库/认证方式"
+      - "定位关键目录：auth / api / file_upload / models"
+      - "git log 查看近期安全相关提交"
+
+  phase2_high_risk_code_location:
+    file_operations:
+      - "grep -r 'open(' | grep -v 'rb'"
+      - "找所有文件上传处理函数"
+      - "检查：filename 是否参与路径构造"
+
+    authentication:
+      - "定位所有认证入口点（/login /auth/ldap /oauth/callback）"
+      - "对比不同入口的实现差异"
+      - "查找安全注释（'avoid', 'race', 'fix'）"
+
+    authorization:
+      - "grep -r '@login_required' -A 10"
+      - "检查装饰器后是否有所有权验证"
+      - "查找 current_user.id == resource.owner_id 模式"
+
+    user_input_handling:
+      - "grep -r 'request.json\\|request.form\\|request.args'"
+      - "追踪输入数据流：source → processing → sink"
+      - "检查是否经过验证/清理"
+
+  phase3_data_flow_analysis:
+    taint_tracking:
+      - "标记污点源：request.json / UploadFile / URL 参数"
+      - "追踪数据流：参数传递 / 变量赋值 / 函数调用"
+      - "查找危险 sink：open() / exec() / db.query() / render()"
+      - "检查路径上是否有清理函数（sanitize / escape / validate）"
+
+    example: |
+      # 污点追踪示例
+      filename = request.files['file'].filename  # SOURCE (污点源)
+      upload_path = f"{UPLOAD_DIR}/{filename}"   # TAINT PROPAGATION (污点传播)
+      with open(upload_path, 'wb') as f:          # SINK (危险函数)
+          ...
+      # 没有 basename / 路径规范化 → 漏洞
+
+  phase4_pattern_matching:
+    - "对照 7 个模式的 reasoning_chain，逐一检查代码"
+    - "每个模式的检查点都转化为 grep 命令或代码搜索"
+    - "记录所有可疑代码位置和行号"
+
+  phase5_poc_development:
+    - "基于代码逻辑构造 PoC"
+    - "优先级：RCE > Auth Bypass > IDOR > XSS > Info Leak"
+    - "确认漏洞影响范围和触发条件"
+
+# ============================================================
+# 白盒审计 Checklist（可打印）
+# ============================================================
+audit_checklist:
+  file_operations:
+    - "[ ] 文件名来自用户输入"
+    - "[ ] 路径拼接使用 f-string / os.path.join"
+    - "[ ] 未使用 os.path.basename() 提取纯文件名"
+    - "[ ] 未使用 pathlib.Path().resolve() 规范化"
+    - "[ ] 未验证最终路径在合法目录内"
+
+  authentication:
+    - "[ ] 所有认证入口（email/LDAP/OAuth）实现是否一致"
+    - "[ ] LDAP bind 前是否验证密码非空"
+    - "[ ] 竞态敏感操作是否有原子性保证"
+    - "[ ] 首次用户逻辑是否所有入口都同步修复"
+
+  authorization:
+    - "[ ] API 端点只验证了登录，未验证所有权"
+    - "[ ] DELETE/PUT/PATCH 是否缺少权限检查"
+    - "[ ] 子资源访问是否继承父资源权限"
+    - "[ ] 管理员接口是否可被普通用户访问"
+
+  input_sanitization:
+    - "[ ] 用户输入直接渲染到 HTML"
+    - "[ ] Markdown/Mermaid 配置为宽松模式"
+    - "[ ] 文件 Content-Type 基于扩展名"
+    - "[ ] 响应缺少 X-Content-Type-Options: nosniff"
+
+  session_management:
+    - "[ ] WebSocket 会话权限未实时同步"
+    - "[ ] JWT 降权后未使旧 token 失效"
+    - "[ ] Session 存储了权限缓存"
+
+# ============================================================
+# Semgrep 规则示例（可直接使用）
+# ============================================================
+# 注意：以下规则按 Semgrep 官方 patterns/AND 组合语法编写；本机未安装 Semgrep，
+# 落地前请用 `semgrep --validate --config <file>` 校验，并在目标代码上试跑调参。
+semgrep_rules_example: |
+  rules:
+    # 组合条件必须放在 patterns: 下做 AND（不能让 pattern 与 pattern-not 在规则顶层平级）
+    - id: path-traversal-file-open
+      patterns:
+        - pattern: open($PATH, ...)
+        # 排除内联 basename 包裹
+        - pattern-not: open(os.path.basename(...), ...)
+        # 排除先赋值再使用的安全写法：safe = os.path.basename(x); open(safe)
+        - pattern-not-inside: |
+            $SAFE = os.path.basename(...)
+            ...
+      message: "open() 的路径疑似来自用户输入且未经 basename 规范化"
+      languages: [python]
+      severity: ERROR
+
+    - id: ldap-empty-password
+      patterns:
+        - pattern: $CONN.simple_bind_s($DN, $PWD)
+        - pattern-not-inside: |
+            if $PWD:
+              ...
+        - pattern-not-inside: |
+            if not $PWD:
+              ...
+      message: "LDAP simple_bind 前未校验密码非空，可能触发 Unauthenticated Bind"
+      languages: [python]
+      severity: ERROR
+
+    - id: missing-ownership-check
+      patterns:
+        - pattern: |
+            @$APP.delete("/api/$RESOURCE/{$ID}")
+            def $FUNC(...):
+              ...
+        - pattern-not-inside: |
+            def $FUNC(...):
+              ...
+              if $USER.id == $OWNER:
+                ...
+      message: "DELETE 端点缺少所有权校验（IDOR 风险）"
+      languages: [python]
+      severity: WARNING
+
+
+
+
+
+

@@ -1,0 +1,70 @@
+name: "项目令牌生成的服务账号继承了高于创建者的默认权限范围"
+id: "SERVICE_TOKEN_BOT_PRIVILEGE_SCOPE_ESCALATION"
+applicable: "both"
+phase: "authz"
+also_phases: ["auth"]
+tags: ["privilege-escalation", "service-account", "project-token", "bot-user", "scope-inheritance", "gitlab", "external-user"]
+source: "https://hackerone.com/reports/1193062"
+
+observation: >
+  GitLab 中被标记为 "external user" 的用户在获得某项目 Maintainer 角色后，
+  创建 project access token 时，系统自动生成了一个具有 "internal" 权限级别的 bot 用户，
+  而非继承创建者的 "external" 权限级别。
+  (原文: "An external user with maintainer permissions could create a project token,
+  which will be connected to a bot user with internal privileges on the GitLab instance.")
+
+hypothesis: >
+  project token 的 bot 用户创建逻辑可能使用了系统默认的用户权限级别（internal），
+  而未将创建者的权限范围（external）传播给生成的 bot 用户。
+  (原文: "The bot should probably have 'external privilege' as standard.
+  At least an external user should not be able to use the bot to access internal projects.")
+
+action_result: >
+  成功：使用 project token 通过 API 访问了所有 internal 项目（包括源码）、
+  创建 issue、创建 group，远超 external user 应有的权限范围。
+  (原文: "Use the token to probe internal projects...
+  curl --header 'Authorization: Bearer <TOKEN>' 'https://gitlab.domain.com/api/v4/projects'")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  external user 只需说服一个 internal user 邀请其为某项目的 Maintainer 即可，
+  无需 Admin 介入。创建 project token 后，通过 bot 用户获得整个实例的 internal 级别访问。
+  (原文: "an external user (if not already granted maintainer on a project) only needs to
+  convince one other user on the system to create a project and invite the external user as maintainer.")
+
+approach: >
+  在具有用户权限边界（如 external/internal/admin）的平台中，
+  关注自动创建的服务身份（bot user、service account、API token 关联用户）
+  是否正确继承了创建者的权限范围。测试方法：以受限用户身份创建 project token /
+  deploy key / service account，检查其关联身份的有效权限是否超出创建者的权限边界。
+
+reasoning_chain:
+  - "问：平台是否区分多种用户权限级别（如 external/internal/admin、sandbox/production）？"
+  - "问：是否有功能允许用户创建服务令牌/API key/deploy key，系统是否为此自动创建关联身份（bot user）？"
+  - "问：以最低权限级别的用户创建此类服务令牌后，关联 bot 用户的权限级别是什么？——是继承了创建者的受限级别，还是使用了系统默认的更高级别？"
+  - "验证：使用该令牌调用需要更高权限级别才能访问的 API（如列出 internal 项目），是否成功？"
+  - "如果成功 → 确认 bot 用户权限范围超出创建者的权限边界"
+  - "扩展：其他类型的自动生成身份（deploy token、group token、personal access token of bot）是否也存在类似问题？"
+
+vuln_root: >
+  服务令牌关联的 bot 用户创建逻辑使用了系统默认权限级别（internal），
+  未将创建者的权限范围（external）作为约束传播给自动生成的服务身份，
+  导致受限用户通过创建服务令牌突破自身权限边界。
+
+transferable_to:
+  - "GitLab/GitHub/Gitea 等代码托管平台的 project/deploy token 系统"
+  - "企业 SaaS 中支持 API key 或 service account 的多租户系统"
+  - "CI/CD 平台中 runner token、pipeline token 关联的服务身份"
+  - "云平台中 service account 创建时的 IAM 角色继承"
+  - "Slack/Discord bot 创建时的 workspace 权限范围继承"
+
+cases:
+  - url: "https://hackerone.com/reports/1193062"
+    title: "Privilege escalation of 'external user' (with maintainer privilege) to internal access through project token"
+    author: "joaxcar"
+    platform: "GitLab"
+    severity: "Medium (CVSS 5.5)"
+    note: >
+      External user 获得项目 Maintainer 角色后创建 project token，bot 用户获得 internal 权限，
+      可访问所有 internal 项目源码、创建 issue/group。无需 Admin 权限即可被邀请为 Maintainer。

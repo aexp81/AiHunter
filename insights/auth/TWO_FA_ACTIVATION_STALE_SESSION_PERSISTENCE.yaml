@@ -1,0 +1,71 @@
+name: "2FA 激活后已有 session 未失效——攻击者维持对已启用 2FA 账户的持久访问"
+id: "TWO_FA_ACTIVATION_STALE_SESSION_PERSISTENCE"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["logic"]
+tags: ["2fa", "session-invalidation", "stale-session", "mfa-enrollment", "rocket.chat", "CVE-2023-28316", "access-persistence"]
+source: "https://hackerone.com/reports/992280"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。Rocket.Chat 平台的 2FA 实现中，启用 2FA 后其他活跃 session 未被失效化，
+  已被攻陷的 session 可在 2FA 启用后继续使用。
+  (原文团队摘要: "A security vulnerability has been discovered in the implementation of 2FA
+  on the rocket.chat platform, where other active sessions are not invalidated upon activating 2FA.
+  This could potentially allow an attacker to maintain access to a compromised account even after
+  2FA is enabled.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：2FA 启用流程仅在当前 session 上添加 2FA 标记/要求，
+  但未遍历并失效化该用户的所有其他活跃 session，导致攻击者持有的旧 session 不受影响。
+
+action_result: >
+  未叙述（仅结果）。CVE-2023-28316 已分配。确认攻击者在目标账户启用 2FA 前
+  获取的 session 在 2FA 启用后仍然有效，可继续访问账户而无需通过 2FA 验证。
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  旧 session 持久化 → 绕过 2FA 保护 → 在用户以为账户已加固后维持未授权访问。
+  在凭据泄露场景中，受害者启用 2FA 作为应急措施，但攻击者已有的 session 不受影响。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  当目标系统支持 2FA/MFA 启用功能时，在账户上已建立多个活跃 session 的情况下启用 2FA，
+  检查已有的其他 session 是否被强制失效或要求重新通过 2FA 验证——
+  关键在于发现"2FA 启用流程未触发全局 session 失效"的安全假设缺口。
+
+reasoning_chain:
+  - "问：目标系统是否支持用户主动启用/禁用 2FA？"
+  - "问：在多个设备/浏览器上登录同一账户，建立多个活跃 session。"
+  - "操作：在其中一个 session 中启用 2FA。"
+  - "问：其他 session 是否被强制登出或要求重新验证 2FA？"
+  - "如果其他 session 仍然有效 → 确认漏洞：2FA 启用未触发全局 session 失效。"
+  - "问：类似地，修改密码 / 修改邮箱 / 撤销 API Key 等安全敏感操作后，已有 session 是否失效？"
+  - "问：禁用 2FA 时是否也存在相同问题（已有 session 保持 2FA 验证状态）？"
+  - "延伸：session token 本身是否编码了 2FA 状态？还是服务端在每次请求时检查？"
+
+vuln_root: >
+  2FA 启用流程仅修改账户级别的 2FA 配置，未触发该用户所有活跃 session 的失效化，
+  开发者假设"启用 2FA 后所有访问都需要 2FA"但忽略了已有 session 已经通过了认证。
+
+transferable_to:
+  - "即时通讯平台（Slack/Teams/Discord）的 2FA 启用流程"
+  - "SaaS 平台管理后台的 MFA 强制启用功能"
+  - "企业 SSO 系统中的 MFA 策略变更——策略生效后已有 session 是否重新验证"
+  - "密码修改后已有 session 是否失效的同类问题"
+  - "API Token/OAuth 应用的 scope 变更后已有凭据是否重新验证"
+
+cases:
+  - url: "https://hackerone.com/reports/992280"
+    author: "priyank_parmar"
+    platform: "Rocket.Chat"
+    severity: "Low"
+    cve: "CVE-2023-28316"
+    bounty: "无赏金"
+    note: >
+      Rocket.Chat 启用 2FA 后已有活跃 session 未失效化，
+      攻击者可维持对已启用 2FA 账户的访问。
+      no-content 公开，仅团队摘要可见。

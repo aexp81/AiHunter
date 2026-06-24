@@ -1,0 +1,73 @@
+name: "库/工具写入已有文件时重置文件权限——敏感信息从受限变为可读"
+id: "FILE_WRITE_SIDE_EFFECT_PERMISSION_RESET_LEAK"
+applicable: "both"
+phase: "logic"
+also_phases: ["authz"]
+tags: ["file-permission", "cookie", "curl", "libcurl", "regression", "umask", "confidentiality", "side-effect"]
+source: "https://hackerone.com/reports/1024749"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。报告者发现 libcurl 7.72.0 起，当向已存在的 cookie jar 文件写入时，
+  文件权限被重置为 umask 默认值（通常 644/世界可读），无视文件原有的限制性权限。
+  (原文: "libcurl since 7.72.0 changes file specified in CURLOPT_COOKIEJAR to group and
+  world readable, regardless of prior file permissions of an already existing file
+  (assuming typical default umask of 022)")
+
+hypothesis: >
+  未叙述（仅结果）。推断：某次代码重构导致文件写入路径从"打开已有文件追加"变为
+  "删除+新建文件"，新建文件继承进程 umask 而非原有权限。
+
+action_result: >
+  成功复现：创建权限为 600 的 cookie.jar 文件，执行 curl -c cookie.jar 后，
+  文件权限变为 644（世界可读）。
+  (原文: "1. install -m 600 /dev/null cookie.jar  2. ls -l cookie.jar
+  3. curl -s -c cookie.jar https://www.google.com -o /dev/null  4. ls -l cookie.jar")
+
+why_here_first: >
+  未叙述（仅结果）。报告者标注了引入 bug 的具体 commit
+  (原文: "This bug was introduced as a side effect of
+  https://github.com/curl/curl/commit/b834890a3fa3f525cd8ef4e99554cdb4558d7e1b")，
+  表明是通过代码变更追踪发现的，但未描述寻找过程。
+
+chaining: >
+  Cookie jar 文件包含会话凭据（session cookies），权限从 600 变为 644 后，
+  同主机的任何本地用户可读取该文件，获取目标用户的 HTTP 会话令牌。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  审计命令行工具/库在写入已有敏感文件（cookie jar、token cache、key file）时，
+  检查是否保留了文件的原有权限——特别关注"删除+重建"式写入路径会导致权限降级为 umask 默认值。
+
+reasoning_chain:
+  - "问：目标工具/库在写入已有文件时，使用的是 open(O_TRUNC) 还是 unlink+creat？"
+  - "如果是 unlink+creat → 新文件权限由 umask 决定，原有限制性权限丢失"
+  - "问：工具是否在写入后显式调用 chmod 恢复原有权限？"
+  - "问：最近的版本/commit 是否改变了文件写入路径？（回归测试的常见盲区）"
+  - "问：写入的文件内容是否包含敏感信息（cookies、tokens、credentials）？"
+  - "问：多用户系统上，默认 umask（通常 022）是否导致文件变为世界可读？"
+
+vuln_root: >
+  开发者在重构文件写入逻辑时，将"打开已有文件覆盖写入"改为"删除+新建"，
+  未保留原文件权限，导致敏感文件权限从用户限定降级为 umask 默认（世界可读）。
+
+transferable_to:
+  - "任何维护 cookie jar / token cache 文件的 HTTP 客户端（wget、httpie、requests 等）"
+  - "SSH 工具写入 known_hosts 或 agent socket 文件时的权限处理"
+  - "密码管理器/密钥管理工具在更新 vault 文件时的权限保持"
+  - "应用程序的本地配置文件更新逻辑——是否保留原有文件权限？"
+  - "数据库客户端（如 .pgpass、.my.cnf）的凭据文件写入行为"
+
+cases:
+  - url: "https://hackerone.com/reports/1024749"
+    author: "nyymi"
+    platform: "curl / libcurl"
+    severity: "Medium (CVSS 4.0)"
+    cve: "无 CVE"
+    bounty: "无赏金"
+    note: >
+      libcurl 7.72.0 起，CURLOPT_COOKIEJAR 写入已有文件时将权限重置为 umask 默认（644），
+      无视原有 600 权限。由 commit b834890a 引入的回归。报告被标记为 N/A（curl 项目认为
+      这是操作系统层面的权限管理责任），但该行为确实导致敏感 cookie 文件暴露。

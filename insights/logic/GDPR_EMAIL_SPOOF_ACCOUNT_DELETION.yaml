@@ -1,0 +1,94 @@
+name: "伪造 GDPR 数据删除邮件——利用流程信任链删除任意用户账户"
+id: "GDPR_EMAIL_SPOOF_ACCOUNT_DELETION"
+applicable: "blackbox"
+phase: "logic"
+also_phases: ["auth"]
+tags: ["gdpr", "email-spoofing", "account-deletion", "process-abuse", "social-engineering", "gitlab", "data-protection"]
+source: "https://hackerone.com/reports/928255"
+
+# ——— L3 核心 ———
+
+observation: >
+  作者发现 GitLab 允许用户通过发邮件到 gdpr-request@gitlab.com 行使 GDPR 权利
+  （数据访问/删除），但 GitLab 团队在执行删除前不会要求身份验证问题（如出生日期），
+  也不会验证发件人邮箱的真实性。
+  (原文: "gitlab team doesn't ask for security question(i.e Date Of Birth)
+  before deleting the user account moreover doesn't authenticate the
+  incoming emails from their instance")
+
+hypothesis: >
+  如果使用信誉良好的 SMTP 服务（如 SendGrid）伪造受害者邮箱地址
+  发送 GDPR 删除请求，GitLab 将直接处理请求并删除受害者账户——
+  整个流程没有带外验证（如回复确认链接到原始邮箱）。
+  (原文: "Send an spoofed email from victim's email address to
+  gdpr-request@gitlab.com from a reputable SMTP (e.g: Sendgrid)")
+
+action_result: >
+  成功：发送伪造邮件后，受害者收到了 GitLab 的删除确认邮件，
+  随后账户被删除。
+  (原文: "Victim will receive the following confirmation email...
+  In the next few days victim's account will be deleted")
+
+  扑空路径：未叙述（仅结果）
+
+why_here_first: >
+  未叙述（仅结果）——作者未说明为何首先测试 GDPR 邮件流程。
+  研究者摘要中引用了相关研究论文，暗示这是系统性测试数据保护法规滥用。
+  (原文研究者摘要: "Research Paper: https://hx01.me/Abusing_Data_Protection_Laws_For_D0xing_and_Account_Takeovers.pdf")
+
+chaining: >
+  伪造 GDPR 删除邮件 → 账户被删除 → 受害者丢失所有数据/项目/贡献记录。
+  可与账户接管串链：删除账户后重新注册同名邮箱占位。
+  也可用于 DoS：批量删除目标组织的成员账户。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  检查目标平台的 GDPR/隐私数据处理流程是否通过邮件触发且缺少身份验证——
+  使用 SMTP 伪造邮件模拟数据删除请求，测试是否被无验证执行。
+
+reasoning_chain:
+  - "问：目标平台是否提供基于邮件的 GDPR 数据访问/删除请求通道？（查找 privacy@、gdpr@、dpo@ 等地址）"
+  - "问：该邮件通道是否有身份验证机制？（如要求登录后提交、回复确认链接、政府 ID 验证）"
+  - "问：目标的 SPF/DKIM/DMARC 策略是否允许伪造邮件通过？"
+  - "测试：使用 SendGrid/Mailgun 等信誉 SMTP 发送伪造邮件，观察是否触发处理流程。"
+  - "问：处理流程中是否有二次验证？（如向原始邮箱发送确认链接、要求回复安全问题）"
+  - "问：数据删除请求是自动化还是人工审核？人工审核是否会验证发件人身份？"
+  - "问：删除后是否有冷却期/可恢复窗口？还是立即永久删除？"
+  - "问：是否可以通过同一流程获取数据导出（GDPR Article 15 数据访问权）？这可能泄露更多信息。"
+  - "问：删除账户后，原始用户名/邮箱是否可以被重新注册？"
+
+vuln_root: >
+  GDPR 数据处理流程将"来自目标邮箱的邮件"等同于"来自账户所有者的请求"——
+  忽略了邮件发件人地址可以被轻易伪造这一事实，
+  缺少带外身份验证（如登录确认、证件验证）导致任何人都能触发账户删除。
+
+transferable_to:
+  - "任何提供基于邮件的 GDPR/CCPA 数据删除请求流程的平台"
+  - "使用 privacy@/dpo@ 邮箱处理隐私请求的 SaaS 服务"
+  - "欧盟 GDPR 合规的企业服务（必须响应数据主体请求但可能验证不足）"
+  - "内部 IT 支持流程中基于邮件的账户操作请求"
+  - "任何通过邮件触发敏感操作（账户删除、数据导出、权限变更）且不验证发件人的系统"
+
+cases:
+  - url: "https://hackerone.com/reports/928255"
+    title: "Ability To Delete User(s) Account Without User Interaction (GitLab)"
+    author: "hx01"
+    platform: "GitLab"
+    bounty: "未公开"
+    note: >
+      向 gdpr-request@gitlab.com 发送伪造邮件（使用 SendGrid），
+      GitLab 未验证发件人身份即处理删除请求。受害者收到确认邮件后账户被删除。
+      作者发表了相关研究论文《Abusing Data Protection Laws For Doxing and Account Takeovers》。
+  - url: "https://hackerone.com/reports/803141"
+    title: "Unauthorized User Can Delete Any User Account"
+    author: "d4rk_g1rl"
+    platform: "NordVPN (ucp.nordvpn.com)"
+    severity: "Informative"
+    bounty: "有赏金（具体金额未公开）"
+    note: >
+      NordVPN 的客服系统允许通过发邮件到 support@nordvpn.com 创建工单。
+      攻击者无需 NordVPN 账户，只需在邮件工单中使用受害者邮箱请求删除账户，
+      客服即处理删除操作。两个受害者账户被成功删除。
+      报告被标记为 Informative（NordVPN 认为非安全漏洞），2020-02 报告。
+      手法与 GDPR 邮件删除类似：通过客服邮件流程触发破坏性操作且不验证请求者身份。

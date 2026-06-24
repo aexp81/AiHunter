@@ -1,0 +1,65 @@
+name: "低权限角色的动作面板未检查目标角色层级——向上越权封禁/修改高权限用户"
+id: "ROLE_HIERARCHY_ACTION_PANEL_UPWARD_ABUSE"
+applicable: "blackbox"
+phase: "authz"
+also_phases: []
+tags: ["rbac", "role-hierarchy", "privilege-escalation", "ban", "hackerone", "permission-model"]
+source: "https://hackerone.com/reports/816143"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。报告者发现 HackerOne 平台上拥有 "Report" 权限的团队成员
+  可以通过报告页面上的 "Ban reporters" 面板对其他用户执行 ban 操作，
+  包括拥有 Admin 权限的用户。
+  (原文: "a team member of the program with such permission can ban a member
+  with Admin rights")
+
+hypothesis: >
+  未叙述（仅结果）。推断：ban 操作的权限检查仅验证当前用户是否拥有
+  Report 权限（允许访问 ban 面板），但未检查目标用户的角色是否高于操作者，
+  导致"向上越权"。
+
+action_result: >
+  成功：Admin 提交一个新报告 → 拥有 Report 权限的团队成员通过该报告的
+  "Ban reporters" 面板 ban 了 Admin → Admin 无法再在该 program 中创建新报告。
+  (原文: "After ban, admin can't create new report in program (it's not logical)")
+
+why_here_first: >
+  未叙述（仅结果）。
+
+chaining: "N/A — 独立权限越级漏洞。"
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在 RBAC 系统中，找到低权限角色可用的"管理性"动作面板（ban、mute、降级、删除等），
+  测试该动作是否可以指向更高权限的角色（Admin/Owner），
+  检查后端是否执行角色层级比较。
+
+reasoning_chain:
+  - "问：系统是否有多角色层级（如 Admin > Manager > Reporter > Viewer）？"
+  - "问：低权限角色是否有任何'管理性'动作面板（ban、mute、禁用、移除、降级、锁定）？"
+  - "如果有：问：该动作的目标是否可以是任意用户，包括更高权限的角色？"
+  - "黑盒：用低权限角色对 Admin/Owner 执行 ban/mute 操作，观察是否成功。"
+  - "问：被 ban 的高权限用户是否真的受到功能限制？（如无法创建报告、无法登录等）"
+  - "问：低权限用户是否可以自行解除 ban？或者这是不可逆操作？"
+
+vuln_root: >
+  开发者假设"有权 ban 用户"意味着"可以 ban 所有用户"，
+  未实现角色层级比较——即低权限角色不应能对高权限角色执行限制性操作。
+
+transferable_to:
+  - "任何 SaaS 平台的团队/组织权限模型中包含 ban/mute/disable 等限制性操作的场景"
+  - "Bug bounty 平台、项目管理工具、论坛/社区系统的版主权限"
+  - "多角色系统中 moderation 功能的目标范围未限制的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/816143"
+    title: "A team member with Report rights can ban the Admin"
+    platform: "HackerOne"
+    severity: "Low"
+    bounty: "N/A（无赏金）"
+    note: >
+      触发点：Report 权限用户通过报告页面的 "Ban reporters" 面板
+      ban 了 Admin 用户，导致 Admin 无法创建新报告。

@@ -1,0 +1,81 @@
+name: "仓库镜像同步触发 CI/CD 时，已删除用户的 Owner 身份会转移到剩余 Owner——利用此机制以受害者身份执行 Pipeline"
+id: "CICD_MIRROR_TRIGGER_OWNERSHIP_HIJACK"
+applicable: "both"
+phase: "logic"
+also_phases: ["authz", "chain"]
+tags: ["gitlab", "ci-cd", "pipeline", "mirror", "impersonation", "ci-job-token", "group-ownership", "account-deletion", "privilege-escalation"]
+source: "https://hackerone.com/reports/894569"
+
+# ——— L3 核心 ———
+
+observation: >
+  GitLab 项目镜像功能支持 "Trigger pipelines for mirror updates" 选项，
+  当组内项目镜像的仓库更新时会自动触发 Pipeline。
+  若组 Owner 删除账号但未先退出组成员关系，Pipeline 触发者身份会转移给组内另一个 Owner。
+  (原文: "If there is a mirrored project with 'Trigger pipelines for mirror updates' enabled
+  inside a group and the group owner delete its account (need another owner role inside the group)
+  then the trigger of the pipeline will be to other owner account.")
+
+hypothesis: >
+  攻击者控制镜像源仓库（含 .gitlab-ci.yml），组 Owner 身份转移给受害者后，
+  Pipeline 会以受害者身份执行——其中的 CI_JOB_TOKEN 具有受害者的权限，
+  可用于访问受害者的私有仓库、registry 等。
+  (原文: "An attacker can run arbitrary pipeline jobs as a 'victim' user.
+  This means the attacker can access the user private repositories, member only repositories,
+  registry, etc... by using the victim CI_JOB_TOKEN token.")
+
+action_result: >
+  成功执行：
+  1. 攻击者 A 创建公开仓库 attacker1/poc，含简单 .gitlab-ci.yml
+  2. 攻击者 B 创建 test 组，组内创建 test/poc 项目，配置从 attacker1/poc 拉取镜像
+     且勾选 "Trigger pipelines for mirror updates"
+  3. 攻击者 B 邀请受害者为组 Owner，然后删除自己的账号
+  4. 攻击者 A 修改 .gitlab-ci.yml，加入 git clone 使用 $CI_JOB_TOKEN 克隆受害者私有仓库
+  5. 镜像同步触发时，Pipeline 以受害者身份执行，成功克隆并读取受害者私有仓库内容
+  (原文: "The test/poc project will trigger a mirror update which also triggers a pipeline run.
+  The triggerer of the pipeline will be the Victim user.
+  The Attacker1 user controls the attacker/poc/gitlab-ci.yml file which is mirrored to the test/poc project.")
+
+why_here_first: >
+  未叙述（仅结果）。报告直接描述攻击链，未叙述发现该问题的思考过程或为何选择审计此功能。
+
+chaining: >
+  1. 组 Owner 身份转移（低危逻辑缺陷）+ CI/CD 镜像触发（正常功能）
+     → Pipeline 以受害者身份执行（关键中间步骤）
+  2. CI_JOB_TOKEN 继承受害者权限 → 克隆私有仓库、访问 registry、读取受保护的环境变量
+  3. 进一步利用：从仓库获取 secrets → 横向移动到内部基础设施
+
+# ——— 落地检查清单 ———
+
+approach: >
+  寻找 CI/CD 平台中 Pipeline 执行身份的继承逻辑——当触发者（用户/组 Owner）
+  身份发生变更（删除、转移、降权）时，已配置的自动触发任务的执行身份是否跟随变更，
+  导致攻击者可通过精心编排身份转移使 Pipeline 以受害者身份运行。
+
+reasoning_chain:
+  - "问：CI/CD 平台是否支持自动触发 Pipeline 的功能（如镜像同步触发、webhook 触发、定时触发）？"
+  - "问：自动触发的 Pipeline 以谁的身份执行？是配置者、仓库 Owner，还是触发来源？"
+  - "问：当 Pipeline 身份对应的用户被删除时，系统如何处理——是停止执行、报错，还是转移到其他用户？"
+  - "如果身份会转移 → 问：攻击者能否控制'接收转移的用户'是谁？（如预先邀请受害者为 Owner）"
+  - "问：攻击者是否能控制 Pipeline 的执行内容？（如通过镜像源仓库的 CI 配置文件）"
+  - "如果能控制内容 + 身份转移 → 问：Pipeline token（如 CI_JOB_TOKEN）继承了目标用户的哪些权限？"
+  - "问：CI_JOB_TOKEN 能否访问目标用户的私有仓库、registry、环境变量？"
+  - "验证：创建测试组 → 配置镜像同步 → 邀请测试账号为 Owner → 删除自己的账号 → 观察 Pipeline 触发者身份"
+
+vuln_root: >
+  CI/CD 平台假设组 Owner 删除账号后其关联的自动化任务会被清理或禁用，
+  实际上 Pipeline 触发者身份被静默转移给剩余 Owner，且攻击者仍可控制
+  Pipeline 执行内容（通过镜像源仓库），形成身份冒充。
+
+transferable_to:
+  - "GitLab 及类似的 CI/CD 平台（Jenkins、GitHub Actions、Bitbucket Pipelines）中具有自动触发和身份继承的功能"
+  - "任何 Pipeline 执行身份与组/项目 Owner 绑定且 Owner 变更时未重新授权的场景"
+  - "团队协作平台中成员删除/退出后资源所有权转移的边界条件"
+  - "SaaS 平台中管理员删除账号后 API Token / Webhook 身份继承的逻辑"
+
+cases:
+  - url: "https://hackerone.com/reports/894569"
+    note: >
+      GitLab.com，u3mur4 报告，$12,000 赏金，Critical（CVSS 9.6）。
+      通过仓库镜像 + 组 Owner 删除账号实现以任意用户身份运行 Pipeline，
+      窃取 CI_JOB_TOKEN 访问受害者私有仓库和 registry。

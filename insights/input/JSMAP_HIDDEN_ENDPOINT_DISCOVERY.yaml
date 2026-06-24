@@ -1,0 +1,46 @@
+name: "命令执行无回显时转向 JS map 还原，从源码找到前端未展示的隐藏接口"
+id: "JSMAP_HIDDEN_ENDPOINT_DISCOVERY"
+applicable: "blackbox"
+phase: "input"
+also_phases: [recon]
+tags: [js-map, hidden-endpoint, source-reconstruction, file-read, arbitrary-file-read]
+approach: "后台功能无回显扑空→审计 JS map 还原前端代码→从还原源码里找 BurpSuite 未拦截到的接口"
+source: "https://mp.weixin.qq.com/s/gjr4EXjVLRl5_O8DE0MAtQ"
+
+observation: '后台有"命令执行"功能，但触发后 DNSlog 长时间无回显，BurpSuite 接口列表里只有新增和查看，无任何触发接口 (原文: "等啊等，等啊等，等了半天，也没收到请求...筛选命令相关的，只发现了新增和查看，没有触发的")'
+hypothesis: "功能的触发逻辑可能在前端 JS 里，或存在 BurpSuite 未捕捉到的接口；下载 .js.map 还原代码或许能找到"
+action_result: '下载 .js.map 还原前端代码→命令触发接口仍不存在→但意外发现了上传接口和下载接口，而这两个接口在 BurpSuite 中未曾显示 (原文: "下载 js.map 还原代码...发现 js 里竟然也没有，翻到最后发现有上传接口和下载接口...竟然没显示 file 相关的接口")'
+why_here_first: '命令执行 DNSlog 扑空后，BurpSuite 接口穷尽也找不到触发点；唯一未探索的是前端源码逻辑，JS map 是黑盒下还原前端意图的最直接手段 (原文: "于是就查看源代码，看看 js")'
+chaining: "隐藏下载接口 → 任意文件读 → 历史命令/SSH配置 → 凭证/私钥 → 横向多站/root，见 LFI_HISTORY_TO_CREDENTIAL_CHAIN"
+
+reasoning_chain:
+  - "问：后台功能触发后 DNSlog / OAST 有无回显？等待时间是否足够（>30s）？"
+  - "如果无回显：问：BurpSuite/Proxy 接口列表里有无'触发'类接口（execute/run/trigger）？"
+  - "如果接口列表也无：问：页面是否有 .js.map 文件可供下载（查看 <script> src 后缀或直接在 JS 文件 URL 末尾加 .map）？"
+  - "如果有 .js.map：用工具（source-map-explorer / reverse-sourcemap）还原前端源码，全文搜索 'api/' 'url:' 'endpoint' 'upload' 'download' 'file'"
+  - "问：还原代码中是否存在 Proxy 未捕获的接口路径（前端未渲染 or 功能隐藏）？"
+  - "如果发现隐藏接口：问：接口是否需要特定参数才能访问（如 fileId / path）？手动构造请求探测。"
+
+vuln_root: "开发者以为'前端未展示=用户无法访问'，但 JS map 文件泄露了完整路由表，隐藏接口对能读 JS 的攻击者透明"
+transferable_to:
+  - "任何部署了前端打包产物（Webpack/Vite）且未删除 .js.map 的 SPA 后台"
+  - "后台功能行为异常（无回显/无响应）时的转向侦察手段"
+  - "React/Vue/Angular 管理后台：隐藏菜单对应的 API 路由往往只在 JS 里，不走页面渲染"
+cases:
+  - note: "从登录页面到服务器登录拿下多个网站权限：命令执行扑空→JS map 还原发现隐藏下载接口"
+    source: "https://mp.weixin.qq.com/s/gjr4EXjVLRl5_O8DE0MAtQ"
+  - url: "https://hackerone.com/reports/1486417"
+    title: "[Bypass] Ability to invite a new member in sandbox Organization"
+    platform: "HackerOne"
+    severity: "Medium (CVSS 5.2)"
+    bounty: "有奖金（金额未公开）"
+    note: >
+      HackerOne sandbox Organization 的邀请功能在默认 UI 上显示已达上限灰显。
+      研究者从 JS chunk 文件（30.8f8e2bc5.chunk.js）中发现了隐藏的
+      /organizations/{handle}/users/new_invite 端点，直接访问该端点可绕过
+      UI 层面的邀请限制，成功向任意安全研究员发送组织邀请。
+      approach 相同：审计前端打包产物发现 UI 未展示的隐藏端点，绕过前端限制。
+      (原文: "using this endpoint i found in
+      https://hackerone.com/assets/static/js/30.8f8e2bc5.chunk.js
+      https://hackerone.com/organizations/hackycorp_demo/users/new_invite
+      I can send an invite to anyone.")

@@ -1,0 +1,79 @@
+name: "内层消息 Sender 字段来自用户输入而非认证上下文——绕过所有权检查窃取资金"
+id: "INNER_MSG_SENDER_FIELD_TRUST_BYPASS_FUND_THEFT"
+applicable: "whitebox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["blockchain", "cosmos-sdk", "account-abstraction", "sender-validation", "lockup-account", "message-wrapping", "ownership-bypass", "fund-theft"]
+source: "https://hackerone.com/reports/2976481"
+
+observation: >
+  在 Cosmos SDK 的 lockup account 的 SendCoins 函数中，所有权检查 checkSender 比较的是
+  msg.Sender == owner，但 msg.Sender 来自用户提交的 MsgExecute 内层消息体，而非从
+  认证上下文中获取。相比之下 multisig account 正确地从 ctx 取 sender。
+  (原文: "in checkSender it checks that the sender == owner. But the issue here is that
+  msg.Sender is not validated anywhere bc this message is packed into MsgExecute.
+  While executing it sets original sender into the context. And in case of multisig
+  account it correctly takes it from ctx. But these locking accounts take it from the message.")
+
+hypothesis: >
+  如果 lockup account 的 SendCoins 用 msg.Sender（用户可控）而非 ctx.Sender（认证上下文）
+  做所有权验证，攻击者可以在 MsgExecute 的内层消息中伪造 sender 为受害者地址，
+  绕过 checkSender 校验，转走受害者解锁后的资金。
+  (原文: "msg.Sender is not validated anywhere bc this message is packed into MsgExecute...
+  these locking accounts take it from the message. And it can be anything.")
+
+action_result: >
+  1. 创建一个 periodic-locking-account（受害者），设置较短的锁定期。
+  2. 等锁定期结束后，攻击者构造 MsgExecute，内层消息的 sender 设为受害者地址，
+     调用 SendCoins 将资金转到攻击者账户 → 成功。
+  (原文: "We first create a periodic-locking-account at the victim. Locking period is small
+  so we wouldn't wait long. Then we wait for locking period to end and transfer money
+  to the attacker")
+
+why_here_first: >
+  研究者注意到 lockup account 系列合约的 SendCoins 函数从消息体取 sender 做权限校验，
+  而同 SDK 中的 multisig account 从 context 取 sender，两者实现不一致。
+  (原文: "in case of multisig account it correctly takes it from ctx. At least in those
+  places I looked at. But these locking accounts take it from the message.")
+
+chaining: "N/A — 单步即可窃取他人 lockup account 中已解锁的资金，Critical 级别"
+
+approach: >
+  在账户抽象 / 消息包装架构（如 Cosmos SDK 的 MsgExecute 包裹内层消息）中，
+  对比不同账户类型（multisig vs lockup）对 sender/caller 身份的获取方式：
+  是从认证上下文（ctx）取还是从用户提交的消息字段取？
+  若从消息字段取，则该字段可被攻击者任意伪造以冒充其他用户。
+  特别检查 checkSender/checkOwner 等权限校验函数的 sender 来源。
+
+reasoning_chain:
+  - "问：目标系统是否使用消息包装/账户抽象架构（外层消息包裹内层执行消息）？"
+  - "问：内层消息中的 sender/caller/owner 字段是从哪里获取的——用户提交的消息体 vs 认证上下文（ctx）？"
+  - "如果从消息体取 → 该字段是否在任何层做了验证（签名校验、与外层发送者比对等）？"
+  - "问：同一 SDK/框架中其他账户类型（如 multisig）是如何获取 sender 的？实现是否一致？"
+  - "如果存在不一致 → 从消息体取 sender 的类型可能存在伪造风险"
+  - "问：攻击者能否在内层消息中将 sender 设为受害者地址，通过所有权校验？"
+  - "问：通过校验后能执行哪些敏感操作（转账/解锁/委托/提取奖励）？"
+  - "扩展：同一 SendCoins / checkSender 模式是否被其他 lockup 类型复用（continuous/delayed/periodic）？"
+
+vuln_root: >
+  权限校验函数信任用户提交的消息字段作为身份标识，
+  而非使用经过签名验证的认证上下文中的调用者身份。
+
+transferable_to:
+  - "Cosmos SDK 生态中所有使用 x/accounts 模块的链——lockup account 系列（periodic/continuous/delayed）"
+  - "任何区块链的账户抽象实现中，内层 UserOperation/Message 的 sender 字段校验"
+  - "智能合约中 msg.sender vs 参数传入的 sender 的信任边界问题（类似 tx.origin vs msg.sender）"
+  - "微服务架构中内层 RPC 调用的 caller 身份是从 header/context 取还是从 payload 取"
+  - "多层代理/网关架构中 X-Forwarded-User 等用户可控 header 被内层服务信任的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/2976481"
+    author: "unknown_feature"
+    platform: "Cosmos SDK (cosmos-sdk)"
+    severity: "Critical"
+    bounty: "有赏金"
+    note: >
+      Cosmos SDK lockup account 的 SendCoins 从 msg.Sender（用户可控）而非 ctx（认证上下文）
+      取发送者身份做 checkSender 校验。攻击者在 MsgExecute 内层消息伪造 sender 为受害者地址，
+      可转走受害者 lockup account 中已解锁的资金。2025-02 报告，2025-06 公开。
+      白盒审计，有代码级推理过程。

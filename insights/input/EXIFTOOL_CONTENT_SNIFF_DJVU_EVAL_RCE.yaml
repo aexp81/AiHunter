@@ -1,0 +1,53 @@
+name: "ExifTool 按内容而非扩展名判定格式——DjVu 解析器 eval 注入实现 RCE"
+id: "EXIFTOOL_CONTENT_SNIFF_DJVU_EVAL_RCE"
+applicable: "whitebox"
+phase: "input"
+also_phases: ["chain"]
+tags: ["exiftool", "file-upload", "content-type-sniffing", "djvu", "eval-injection", "rce", "gitlab"]
+source: "https://hackerone.com/reports/1154542"
+
+observation: >
+  GitLab Workhorse 将所有 jpg/jpeg/tiff 扩展名的上传文件传给 ExifTool 去除 EXIF 标签，
+  但 ExifTool 按文件内容而非扩展名判定格式，重命名即可触及所有解析器。
+  (原文: "ExifTool will ignore the file extension and try to determine what the file is
+  based on the content, allowing for any of the supported parsers to be hit")
+
+hypothesis: >
+  DjVu 解析器用 Perl eval 处理 annotation 的 C 转义序列，且转义校验可通过
+  反斜杠+换行绕过，从而注入任意 Perl 代码。
+  (原文: "When parsing the DjVu annotation, the tokens are evaled...a backslash followed
+  by a newline is correctly handled allowing the quotes to be closed and arbitrary perl inserted")
+
+action_result: >
+  将 DjVu 文件伪装为 .jpg 上传到 GitLab snippet，触发 ExifTool 处理，
+  成功获得反弹 shell。
+  (原文: "Uploading {F1257009} to https://gitlab.com/-/snippets/new resulted in a shell on web-09-sv-gprd")
+
+why_here_first: >
+  研究者审计了 Workhorse 源码中 exif.go 的扩展名过滤逻辑，发现攻击面过宽。
+  (原文: "GitLab Workhorse passes any files with the extensions jpg|jpeg|tiff through to ExifTool")
+
+chaining: "文件上传 → ExifTool content-sniffing 绕过扩展名过滤 → DjVu eval 注入 → RCE"
+
+approach: >
+  上传文件经 ExifTool 处理时，利用工具按内容而非扩展名判定格式的行为，
+  将 DjVu 文件伪装为 jpg 触发 DjVu 解析器中的 eval 注入实现 RCE。
+
+reasoning_chain:
+  - "问：目标应用对上传文件做了什么后端处理？是否调用 ExifTool/ImageMagick 等多格式工具？"
+  - "白盒：grep -rn 'exiftool\\|ExifTool\\|imagemagick' --include='*.go' --include='*.rb'"
+  - "问：ExifTool 是否按文件内容而非扩展名判定格式？（是——所有支持的解析器都可被触及）"
+  - "问：哪些解析器包含危险操作（eval/exec/system）？"
+  - "白盒：grep -rn 'eval\\|exec' 在 ExifTool 源码的 Parser 目录中"
+  - "如果 DjVu 解析器用 eval → 问：eval 的输入校验能否绕过？"
+
+vuln_root: "ExifTool 忽略扩展名按内容匹配解析器，DjVu 解析器用 eval 处理 annotation 且校验可绕过。"
+
+transferable_to:
+  - "任何将用户上传文件传给 ExifTool/ImageMagick 等多格式解析工具的应用"
+  - "使用 content-sniffing 而非严格扩展名校验的文件处理管线"
+  - "后端调用带 eval/exec 类操作的第三方 CLI 工具"
+
+cases:
+  - url: "https://hackerone.com/reports/1154542"
+    note: "GitLab Workhorse ExifTool DjVu eval RCE，$20,000。"

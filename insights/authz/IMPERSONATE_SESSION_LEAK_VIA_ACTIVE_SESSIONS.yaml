@@ -1,0 +1,83 @@
+name: "管理员冒充会话通过被冒充用户的 Active Sessions 泄露——反向提权"
+id: "IMPERSONATE_SESSION_LEAK_VIA_ACTIVE_SESSIONS"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["impersonation", "session-management", "privilege-escalation", "active-sessions", "gitlab", "cookie-hijack"]
+source: "https://hackerone.com/reports/493324"
+
+# ——— L3 核心 ———
+
+observation: >
+  当 GitLab 管理员冒充某用户时，被冒充用户的 Active Sessions 页面会出现一个新的会话条目，
+  该条目对应管理员冒充时使用的 _gitlab_session cookie 值。
+  (原文: "the impersonated user (attacker in our case) can see impersonated session
+  at the Active sessions")
+
+hypothesis: >
+  未叙述（仅结果）。报告者直接推断：如果被冒充用户能获取到这个冒充会话的 session ID，
+  并手动设置为自己的 cookie，就可以进入管理员的冒充上下文；
+  再点击 "Stop impersonating" 即可切换到管理员身份。
+
+action_result: >
+  成功：以普通用户 (attacker) 登录 → 在 Active Sessions 页面找到管理员冒充产生的第二个会话
+  → Inspect "Revoke" 按钮获取 session ID → 清除自己的 cookie →
+  手动设置 _gitlab_session 为冒充会话的 ID → 刷新页面进入冒充上下文 →
+  点击 "Stop impersonating" → 成功切换为管理员身份。
+  (原文: "Inspect the Revoke button and make sure you see the session ID there.
+  Copy it ... manually set _gitlab_session to the copied one ...
+  Click Stop impersonating ... make sure you are now logged in as gitlab admin")
+  无扑空叙述。
+
+why_here_first: >
+  未叙述（仅结果）。推断：报告者关注了管理员冒充功能的双向安全边界——
+  冒充功能通常只审计"管理员能做什么"，很少审计"被冒充用户能看到什么"。
+  Active Sessions 是会话管理的标准入口，检查冒充会话是否在此泄露是自然的测试路径。
+
+chaining: >
+  单独看"Active Sessions 泄露 session ID"危害有限（只能 revoke）。
+  关键跳跃："Stop impersonating" 功能会将当前会话从被冒充用户恢复为管理员身份——
+  这个设计意味着冒充 session cookie 本身包含了管理员恢复上下文。
+  组合后：泄露 session ID → 设置 cookie → 触发 Stop impersonating → 完成提权。
+  (原文: "he gets new _gitlab_session cookie and then clicking at Stop impersonating
+  he gets his own admin's cookie back")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  审计管理员冒充（Impersonate）功能的反向攻击面：
+  被冒充用户能否通过 Active Sessions / 设备管理页面看到冒充产生的会话信息，
+  进而利用该会话的 cookie/token 反向切换为管理员身份。
+
+reasoning_chain:
+  - "问：系统是否有管理员冒充用户的功能（Impersonate/Act As/Login As）？"
+  - "问：冒充时，被冒充用户的 Active Sessions / 设备列表中是否会出现新条目？"
+  - "黑盒：以被冒充用户身份访问 Active Sessions 页面，检查是否有额外会话；检查 Revoke 按钮、DOM 或 API 响应中是否暴露 session ID。"
+  - "问：冒充会话的 session cookie 是否包含足够信息可恢复为管理员身份？（如 'Stop impersonating' 功能是否通过 session 内存储的管理员上下文实现？）"
+  - "黑盒：手动将 cookie 设置为冒充会话的 session ID，访问任意页面，观察是否出现 'Stop impersonating' 按钮。"
+  - "黑盒：点击 'Stop impersonating'，确认是否切换为管理员身份。"
+  - "扩展：检查 session token 中是否包含 'impersonator_id' 或类似字段（JWT 解码或 session store 查询）。"
+  - "社工角度：攻击者需要让管理员冒充自己的账户——是否有合理的社工理由（如'我的账户出问题了请帮我看看'）？"
+
+vuln_root: >
+  开发者假设 Active Sessions 页面仅暴露会话的元数据（设备、IP、时间），
+  不会泄露可用于身份切换的 session ID；同时假设冒充会话只在管理员端可见。
+  实际上冒充会话出现在被冒充用户的 Active Sessions 中且 session ID 可提取，
+  结合 "Stop impersonating" 的身份恢复机制，构成反向提权。
+
+transferable_to:
+  - "任何具有管理员冒充/模拟登录功能的 SaaS 平台（如 Django admin impersonate、Rails devise masquerade）"
+  - "客服后台的'代客操作'功能——是否在用户端暴露代操作会话"
+  - "企业级管理后台（AWS Organizations switch-role、GCP impersonation）——被冒充 IAM 角色能否看到冒充会话"
+  - "多租户平台的 support login 功能——登出/恢复机制是否依赖 session 内的管理员上下文"
+
+cases:
+  - url: "https://hackerone.com/reports/493324"
+    title: "Privilege escalation from any user to gitlab admin when admin impersonates you"
+    platform: "GitLab"
+    severity: "Critical"
+    bounty: "未披露"
+    note: >
+      任何已认证用户在管理员冒充其账户时，可通过 Active Sessions 获取冒充会话 ID，
+      手动设置 cookie 后点击 "Stop impersonating" 反向提升为管理员。
+      前提：需要管理员冒充攻击者的账户（可通过社工触发）。

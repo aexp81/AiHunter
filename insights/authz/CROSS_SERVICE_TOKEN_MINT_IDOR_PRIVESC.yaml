@@ -1,0 +1,83 @@
+name: "跨服务 token 铸造端点的用户 ID 参数未校验归属——低权限用户冒领高权限用户授权令牌"
+id: "CROSS_SERVICE_TOKEN_MINT_IDOR_PRIVESC"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["auth"]
+tags: ["idor", "token-minting", "cross-service", "privilege-escalation", "shopify", "kitcrm", "ping", "access-token", "staff-member-id"]
+source: "https://hackerone.com/reports/909863"
+
+# ——— L3 核心 ———
+
+observation: >
+  Shopify Ping 应用的登录 API（/admin/api/xauth）允许低权限用户生成 access_token，
+  而 KitCRM 的 token 生成端点（/api/v1/arro_token）接受该 access_token 加一个 id 参数，
+  id 参数是 staff member ID，端点不校验 access_token 持有者与 id 参数是否为同一用户。
+  (原文: "Low privileged who do not have access to the Shopify ping application can create
+  a Shopify ping access token using the login API. Using the Shopify ping access token,
+  a low privileged user can create any user's KITCRM authorization token.")
+
+hypothesis: >
+  未叙述（仅结果）。报告者直接描述了发现：token 铸造端点仅验证 access_token 有效性，
+  不校验 id 参数与 token 持有者的归属关系，因此可代任意用户铸造 KitCRM 授权令牌。
+
+action_result: >
+  攻击成功：
+  1. 低权限用户通过 POST /admin/api/xauth 获取 Shopify Ping access_token
+  2. 将 access_token 和高权限用户的 staff member ID 拼入
+     POST /api/v1/arro_token?access_token=<low>&myshopify_domain=<shop>&id=<high_user_id>
+  3. 响应直接返回高权限用户的 KitCRM authorization token
+  4. 用该 token 调用 GET /api/v2/messages 读取高权限用户与 Kit 的聊天记录
+  5. 用该 token 调用 POST /api/v2/messages 以高权限用户身份向 Kit 发送指令
+  (原文: "Change `id` parameter value with high privileged user's staff memberid.
+  The response will disclose high privileged user's KITCRM authorization token."
+  "Use high privileged user's authorization token in vulnerable request 2 to view
+  high privileged user's chat with the kit.")
+
+why_here_first: >
+  未叙述（仅结果）。报告者未叙述为何选择测试 KitCRM token 端点或关注 id 参数。
+
+chaining: >
+  低权限用户获取 Ping access_token（权限门控过松）→ 跨服务调用 KitCRM token 铸造端点
+  并篡改 id 参数 → 获取高权限用户 KitCRM 令牌 → 读取/写入高权限用户 Kit 聊天
+  （可下发折扣码创建、再营销活动等敏感商业指令）。
+  追溯困难：所有操作记录在高权限用户账号下。
+  (原文: "When all the communication will be done using a high privileged user account,
+  so tracking the attacker will be difficult.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对 SaaS 平台中涉及跨服务 token 铸造的端点（Service A 的 access_token 用于在 Service B
+  生成 authorization token），篡改请求中的用户标识参数（如 user_id、staff_member_id），
+  测试端点是否校验 access_token 持有者与目标用户标识的归属关系。
+
+reasoning_chain:
+  - "问：目标 SaaS 平台是否有多个子服务/集成（如 Ping、Kit、POS），各自有独立的 token 体系？"
+  - "问：子服务的 token 铸造端点是否接受来自主平台的 access_token + 一个用户标识参数？"
+  - "问：低权限用户（甚至无该子服务访问权限的用户）能否通过主平台的登录/xauth API 获取有效 access_token？"
+  - "如果能 → 问：将 token 铸造请求中的用户标识参数替换为其他用户（高权限用户）的 ID，是否仍然返回有效 token？"
+  - "如果返回 → 问：用该 token 能执行哪些操作？（读取聊天记录、发送指令、修改配置）"
+  - "扩展：其他跨服务 token 铸造端点（如 POS token、Payments token）是否有同样的归属校验缺失？"
+  - "扩展：staff member ID 是否可枚举？（顺序递增、GraphQL 泄露、API 列表端点）"
+
+vuln_root: >
+  跨服务 token 铸造端点仅验证 access_token 的有效性（"此 token 是否合法"），
+  不校验 access_token 持有者是否有权为 id 参数指定的用户铸造 token
+  （缺少"你只能为自己铸造 token"的归属检查），导致水平越权。
+
+transferable_to:
+  - "Shopify 生态中的其他子服务 token 铸造端点（POS、Payments、Channels）"
+  - "任何 SaaS 平台的跨服务 SSO/token exchange 端点——检查 token 换发时是否校验用户归属"
+  - "OAuth token exchange (RFC 8693) 实现中 subject_token 与 requested_subject 的归属校验"
+  - "微服务架构中 Service A 代 Service B 铸造 token 的 impersonation 端点"
+  - "企业身份平台（如 Okta、Auth0）的 token exchange / on-behalf-of 流程"
+
+cases:
+  - url: "https://hackerone.com/reports/909863"
+    author: "sandeep_rj49"
+    platform: "Shopify (KitCRM via Shopify Ping)"
+    severity: "Medium"
+    note: >
+      低权限用户通过 Shopify Ping 登录 API 获取 access_token，将其用于 KitCRM 的
+      /api/v1/arro_token 端点并替换 id 参数为高权限用户 staff member ID，
+      成功获取高权限用户的 KitCRM authorization token，可读写其 Kit 聊天记录。

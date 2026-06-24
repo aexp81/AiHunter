@@ -1,0 +1,75 @@
+name: "低校验角色修改 API 横向加入特权组后利用组功能执行服务端代码提权"
+id: "ROLE_GROUP_LATERAL_TO_INTEGRATION_CODE_EXEC_PRIVESC"
+applicable: "both"
+phase: "chain"
+also_phases: ["authz"]
+tags: ["privilege-escalation", "role-modification", "integration-script", "bot-group", "code-execution", "rocket-chat", "multi-step-chain"]
+source: "https://hackerone.com/reports/501081"
+
+# ——— L3 核心 ———
+
+observation: >
+  insertOrUpdateUser 方法允许用户修改自己的 roles 字段加入 bot 组，
+  虽然有显式检查阻止直接加入 admin 组，但 bot 组拥有 manage-own-integrations 权限，
+  可创建自定义 Integration 脚本在服务端执行。
+  (原文: "The insertOrUpdateUser method improperly validates a users permissions
+  to change its groups. Because an explicit check prevents from adding itself to
+  the admin group directly, the privileges of the bot group need to be used to
+  further escalate to global admin.")
+
+hypothesis: >
+  未叙述（仅结果）。但从串链结构推断：既然直接加 admin 被阻止，
+  寻找其他具有危险能力的中间组（如 bot）作为跳板。
+
+action_result: >
+  步骤1：Guest 用户调用 insertOrUpdateUser 把自己加入 bot 组 → 成功
+  步骤2：利用 bot 组的 manage-own-integrations 权限创建 Integration，
+  脚本中执行 this.Roles.addUserRoles("<USER_ID>", "admin") → 触发后成为 admin。
+  (原文: "1. Login Guest user 2. Determine own users _id from browser traffic
+  3. Escalate to bot group 4. Create malicious Integration script 5. Trigger Integration")
+  (原文 Integration 脚本: 'this.Roles.addUserRoles("9HN4Brdmo2Qc2wsiX", "admin")')
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  Guest → insertOrUpdateUser 加入 bot 组（绕过仅阻止 admin 的检查）
+  → manage-own-integrations 权限 → 创建 Integration 执行 Roles.addUserRoles
+  → 成为全局 admin。两步串链：横向组跳转 + 组功能代码执行。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在有用户组/角色体系的应用中，检查角色修改 API 是否仅黑名单阻止加入最高权限组
+  而未白名单限制。找到可加入的中间特权组后，审计该组拥有的功能（如 Integration/
+  Webhook/自定义脚本）是否能执行服务端代码或调用管理 API，形成横向→纵向提权链。
+
+reasoning_chain:
+  - "问：用户个人资料或角色修改 API（updateUser/insertOrUpdateUser）是否接受 roles/groups 参数？"
+  - "问：服务端对 roles 修改的校验是黑名单（仅阻止 admin）还是白名单（仅允许自身已有角色）？"
+  - "如果是黑名单 → 问：除 admin 外还有哪些组拥有危险权限（manage-integrations、manage-apps、manage-scripts）？"
+  - "问：能否通过角色修改 API 把自己加入这些中间特权组？"
+  - "如果成功 → 问：该组的功能（Integration/Webhook/Bot script）是否在服务端上下文中执行？"
+  - "问：脚本执行环境是否与主应用共享作用域（能否直接访问 Roles/Users 等内部对象）？"
+  - "如果共享 → 构造脚本调用 addUserRoles/setAdmin 等管理 API，验证是否成功提权"
+
+vuln_root: >
+  角色修改 API 使用黑名单（仅阻止 admin）而非白名单校验，
+  且 bot 组的 Integration 脚本在服务端非隔离上下文中执行，
+  可直接调用内部角色管理 API。
+
+transferable_to:
+  - "Rocket.Chat、Mattermost、Slack 等协作平台中的 Bot/Integration 角色体系"
+  - "任何有用户组体系且用黑名单校验组成员资格的应用"
+  - "Webhook/Integration 脚本在服务端非沙箱环境执行的系统"
+  - "CMS 插件系统中非 admin 角色拥有安装/执行插件能力的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/501081"
+    title: "Guest Privilege Escalation to admin group"
+    author: "gronke"
+    platform: "Rocket.Chat"
+    severity: "Critical (CVSS 9.9)"
+    note: >
+      Guest 用户通过 insertOrUpdateUser 加入 bot 组（显式 admin 检查被绕过），
+      利用 manage-own-integrations 权限创建 Integration 脚本执行
+      Roles.addUserRoles 成为全局管理员。

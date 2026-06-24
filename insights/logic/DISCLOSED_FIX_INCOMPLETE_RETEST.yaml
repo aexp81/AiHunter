@@ -1,0 +1,148 @@
+name: "已公开修复的功能再测——导出/批量操作绕过残留"
+id: "DISCLOSED_FIX_INCOMPLETE_RETEST"
+applicable: "blackbox"
+phase: "logic"
+also_phases: ["authz"]
+tags: ["incomplete-fix", "regression", "export", "zip", "attachment-leak", "disclosure-retest"]
+source: "https://hackerone.com/reports/186230"
+
+observation: >
+  已公开修复的报告 #182358 声称解决了 Export as .zip 泄露内部活动的问题，
+  但研究者发现修复不完整——内部附件仍然包含在导出 zip 中。
+  (原文: "This newly disclosed report: #182358 Partial disclosure of report activity through new 'Export as .zip' feature was not completely fix.")
+
+hypothesis: >
+  既然修复只针对了部分泄露（report activity），附件相关的导出路径可能未被覆盖。
+  (原文: "I have found that i can still view the attachment after it is being removed on the thread.")
+
+action_result: >
+  导出已修复报告 #182358 的 zip 文件，解压后发现被移除的内部附件图片仍然存在于 zip 中。
+  (原文: "Export the report as .zip ... You will see that the image is still there, but base on the thread, you guys removed it on disclosed report.")
+
+why_here_first: >
+  刚公开的修复报告本身就是最佳测试目标——修复声称移除了内部内容，
+  直接用该报告验证修复是否彻底。
+  (原文: "Best PoC is this #182358 since this is the newly fix and disclosed.")
+
+chaining: "N/A — 单步信息泄露"
+
+approach: >
+  针对刚公开修复的报告/功能，用修复报告本身作为测试用例，
+  验证导出/批量操作路径是否也已清理了受限内容。
+
+reasoning_chain:
+  - "问：最近有哪些安全修复被公开披露？修复的范围描述是否精确到所有入口？"
+  - "问：修复的功能是否有多个导出/访问路径（如 API、zip导出、RSS、webhook 等）？"
+  - "问：用修复报告中提到的相同对象（如同一附件/ID），通过其他路径访问，是否仍可获取？"
+  - "如果仍可获取 → 修复不完整，存在残留泄露"
+
+vuln_root: "修复只覆盖了主访问路径（页面展示），未覆盖辅助导出路径（zip 打包），导致内部附件仍然可被导出。"
+
+transferable_to:
+  - "任何有导出/批量下载功能的平台（zip导出、PDF导出、CSV导出）"
+  - "已公开修复漏洞的同一功能区的不同入口"
+  - "内容管理系统中 soft-delete/redact 后仍在缓存或归档中残留的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/186230"
+    note: "HackerOne Export as .zip 导出内部附件，修复 #182358 后残留，$12,500。"
+  - url: "https://hackerone.com/reports/796808"
+    title: "[Part II] Email Confirmation Bypass in myshop.myshopify.com that Leads to Full Privilege Escalation"
+    platform: "Shopify"
+    severity: "Critical"
+    note: >
+      #791775 修复后复测，发现修复不完整：仍可在初始验证邮件发出前修改邮箱，
+      绕过修复继续确认任意邮箱。Shopify 3.5 小时内二次修复，单独奖励 bounty。
+      (原文: "I retested after the first fix ... Then I found user can change their
+      email prior to receiving the verification message on their original email.
+      i.e. the same technique")
+  - url: "https://hackerone.com/reports/910300"
+    title: "Email Confirmation Bypass in your-store.myshopify.com which leads to privilege escalation"
+    platform: "Shopify"
+    severity: "Critical"
+    note: >
+      #791775 和 #796808 两次修复后的第三个变种：通过 Partner 账户 +
+      Burp match-and-replace 制造邮箱状态不一致，绕过前两次修复。
+      Shopify 随后移除了 legacy 账户的邮箱验证功能。
+      (原文团队摘要: "we have removed the ability to verify email addresses
+      for legacy accounts")
+  - url: "https://hackerone.com/reports/1285226"
+    title: "Improper access control for users with expired password, giving the user full access through API and Git"
+    platform: "GitLab"
+    severity: "Medium (CVSS 6.5)"
+    note: >
+      研究者此前报告 #1192460 导致 14.0.2 补丁修复了过期密码用户通过 GraphQL 的访问，
+      加上 13.12.2 修复了 REST API 的访问。但一个为解决 LDAP 兼容性问题的 MR (#63466)
+      合并后意外重新打开了所有三个通道（REST API、GraphQL、Git HTTP）。
+      研究者跟踪了自己此前报告的修复链，注意到新 MR 的副作用后重新测试确认回退。
+      (原文: "It seems that these patches caused some problem for users accessing GitLab
+      instances using LDAP. And a merge request trying to address this problem got merged
+      in one of the latests releases. Unfortenetly this new 'fix for LDAP' also seems to
+      have opened up access for regular user accounts with expired passwords again.")
+  - url: "https://hackerone.com/reports/1070889"
+    title: "[Bypass #870709] Unauthorised access to pagespeed global admin"
+    platform: "Palo Alto Software (webtools.paloalto.com)"
+    severity: "Medium"
+    bounty: "无赏金"
+    note: >
+      前序报告 #870709 修复了 /pagespeed-global-admin/ 的未授权访问，
+      研究者复测发现只需添加 X-Forwarded-For: 127.0.0.1 请求头即可再次绕过访问限制。
+      修复仅在网络层/IP 白名单层做了限制，未考虑 X-Forwarded-For 头伪造场景。
+      (原文团队摘要: "Just by using X-Forwarded-For: 127.0.0.1 you can again get access
+      to global admin page.")
+      2021-01 报告，2021-02 公开。no-content 公开，纯结果文。
+  - url: "https://hackerone.com/reports/1218680"
+    title: "Improper authorization on /api/as/v1/credentials/ for Dev Role User with Limited Engine Access"
+    author: "superman85"
+    platform: "Elastic (cloud.elastic.co)"
+    severity: "High"
+    bounty: "有赏金（金额未公开）"
+    note: >
+      前序报告 #1168528 修复后，研究者对其他角色进行复测，发现 Dev 角色配合
+      Limited Engine Access 仍可访问 /api/as/v1/credentials/ 获取所有 API key
+      （包括 private-key、search-key）。修复仅覆盖了部分角色，未覆盖 Dev + Limited Engine Access 组合。
+      (原文: "Since #1168528 was resolved. I have checking again for other roles.
+      At Dev Role with Limited Engine Access, an user still can access API endpoint
+      /api/as/v1/credentials/ to get all API keys (private-key, search-key ...)")
+      2021-06 报告，2021-08 公开。
+  - url: "https://hackerone.com/reports/2352957"
+    author: "timon8"
+    platform: "Node.js undici (Internet Bug Bounty)"
+    severity: "Low"
+    cve: "CVE-2024-24758"
+    note: >
+      研究者阅读了已公开的安全公告 GHSA-wqq4-5wpv-mx2g（undici 跨域重定向时清除
+      Authorization 和 Cookie 头），发现修复不完整——Proxy-Authorization 头未被清除。
+      典型的"读已公开修复 → 检查修复完整性"模式。修复版本 v5.28.3 / v6.6.1。
+      (原文: "I read this security advisory https://github.com/nodejs/undici/security/advisories/GHSA-wqq4-5wpv-mx2g.
+      It only clears authorization and cookie header during cross-domain redirect.
+      As such this may lead to accidental leakage of 'Proxy-Authorization' to a 3rd-party site.")
+      2024-02 报告，2024-03 公开。
+  - url: "https://hackerone.com/reports/3334165"
+    title: "Nextcloud Tables v1 Share Enumeration Without Authorization (Regression of CVE-2024-52507)"
+    author: "0x0doteth"
+    platform: "Nextcloud"
+    severity: "Low (CVSS 3.5)"
+    cve: "CVE-2025-66513"
+    note: >
+      CVE-2024-52507 修复了 Tables 应用的共享信息未授权枚举问题，
+      但修复在后续版本中回归——表的数字 ID、被共享给的用户/组及权限信息
+      仍可被非授权用户获取。典型"已修复 CVE 回归复测"模式。
+      no-content 公开，纯结果文。
+      (团队摘要链接: GHSA-2cwj-qp49-4xfw)
+  - url: "https://hackerone.com/reports/1374512"
+    title: "The Host Authorization middleware in Action Pack is vulnerable to crafted X-Forwarded-Host values"
+    author: "mshtawythug"
+    platform: "Rails (Internet Bug Bounty)"
+    severity: "Medium"
+    cve: "CVE-2021-22942"
+    bounty: "有赏金（金额未公开）"
+    note: >
+      CVE-2021-22881 修复了 Rails Host Authorization 中 X-Forwarded-Host 头的开放重定向，
+      但修复代码中 forwarded_host 行缺少 .downcase 调用（origin_host 有 .downcase，
+      forwarded_host 没有）。攻击者使用大小写混合的主机名（如 Evil.com / EVIL.COM）
+      绕过修复：正则不匹配 → forwarded_host 赋值为 nil → nil? 检查通过 → 重定向到恶意域。
+      典型的"已修复 CVE 的修复不完整"模式——修复只对 origin_host 做了 downcase 规范化，
+      遗漏了对 forwarded_host 的同等处理。main 分支已通过 PR #41435 修复但未反向移植。
+      (原文: "forwarded_host is missing a downcase after the .to_s, which results in nil
+      assigned to forwarded_host, which then results in true... because of the nil? check")

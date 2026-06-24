@@ -1,0 +1,87 @@
+name: "共享资源的隐含权限在转授时被传播——用户可通过 reshare 获得未被授权的操作权限"
+id: "RESHARE_IMPLIED_PERMISSION_PROPAGATION"
+applicable: "both"
+phase: "authz"
+also_phases: []
+tags: ["file-sharing", "reshare", "permission-escalation", "implied-permission", "nextcloud", "owncloud"]
+source: "https://hackerone.com/reports/633245"
+
+# ——— L3 核心 ———
+
+observation: >
+  user0 将 /test 文件夹以 read+share 权限（17）共享给 user1。
+  user1 无法删除文件——这是预期行为。但 user1 在调用 sharing API 创建 reshare 时，
+  可以在 permissions 参数中指定 read(1)+reshare(16)+delete(8)=25。
+  (原文: "user1 uses the sharing API to share folder /test with user2,
+  and specifies read(1)+reshare(16)+delete(8)=permissions 25")
+
+hypothesis: >
+  未叙述（仅结果）。推断：服务端在处理 reshare 请求时，
+  未校验请求的 permissions 是否被包含在 resharer 实际拥有的权限集中；
+  "隐含删除"权限（让接收者可以 unshare）意外地可被传递给下游。
+
+action_result: >
+  user2 成功删除了 user0 的文件 /test/file.txt。
+  根本原因在代码 View.php#L1389：对共享挂载点根目录自动添加 PERMISSION_DELETE
+  （让用户可以 "unshare" 即删除共享入口），这个隐含权限在 reshare 时可被传递。
+  (原文: 'if ($mount instanceof MoveableMount && $internalPath === "") {
+  $data["permissions"] |= PERMISSION_DELETE; }')
+  进一步：user1 也可以把 reshare 发给一个自己所在的 group，给自己获得 delete 权限。
+  (原文: "user1 can share with a group that they are already a member of.
+  That gives user1 delete access to the files in the folder")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: "N/A（单漏洞即可越权删除）"
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对支持"转授/reshare"的资源共享系统，测试转授时是否可以在 API 请求中
+  添加原始共享未授予的权限位（特别是 delete/write/admin），
+  重点关注服务端是否因"隐含权限"或"内部标志"而允许权限升级。
+
+reasoning_chain:
+  - "问：目标系统是否支持 reshare / re-delegation / 转授功能？"
+  - "问：共享 API 的 permissions 参数是否是位掩码或枚举列表？有哪些可选值？"
+  - "黑盒测试：以仅 read+share 权限的受邀用户身份，调用 reshare API 时添加 delete/write 权限位，观察响应是否为 2xx。"
+  - "如果 reshare 成功 → 问：接收 reshare 的用户是否真的可以执行 delete/write 操作？"
+  - "扩展：reshare 给自己所在的 group，是否能给自己增加权限？"
+  - "白盒审计：搜索共享/挂载代码中是否有条件性添加额外权限的逻辑（如 PERMISSION_DELETE 用于 unshare）。"
+  - "白盒：grep -rn 'PERMISSION_DELETE\\|PERMISSION_UPDATE\\|permissions |=' --include='*.php' | grep -i 'mount\\|share\\|reshare'"
+
+vuln_root: >
+  开发者为了让接收共享的用户能够"取消接收"（unshare），在挂载点根目录自动添加 PERMISSION_DELETE；
+  但在处理 reshare 时未将此"隐含权限"与"用户可授予的权限"区分开，
+  导致 resharer 可以将这个内部标志作为 delete 权限传递给下游。
+
+transferable_to:
+  - "Nextcloud / ownCloud 及其分支——FileSharing API 的 permissions 位掩码"
+  - "Google Drive / OneDrive / Dropbox 等支持 reshare 的文件系统——API 的权限参数"
+  - "企业文档管理系统——角色/权限继承逻辑中的隐含权限"
+  - "任何支持权限委托的系统——原则：delegate 不应超越 delegator 的权限集"
+
+cases:
+  - url: "https://hackerone.com/reports/633245"
+    author: "phil-davis"
+    platform: "Nextcloud"
+    severity: "Low (CVSS 3.5)"
+    bounty: "赏金（金额未披露）"
+    note: >
+      Nextcloud server 16.x：reshare API 允许指定超出原始共享权限的 permissions 位。
+      根因：View.php 对 MoveableMount 根目录自动添加 PERMISSION_DELETE。
+      2019-07 报告，2019-09 公开。
+  - url: "https://hackerone.com/reports/166581"
+    title: "Normal user can somehow make admin to delete shared folders"
+    author: "egrep"
+    platform: "Nextcloud"
+    severity: "High"
+    bounty: "无赏金（重复报告）"
+    note: >
+      admin 将文件夹共享给普通用户 test（can share 权限）。test 将该文件夹
+      再次共享回 admin。admin 在"Shared with you"视图中看到该 reshare 并取消共享时，
+      原始文件夹被完全删除而非仅取消 reshare 入口。
+      (团队摘要: "If he unshares the folder, then the folder 'sample_folder' will be
+      deleted completely without his knowledge")
+      approach 相同：reshare 语义导致原始 owner 的 unshare 操作被误解为 delete，
+      本质上是隐含权限传播的变种——reshare 回原 owner 后 unshare=delete。

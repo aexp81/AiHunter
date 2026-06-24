@@ -1,0 +1,79 @@
+name: "DWR 默认调试页面暴露所有类和方法——发现隐藏管理功能与注入点"
+id: "DWR_DEBUG_PAGE_DEFAULT_ADMIN_EXPOSURE"
+applicable: "blackbox"
+phase: "recon"
+also_phases: ["input"]
+tags: ["dwr", "debug-page", "default-install", "admin-functions", "java", "method-enumeration", "sqli", "xss", "attack-surface"]
+source: "https://hackerone.com/reports/214800"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。目标站点的 /dwr/index.html 是 DWR（Direct Web Remoting）引擎的
+  默认安装页面，暴露了所有可用的 Java 类和方法列表，包括测试方法和管理功能。
+  (原文: "https://█████/██████/dwr/index.html is a default installation page
+  of DWR engine that exposes all classes and methods available to the user.
+  This include test methods and classes as well as admin functions.")
+
+hypothesis: >
+  未叙述（仅结果）。报告者推断这些暴露的方法中有些未经过与生产端点同等的安全审查，
+  可能存在 SQL 注入、XSS 等漏洞。
+  (原文: "Some of these I have found to be vulnerable to issues like SQL injection
+  and XSS since they may not have had the same attention as other functions
+  that were expected to be in production.")
+
+action_result: >
+  未叙述（仅结果）。报告者确认可通过 /dwr/index.html 查看并执行所有方法和类，
+  包括测试和管理功能。还引用了 DWR 渗透测试经验文章作为方法论参考。
+  (原文: "You can now view and execute all the methods and classes available
+  to this application included test and admin functionality."
+  参考: "http://gerionsecurity.com/2012/09/experiences-in-pentesting-dwr/")
+
+why_here_first: >
+  未叙述（仅结果）。DWR 的 /dwr/index.html 是已知的默认调试页面路径，
+  属于标准渗透测试检查项。
+
+chaining: >
+  DWR 调试页面暴露 → 枚举所有 Java 类和方法 → 发现非生产/测试方法 →
+  对这些低关注度方法测试 SQL 注入/XSS → 利用管理功能执行未授权操作。
+  (原文: "Attacker easily discovering and abusing actions they should not be
+  able to use or know about. Abusing information to find issues like SQL injection
+  on poorly implemented functions")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对 Java Web 应用探测 DWR（Direct Web Remoting）框架的默认调试页面
+  /dwr/index.html 和 /dwr/test/，如果未删除或未限制访问，则可枚举所有
+  暴露的 Java 类和方法（包括管理功能和测试方法），进而对低关注度的方法
+  执行注入测试。
+
+reasoning_chain:
+  - "问：目标 Java Web 应用是否使用 DWR（Direct Web Remoting）框架？（检查 /dwr/ 路径、JS 文件引用、engine.js）"
+  - "问：/dwr/index.html 或 /dwr/test/ 路径是否返回 200 而非 404/403？"
+  - "如果可访问 → 问：页面是否列出了所有可用的 Java 类和方法？"
+  - "问：列出的方法中是否包含管理功能（如 addUser、deleteRecord、executeQuery）或测试方法？"
+  - "问：这些方法是否可以直接在页面上执行？执行结果是否包含敏感信息？"
+  - "问：对这些方法的参数进行注入测试（SQL、XSS），是否存在未过滤的输入？"
+  - "扩展：类似的调试页面模式是否存在于其他框架？（如 Spring Boot Actuator、Django debug toolbar、PHP info.php）"
+
+vuln_root: >
+  开发者在生产环境中未删除或未限制 DWR 框架的默认调试页面（/dwr/index.html），
+  该页面按设计暴露所有注册的 Java 类和方法以便开发调试，但在生产中成为攻击面枚举入口。
+
+transferable_to:
+  - "任何使用 DWR 框架的 Java Web 应用（常见于政府、军事、企业内部系统）"
+  - "类似模式：Spring Boot Actuator（/actuator/mappings）、Struts2 DevMode、GWT 的 *.rpc 端点"
+  - "RPC/远程调用框架的调试页面——暴露方法签名和参数类型"
+  - "政府/军事/企业遗留 Java 系统——通常使用 DWR/GWT 等 2010 年代框架"
+
+cases:
+  - url: "https://hackerone.com/reports/214800"
+    author: "daveysec"
+    platform: "U.S. Dept Of Defense"
+    severity: "Medium"
+    bounty: "无赏金（VDP）"
+    note: >
+      DoD 某子域名的 /dwr/index.html 未删除，暴露所有 Java 类和方法。
+      部分方法存在 SQL 注入和 XSS。引用了 DWR 渗透测试经验文章。
+      2017-03 报告，2019-12 公开。

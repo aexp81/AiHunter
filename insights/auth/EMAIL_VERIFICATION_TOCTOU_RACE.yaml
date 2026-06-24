@@ -1,0 +1,47 @@
+name: "邮箱验证与邮箱修改之间的 TOCTOU 竞态条件绕过——验证任意邮箱接管商店"
+id: "EMAIL_VERIFICATION_TOCTOU_RACE"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["logic"]
+tags: ["race-condition", "toctou", "email-verification", "account-takeover", "db-transaction", "shopify"]
+source: "https://hackerone.com/reports/300305"
+
+observation: >
+  Shopify Partner Dashboard 的修改邮箱和验证邮箱是两个独立 HTTP 端点，
+  未在同一数据库事务中完成。
+  (原文: "The bug works by hitting the email validation endpoint for an email you own,
+  at the same time as changing your email to a victim's")
+
+hypothesis: >
+  如果并发发起修改邮箱（改为受害者地址）和验证邮箱（用自己的 token），
+  由于缺乏行级锁，验证操作可能对已更改的邮箱生效。
+  (原文: "eventually your email will be changed and be validated due to not (properly) using a DB transaction")
+
+action_result: >
+  成功将邮箱改为受害者地址且标记为已验证，利用"已验证邮箱匹配 employee"
+  的自动逻辑实现 Store Takeover。
+  (原文: Shopify 确认修复方式为 "locking the database record during those actions
+  and requiring store administrators to approve all collaborator requests")
+
+why_here_first: "未叙述（仅结果）"
+chaining: "竞态验证任意邮箱 → 匹配目标 store employee → 自动转换 collaborator → Store Takeover"
+
+approach: >
+  对修改邮箱和验证邮箱这两个独立端点并发请求，利用后端缺乏数据库事务/行锁的缺陷，
+  使 verification token 在邮箱已被替换为受害者地址后仍然生效。
+
+reasoning_chain:
+  - "问：修改邮箱后旧的 verification token 是否立即失效？"
+  - "问：修改邮箱的请求响应时间是否较长（>1s）？暗示非原子操作"
+  - "如果非原子 → 用 Turbo Intruder 并发：请求1=修改邮箱，请求2=验证旧 token"
+  - "问：平台是否有'邮箱匹配即信任'的自动化逻辑？"
+
+vuln_root: "修改属性和验证属性是两个独立操作，后端未使用数据库事务/行锁确保原子性。"
+
+transferable_to:
+  - "任何将修改和验证分为独立端点且未用事务保护的平台"
+  - "手机号验证、邮箱变更等涉及属性+验证的双步流程"
+
+cases:
+  - url: "https://hackerone.com/reports/300305"
+    note: "Shopify Partner Dashboard 邮箱验证竞态 ATO，$15,250，CVSS 10.0。"

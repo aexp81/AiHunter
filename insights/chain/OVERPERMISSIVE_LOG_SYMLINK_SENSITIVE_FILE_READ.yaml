@@ -1,0 +1,97 @@
+name: "应用程序日志过度开放权限+符号链接替换——通过 Web 日志查看器读取任意文件"
+id: "OVERPERMISSIVE_LOG_SYMLINK_SENSITIVE_FILE_READ"
+applicable: "both"
+phase: "chain"
+also_phases: ["authz"]
+tags: ["log-permission", "symlink", "privilege-escalation", "airflow", "file-read", "chmod-666", "dag", "CVE-2023-25754", "local-privesc"]
+source: "https://hackerone.com/reports/1872682"
+
+# ——— L3 核心 ———
+
+observation: >
+  Apache Airflow 2.5.1 将日志文件权限设为 chmod 666（任意用户可读写）。
+  (原文: "Airflow 2.5.1 sets log files to vulnerable privileges. (chmod 666)")
+  (原文: "Any Linux user on the host on which the airflow operates can read
+  and tamper with the airflow's logs.")
+
+hypothesis: >
+  利用日志文件的世界可写权限，将日志文件替换为指向敏感文件（如 SSH 私钥）的符号链接，
+  再通过 Airflow Web 日志查看器读取符号链接指向的内容。
+  (原文: "After deleting a specific dag log using any account, the attacker
+  regenerates the log file using the ssh private key of the account that runs
+  the airflow as a symbolic link.")
+
+action_result: >
+  攻击者删除 DAG 日志文件，用符号链接指向 airflow 运行账户的 SSH 私钥 →
+  登录 Airflow Web 服务器读取 DAG 日志 → 日志内容显示 SSH 私钥。
+  (原文: "The attacker logs in to the airflow webserver and reads the log."
+  以及 "The airflow logs expose SSH PRIVATE KEY.")
+
+why_here_first: >
+  未叙述（仅结果）。推断：研究者在审计 Airflow 本地部署时注意到日志文件的异常
+  宽松权限（666），这是 Linux 安全审计的标准检查项。
+
+chaining: >
+  日志文件 chmod 666（任意用户可写）→
+  删除日志文件 + 创建指向 SSH 私钥的符号链接 →
+  通过 Airflow Web UI 的日志查看功能读取符号链接指向的文件内容 →
+  获取 airflow 运行账户的 SSH 私钥 → 从任意本地用户横向提权到 airflow 账户。
+  (原文: "This is privilege escalation from any linux account to airflow's linux account")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  检查目标应用程序的日志文件权限是否过度开放（如 666/777），
+  若本地用户可删除并替换日志文件为符号链接，
+  测试是否能通过应用内置的 Web 日志查看器/API 读取符号链接指向的敏感文件。
+
+reasoning_chain:
+  - "问：目标应用程序的日志文件权限是什么？（ls -la /path/to/logs/）"
+  - "如果日志文件权限为 666 或 world-writable → 任意本地用户可删除/替换"
+  - "问：应用是否提供 Web UI 或 API 可读取日志文件内容？"
+  - "问：日志读取功能是否跟随符号链接（follow symlink）？还是拒绝符号链接？"
+  - "问：日志目录是否设置了 sticky bit 防止非所有者删除文件？"
+  - "问：应用的日志读取功能是否限制在日志目录内（防止路径穿越/符号链接）？"
+  - "如果可以替换日志为符号链接且 Web UI 会跟随 → 选择指向高价值文件（SSH key、.env、数据库凭据）"
+  - "扩展：即使不能通过 Web UI 读取，过度开放的日志权限本身是否允许直接读取敏感日志内容？"
+
+vuln_root: >
+  开发者将日志文件权限设为 chmod 666 以简化多进程写入，
+  未考虑本地攻击者可利用该权限删除日志并替换为符号链接，
+  结合 Web 日志查看器跟随符号链接的行为实现任意文件读取。
+
+transferable_to:
+  - "Apache Airflow 各版本的 DAG 日志文件权限审计"
+  - "其他带 Web 日志查看器的平台（Jenkins、GitLab Runner、Kubernetes Dashboard）"
+  - "任何将日志文件设为 world-writable 的应用——检查是否有内置日志读取功能"
+  - "CI/CD 系统的构建日志——权限和符号链接跟随行为"
+  - "多租户环境中共享主机的日志隔离——日志文件权限是否过度开放"
+
+cases:
+  - url: "https://hackerone.com/reports/1872682"
+    author: "ksw9722"
+    platform: "Apache Airflow (IBB)"
+    severity: "Medium"
+    cve: "CVE-2023-25754"
+    bounty: "$2,400"
+    note: >
+      Airflow 2.5.1 日志文件 chmod 666，攻击者删除 DAG 日志并替换为指向
+      airflow 用户 SSH 私钥的符号链接，通过 Web UI 日志查看功能读取私钥，
+      实现从任意本地用户到 airflow 账户的提权。修复版本 2.6.0。
+  - url: "https://hackerone.com/reports/1690093"
+    title: "Airflow Daemon Mode Insecure Umask Privilege Escalation"
+    author: "nyymi"
+    platform: "Apache Airflow (IBB)"
+    severity: "Medium"
+    cve: "CVE-2022-38170"
+    bounty: "$2,400"
+    note: >
+      Airflow 2.3.4 之前以 --daemon 模式运行时 umask 设为 0，导致日志文件和目录
+      全局可写。攻击者将 scheduler 日志文件替换为指向 DAGs 目录的符号链接，
+      scheduler 写入日志时实际创建了新的 DAG Python 文件，
+      注入恶意代码（os.system("id >>/tmp/pwned")），scheduler 重启后执行。
+      approach 相同：日志文件过度开放权限 + 符号链接替换实现代码注入/提权。
+      纯结果文（CVE 公告 + PoC），无导航叙事。
+      (原文: "Apache Airflow prior to 2.3.4 had multiple components with an insecure
+      daemon umask of 0, resulting in critical files and directories to be world writable."
+      "ln -s $TARGET/dags/poc.py example_bash_operator.py.log")

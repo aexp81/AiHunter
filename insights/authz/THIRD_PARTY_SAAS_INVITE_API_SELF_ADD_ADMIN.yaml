@@ -1,0 +1,72 @@
+name: "第三方 SaaS 管理面板的邀请 API 可被外部用户调用——自添加为管理员"
+id: "THIRD_PARTY_SAAS_INVITE_API_SELF_ADD_ADMIN"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["recon"]
+tags: ["privesc", "third-party-saas", "invite-api", "admin-takeover", "readme.io", "uber", "stored-xss"]
+source: "https://hackerone.com/reports/152067"
+
+# ——— L3 核心 ———
+
+observation: >
+  目标站点 developer.uber.com 的文档页面由第三方 SaaS（readme.io）驱动，
+  通过访问 SaaS 平台的非活跃页面（/inactive）可以从页面源码中找到项目 ID。
+  (原文: "first fetch https://uber.readme.io/inactiveand and grab Uber's project ID
+  from the source: 578cd33dc27ce20e004e397b")
+
+hypothesis: >
+  未叙述（仅结果）。报告者直接尝试使用该项目 ID 调用 SaaS 平台的接受邀请 API，
+  判断该 API 是否校验了邀请是否真实存在以及调用者身份。
+
+action_result: >
+  成功：在 readme.io 上创建普通账户并登录后，向 /api/accept-invite/{project_id} 发送 POST 请求。
+  服务器虽然响应 "Invite doesn't exist"，但实际已将用户添加为管理员。
+  登录 dash.readme.io 后确认获得了 uber 项目的完整管理员权限。
+  (原文: "The server will respond with 'Invite doesn't exist'. However, if you go to
+  dash.readme.io you will find that you can now access uber as an administrator.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  获得第三方 SaaS 管理员权限后，管理员可以在文档页面中注入任意 JavaScript，
+  从而在目标域（developer.uber.com）上实现存储型 XSS，劫持开发者账户。
+  (原文: "Administrators are able to inject arbitrary JavaScript into documentation
+  pages by design, so this could be used for a stored XSS attack on developer.uber.com
+  to hijack developer accounts.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  识别目标站点使用的第三方 SaaS 平台（如文档托管、CMS、Help Center），
+  从 SaaS 公开页面源码提取项目/组织 ID，然后尝试调用 SaaS 平台的
+  邀请/加入 API 自添加为管理员。
+
+reasoning_chain:
+  - "问：目标站点的某些子域或页面是否由第三方 SaaS 托管（如 readme.io、Zendesk、Intercom、GitBook）？"
+  - "问：该 SaaS 平台的公开页面或 API 是否泄露了目标的项目 ID / 组织 ID？（检查页面源码、API 响应、JS 文件）"
+  - "问：SaaS 平台是否有邀请/加入团队的 API 端点？（/api/accept-invite、/api/join 等）"
+  - "如果有：问：该端点是否校验邀请链接的有效性？即使返回错误消息，实际是否已完成操作？"
+  - "问：作为 SaaS 管理员，能否修改目标站点的内容（注入 HTML/JS），从而影响目标域上的用户？"
+  - "扩展：即使邀请 API 被修复，检查其他管理操作 API（如直接添加成员、修改权限）是否存在类似问题。"
+
+vuln_root: >
+  第三方 SaaS 平台的邀请 API 未校验邀请记录是否存在以及调用者是否为被邀请人，
+  仅凭项目 ID 即可将任意已注册用户添加为管理员。
+
+transferable_to:
+  - "使用 readme.io、GitBook、Notion、Zendesk 等第三方 SaaS 托管文档/帮助中心的任何站点"
+  - "企业使用的第三方 CMS 平台——检查 CMS 管理 API 是否允许未授权加入"
+  - "第三方分析/监控平台（如 Sentry、Datadog）——通过 API 自添加到目标组织"
+  - "任何将管理权限委托给第三方 SaaS 的场景——SaaS 的安全漏洞 = 目标站点的安全漏洞"
+
+cases:
+  - url: "https://hackerone.com/reports/152067"
+    title: "Stored XSS on developer.uber.com via admin account compromise"
+    platform: "Uber (developer.uber.com via readme.io)"
+    severity: "High"
+    bounty: "$5,000"
+    note: >
+      Uber 使用 readme.io 托管开发者文档。通过访问 uber.readme.io/inactive 获取项目 ID，
+      调用 /api/accept-invite/{project_id} 自添加为管理员（尽管 API 返回 "Invite doesn't exist"
+      但实际生效），获得管理员权限后可在 developer.uber.com 上注入 JavaScript 实现存储型 XSS。
+      albinowax (James Kettle, PortSwigger 研究员) 提交，$5,000 bounty。

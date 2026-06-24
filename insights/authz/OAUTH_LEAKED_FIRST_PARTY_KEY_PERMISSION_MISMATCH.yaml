@@ -1,0 +1,68 @@
+name: "泄露的官方 OAuth 密钥在授权屏上显示虚假权限限制——用户看到'无法访问 DM'但实际可以"
+id: "OAUTH_LEAKED_FIRST_PARTY_KEY_PERMISSION_MISMATCH"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["auth"]
+tags: ["oauth", "api-key-leak", "permission-display", "first-party-app", "twitter", "dm-access", "consent-screen"]
+source: "https://hackerone.com/reports/434763"
+
+observation: >
+  Twitter 的官方 API 密钥（iPhone 和 Google TV 客户端）已被公开泄露，
+  使用这些密钥发起 OAuth 授权时，授权页面显示"Will not be able to: Access your direct messages"，
+  但实际上应用获得的权限包含 DM 访问。
+  (原文: "The official Twitter API keys have been leaked and are in use in several popular apps.
+  The iPhone keys and Google TV keys... present an OAuth screen which says the app 'Will not be able to:
+  Access your direct messages.' This is false. The apps *can* read DMs.")
+
+hypothesis: >
+  官方第一方应用的 OAuth 密钥可能拥有超出授权屏幕所展示的权限——
+  授权页面基于 app 类型或注册时的 scope 声明展示权限，但实际发放的 token 继承了
+  第一方应用的完整特权，两者不一致。
+  (原文: "These API keys do allow access from *any* app which integrates them."
+  暗示第一方密钥的实际 scope 与显示 scope 脱节)
+
+action_result: >
+  使用泄露的 Google TV / iPhone 官方密钥执行 OAuth 流程：
+  1. 用户看到授权页面显示"无法访问 DM"
+  2. 用户授权
+  3. 攻击者使用获得的 token 成功读取用户 DM
+  (原文: "User sees that the app cannot read DMs. User authorises.
+  App now has unauthorised access to DMs.")
+
+why_here_first: >
+  未叙述（仅结果）。研究者知道官方 API 密钥已公开泄露（引用了 GitHub gist），
+  可能出于对泄露密钥的例行检查或对 OAuth 授权屏一致性的关注。
+  (原文引用了 https://gist.github.com/shobotch/5160017 作为已知泄露密钥来源)
+
+chaining: >
+  泄露的官方密钥 + OAuth 授权页面显示误导 → 用户在不知情的情况下授予 DM 读取权限 →
+  第三方恶意应用利用官方密钥窃取私信内容。
+
+approach: >
+  在公开渠道（GitHub、gist、逆向工程、APK 反编译）中查找平台官方第一方应用的 OAuth 密钥/client_id；
+  使用这些密钥发起 OAuth 授权流程，对比授权页面上展示的权限声明与
+  token 实际获得的 API 访问范围——第一方应用可能拥有特殊的隐式权限，
+  而授权屏幕的 scope 显示逻辑未覆盖这些隐式权限。
+
+reasoning_chain:
+  - "问：目标平台的官方客户端（移动端、TV、桌面端）的 API 密钥是否已公开泄露？（搜索 GitHub、gist、APK 反编译结果）"
+  - "问：使用这些官方密钥发起 OAuth 授权流程时，授权页面展示了哪些权限？"
+  - "问：授权完成后获得的 token，其实际 API 访问范围是否与授权页面展示的一致？"
+  - "如果存在不一致 → 哪些敏感 API（DM、私信、私有数据）在显示为'无法访问'的情况下实际可访问？"
+  - "问：平台是否对第一方 client_id 有特殊的权限提升逻辑（如跳过 scope 限制、隐式授予额外权限）？"
+  - "扩展：其他泄露的官方密钥（不同平台、不同客户端类型）是否存在同样的权限展示不一致？"
+
+vuln_root: >
+  第一方应用的 OAuth client 拥有隐式的超集权限（如始终可访问 DM），
+  而授权页面的权限展示逻辑基于 app 注册时声明的 scope，
+  两套逻辑不同步导致用户看到的权限限制是虚假的。
+
+transferable_to:
+  - "任何有第一方官方 OAuth 客户端密钥已泄露的社交平台"
+  - "使用不同 client_id 区分权限等级的 API 系统"
+  - "OAuth consent screen 展示逻辑与实际 token scope 发放逻辑分离的平台"
+  - "移动应用 APK/IPA 可逆向提取 client_id/secret 的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/434763"
+    note: "Twitter 官方 iPhone/Google TV 密钥泄露后被第三方使用，OAuth 授权页显示'无法访问 DM'但 token 实际可读 DM。Medium，$2,940。"

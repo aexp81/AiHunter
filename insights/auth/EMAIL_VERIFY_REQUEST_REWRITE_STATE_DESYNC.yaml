@@ -1,0 +1,75 @@
+name: "代理层请求改写制造邮箱验证状态不一致——验证任意邮箱接管账户"
+id: "EMAIL_VERIFY_REQUEST_REWRITE_STATE_DESYNC"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["logic"]
+tags: ["email-verification", "account-takeover", "state-desync", "request-manipulation", "match-replace", "shopify", "partner-account", "legacy-account"]
+source: "https://hackerone.com/reports/910300"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。报告者发现通过 Burp 的 match-and-replace 功能在请求层面替换邮箱，
+  可以使前端展示和后端校验中的邮箱身份产生不一致。
+  (原文: "Go to burps match and replace and replace your email with the email
+  you want to takeover")
+
+hypothesis: >
+  未叙述（仅结果）。报告者推测：如果在多步流程中，通过代理改写请求中的邮箱地址，
+  后端可能无法区分"哪个邮箱是当前待验证的"，导致验证操作对错误的邮箱生效。
+
+action_result: >
+  成功：通过 Partner 账户创建商店 → 不验证邮箱 → 在账户设置页修改邮箱为受害者邮箱
+  → 用 Burp match-and-replace 在后续请求中持续替换邮箱 → 上传头像触发状态写入
+  → 取消 match-and-replace → 将邮箱改回自己的并获取确认链接
+  → 重新启用 match-and-replace → 点击确认链接时系统将验证绑定到受害者邮箱
+  → Review accounts → Set up Shopify ID → 接管受害者商店和 Partner 账户。
+  (原文: "Change your email to victims email ... Go to burps match and replace
+  ... upload any photo and save ... change email to your email which you own
+  so you can get a confirmation email ... click on it ... Click on Set up
+  Shopify ID ... Now you can access victims store and partner account")
+
+why_here_first: >
+  未叙述（仅结果）。但报告者明确针对 Shopify 之前已修复两次的邮箱验证绕过
+  （#791775, #796808），说明"已修复的功能点是高价值再测目标"。
+
+chaining: >
+  代理改写制造邮箱状态不一致 → 验证任意邮箱 → 利用 Shopify ID/SSO 合并功能
+  → 设置统一密码 → 接管受害者所有商店和 Partner 账户。
+  (原文: "Click continue and set up password ... Now you can access victims
+  store and partner account without any problems")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在多步邮箱验证流程中，通过代理层（Burp match-and-replace）选择性改写请求中的
+  邮箱字段，制造前端/后端/数据库之间的邮箱身份不一致，使验证操作对攻击者未拥有的
+  邮箱生效。核心是利用流程中多个步骤分别处理邮箱且未做一致性校验的缺陷。
+
+reasoning_chain:
+  - "问：邮箱验证流程有几步？每步是否独立校验当前邮箱身份？"
+  - "问：在'修改邮箱'和'点击验证链接'之间，是否有其他操作（如上传头像、保存设置）会写入状态？"
+  - "黑盒：用 Burp match-and-replace 在请求中将邮箱替换为目标邮箱，观察后端是否报错。"
+  - "问：取消 match-and-replace 后修改邮箱回自己的、获取确认链接，再重新启用 match-and-replace 后点击链接——验证结果绑定到哪个邮箱？"
+  - "问：是否存在 Partner/legacy 账户等特殊账户类型，其验证流程与普通账户不同？"
+  - "问：验证成功后，平台是否有 SSO/账户合并功能可进一步提升影响？"
+
+vuln_root: >
+  邮箱验证流程的多个步骤各自独立处理邮箱标识，未维护统一的会话级邮箱状态，
+  导致攻击者可在步骤间切换邮箱地址，使验证操作绑定到错误的目标邮箱。
+
+transferable_to:
+  - "多步邮箱/手机号验证流程——步骤间状态未做一致性绑定"
+  - "支持 Partner/Legacy/Enterprise 等多种账户类型的平台——不同类型可能有不同验证路径"
+  - "验证流程中包含'中间操作'（上传头像、保存设置等）的场景——中间操作可能意外影响验证状态"
+  - "Shopify 及类似多租户电商平台——SSO 合并功能放大了验证绕过的影响"
+
+cases:
+  - url: "https://hackerone.com/reports/910300"
+    title: "Email Confirmation Bypass in your-store.myshopify.com which leads to privilege escalation"
+    platform: "Shopify"
+    severity: "Critical"
+    note: >
+      通过 Partner 账户创建商店 + Burp match-and-replace 制造邮箱状态不一致，
+      验证任意邮箱后利用 Shopify ID 合并功能接管受害者商店和 Partner 账户。
+      是 #791775、#796808 修复后的第三个独立变种。

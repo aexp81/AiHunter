@@ -1,0 +1,70 @@
+name: "Git 命令 ref 参数未过滤 leading dash 导致 flag injection → 任意文件覆写 → SSH RCE"
+id: "GIT_FLAG_INJECTION_UNSANITIZED_REF_TO_FILE_OVERWRITE_RCE"
+applicable: "both"
+phase: "chain"
+also_phases: ["input"]
+tags: ["git-flag-injection", "argument-injection", "file-overwrite", "ssh-authorized-keys", "rce", "gitlab", "search-api", "wiki"]
+source: "https://hackerone.com/reports/658013"
+
+# ——— L3 核心 ———
+
+observation: >
+  Search API 的 wiki_blobs scope 接受 ref 参数，该参数直接拼接到 git log 命令中，
+  不经过任何净化处理。
+  (原文: "The wiki_blobs scope of the Search API can be provided with an arbitrary ref
+  parameter, allowing for additional flags to be injected into the git command")
+  (原文: "The ref param is passed directly to the git command without being sanitized")
+
+hypothesis: >
+  如果 ref 参数以 -- 开头，可注入 git 命令的 flag（如 --output=），
+  控制 git log 输出的目标文件路径，实现任意文件覆写。
+  (原文: 示例请求 ref=--output=/tmp/file 生成命令
+  "git --git-dir ... log --max-count=1 --output=/tmp/file")
+
+action_result: >
+  成功实现 RCE 串链：
+  1. 创建 wiki page，commit message 设为攻击者 SSH 公钥
+  2. 调用 Search API，ref=--output=/var/opt/gitlab/.ssh/authorized_keys
+  3. git log 将 commit message（含公钥）写入 authorized_keys
+  4. SSH 登录成功，获得 git 用户 shell
+  (原文: "ssh git@gitlab-vm.local -i gitlab ... uid=998(git) gid=998(git)")
+  SSH authorized_keys 文件容忍非法行（只要公钥在新行开头即可）。
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  三步链：
+  1. git flag injection（--output=）→ 任意路径文件覆写
+  2. 利用 wiki commit message 控制写入内容（SSH 公钥）
+  3. 覆写 authorized_keys → SSH 登录 → RCE
+
+# ——— 落地检查清单 ———
+
+approach: >
+  审计所有将用户输入拼接到 git 命令行的功能，检查 ref/branch/tag 等参数是否允许
+  leading dash（--），利用 git subcommand 的 flag（如 --output=, --upload-pack=）
+  实现文件覆写或命令执行，再通过覆写 SSH authorized_keys 串链到 RCE。
+
+reasoning_chain:
+  - "问：目标应用中有哪些功能调用 git 命令？搜索、diff、archive、blame、log？"
+  - "问：用户可控的参数（ref, branch, path, commit）是否直接拼接到命令行？"
+  - "如果直接拼接 → 问：是否验证参数不以 - 或 -- 开头？是否使用 -- 分隔符？"
+  - "如果未验证 → 问：目标 git subcommand 有哪些可利用的 flag？（--output=, --upload-pack=, --exec=）"
+  - "问：能否控制写入文件的内容？（commit message、文件内容、作者名？）"
+  - "如果能控制内容 → 问：目标系统上哪些文件被覆写后可导致 RCE？（authorized_keys, crontab, .bashrc）"
+
+vuln_root: >
+  用户提供的 ref 参数未经净化（未禁止 leading dash、未用 -- 分隔选项和参数），
+  直接作为 git 命令行参数传递。
+
+transferable_to:
+  - "任何调用 git CLI 并拼接用户输入到命令行的应用（GitLab, Gitea, Gogs, custom git hosting）"
+  - "非 git 场景中 CLI 工具接受 leading-dash 参数的 argument injection（curl, tar, rsync）"
+  - "允许用户指定 branch/ref/tag 的 API——search, blame, archive, diff 等端点"
+
+cases:
+  - url: "https://hackerone.com/reports/658013"
+    note: >
+      GitLab 12.1.0，wiki_blobs Search API ref 参数 git flag injection，
+      $12,000 赏金。通过 --output= 覆写 authorized_keys 实现 RCE。
+      研究者 vakzz。

@@ -1,0 +1,43 @@
+name: "GraphQL node() 全局ID直查——对新增/变更的 type 逐一测试未授权 node 查询泄露私有数据"
+id: "GRAPHQL_NODE_GID_IDOR_PRIVATE_OBJECT"
+applicable: "blackbox"
+phase: "authz"
+also_phases: []
+tags: ["graphql", "idor", "authorization-bypass", "node-interface", "relay", "private-program-leak", "enumeration"]
+source: "https://hackerone.com/reports/1618347"
+
+observation: >
+  未叙述（仅结果）。报告仅提及 "Just a recent update gives the results of private programs"。
+  (原文: "Just a recent update gives the results of private programs")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  通过 GraphQL node(id: gid://hackerone/PolicyPageAssetGroupsIndex::PolicyPageAssetGroup/3981-41287)
+  直接查询到私有程序的 scope 名称和报告标题。
+  (原文: "Answer: {\"data\":{\"node\":{\"id\":\"Z2lk...\",\"name\":\"██████\"}}}")
+
+why_here_first: "未叙述（仅结果）"
+chaining: "N/A"
+
+approach: >
+  通过 GraphQL node(id: gid://...) 接口用可枚举的全局 ID 直接拉取
+  本应受权限保护的对象，重点关注新上线或变更的 Document type。
+
+reasoning_chain:
+  - "问：目标 GraphQL API 是否暴露了 Relay Global Object Identification（node(id:) 接口）？"
+  - "如果暴露 → 问：通过 introspection 或 schema diff，最近是否新增了 type？"
+  - "问：新增 type 的 GID 格式是什么？id 中是否包含可枚举的数字段？"
+  - "问：以低权限/未认证身份查询 node(id: gid://app/NewType/known_id)，是否返回了数据？"
+  - "如果返回 → 确认授权检查缺失，评估可泄露的数据范围"
+
+vuln_root: "GraphQL node 接口对新增 type 缺少授权校验，允许通过可枚举 GID 读取私有数据。"
+
+transferable_to:
+  - "任何暴露 Relay/Global Object Identification 的 GraphQL API"
+  - "内部索引文档类型（*Index::*Document）的搜索/缓存投影层"
+  - "SaaS 多租户平台中使用复合键作为 GID 的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/1618347"
+    note: "HackerOne GraphQL API，$25,000，Critical (CVSS 9.3)。"

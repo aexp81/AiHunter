@@ -1,0 +1,283 @@
+name: "AWS 非生产端点绕过 CloudTrail 日志——静默权限枚举"
+id: "AWS_NON_PROD_ENDPOINT_CLOUDTRAIL_BYPASS_ENUM"
+applicable: "blackbox"
+phase: "recon"
+also_phases: []
+tags: ["aws", "cloudtrail", "logging-bypass", "iam", "permission-enumeration", "stealth", "cloud-security", "forecast"]
+source: "https://hackerone.com/reports/3022516"
+
+# ——— L3 核心 ———
+
+observation: >
+  AWS 某些服务存在非生产 API 端点，这些端点可以使用标准 IAM 凭证调用，
+  但不会生成 CloudTrail 日志记录。
+  (原文: "We have found 4 non-production endpoints for the Forecast service which can be
+  used with standard IAM credentials, and do not log to CloudTrail.")
+
+hypothesis: >
+  攻击者获取窃取的 AWS IAM 凭证后，通常会测试凭证权限（枚举哪些 API 可调用），
+  这会产生大量失败的 API 调用日志，是防御者检测的黄金机会。
+  如果能通过非生产端点枚举权限而不产生日志，攻击者可以隐身执行这一阶段。
+  (原文: "Typically, when an adversary gains access to stolen AWS IAM credentials they will
+  frequently test those credentials to see what access they have... For defenders and security
+  professionals, this behavior serves as a golden opportunity for detection as it likely involves
+  generating a large number of failed API call attempts. If an adversary could enumerate permissions
+  without logging to CloudTrail, they could perform this activity invisibly.")
+
+action_result: >
+  针对 Forecast 服务发现 4 个非生产端点，用标准 IAM 凭证调用 list-datasets 等操作
+  并附加 --endpoint-url 指向非生产端点，API 正常返回结果但不生成 CloudTrail 日志。
+  研究者已在 10+ 个 AWS 服务中发现类似问题（events, elasticache, datazone,
+  docdb-elastic, devicefarm, cloudwatch, bedrock, bedrock-agent, ssm 等）。
+  (原文: "aws forecast list-datasets --region us-west-2 --endpoint-url ████████
+  After waiting 5-10 minutes (or longer), notice that it does not generate a log in CloudTrail.")
+
+why_here_first: >
+  研究者是云安全领域专家，此前在 Black Hat USA 2023 和 fwd:cloudsec 2023 做过
+  同类研究报告，系统性地扫描各 AWS 服务的非生产端点。
+  (原文: "This general technique? Yes, a lot actually. I've blogged about it [here] and
+  spoke about it at Black Hat USA 2023 and fwd:cloudsec 2023")
+
+chaining: >
+  单独看是"日志逃逸"（低危），但与凭证窃取结合后意义重大：
+  窃取 IAM 凭证 → 通过非生产端点静默枚举权限 → 精准选择有效权限的 API 调用 →
+  减少检测窗口。防御者依赖 CloudTrail 告警的整个检测链被绕过。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  系统性地测试 AWS 各服务的非生产/预发布 API 端点（通过 --endpoint-url 参数指定），
+  确认这些端点是否接受标准 IAM 凭证调用、是否跳过 CloudTrail 日志记录，
+  从而实现静默权限枚举。
+
+reasoning_chain:
+  - "问：目标云环境是否使用 AWS？获取的凭证是 IAM 用户/角色凭证吗？"
+  - "问：AWS 各服务是否存在非生产 API 端点？（通过域名模式探测：beta-*, gamma-*, preprod-* 前缀）"
+  - "如果找到非生产端点 → 用窃取的凭证对该端点调用 API（如 list-* 操作），观察是否正常返回。"
+  - "问：调用非生产端点后，等待 10-15 分钟，CloudTrail 中是否有对应日志？"
+  - "如果无日志 → 该端点可用于静默权限枚举：逐个测试不同服务的不同操作，根据成功/失败判断凭证权限。"
+  - "问：枚举出的权限中，哪些可用于横向移动或数据访问？（如 s3:ListBuckets, iam:ListRoles 等）"
+  - "红队视角：将非生产端点枚举作为凭证窃取后的第一步，在 CloudTrail 告警触发前完成侦察。"
+
+vuln_root: >
+  AWS 假设非生产/内部端点不会被外部访问者使用，因此未为这些端点配置 CloudTrail 日志记录。
+  但这些端点仍然接受标准 IAM 凭证并执行正常的权限检查，创造了一个日志盲区。
+
+transferable_to:
+  - "所有 AWS 服务的非生产/预发布端点（研究者已在 10+ 服务中发现）"
+  - "其他云平台（GCP、Azure）可能存在类似的非生产端点日志盲区"
+  - "任何依赖审计日志作为安全检测核心的系统——预发布/灰度环境是否同步了日志？"
+  - "CI/CD 环境中的 staging API——是否与生产共享凭证但缺少日志？"
+
+cases:
+  - url: "https://hackerone.com/reports/3022516"
+    author: "nick_frichette_dd"
+    platform: "AWS Forecast Service"
+    severity: "Medium"
+    note: >
+      发现 Forecast 服务 4 个非生产端点可用标准 IAM 凭证调用但不记录 CloudTrail 日志，
+      可用于静默权限枚举。研究者此前已在 events, elasticache, datazone,
+      docdb-elastic, devicefarm, cloudwatch, bedrock, bedrock-agent, ssm 等
+      10+ 服务中发现同类问题。系统性研究（BH USA 2023 / fwd:cloudsec 2023）。
+  - url: "https://hackerone.com/reports/3014785"
+    author: "nick_frichette_dd"
+    platform: "AWS Datazone Service"
+    severity: "Medium"
+    note: >
+      Part 2：同一研究者通过证书透明度监控发现 Datazone 服务新增 3 个非生产端点，
+      与上一报告手法完全相同——用标准 IAM 凭证调用 list-domains 操作并指定
+      --endpoint-url，API 正常返回但不记录 CloudTrail 日志。
+      (原文: "just minutes ago I found 3 more endpoints which exhibit the vulnerable
+      behavior. They just came down through my certificate transparency monitoring
+      so I think they were created in the past 24 hours.")
+  - url: "https://hackerone.com/reports/2981210"
+    author: "nick_frichette_dd"
+    platform: "AWS Datazone Service"
+    severity: "Medium (CVSS 5.0)"
+    note: >
+      同一研究者发现 Datazone 服务 44 个非生产端点可用标准 IAM 凭证调用但不记录 CloudTrail 日志，
+      端点中疑似包含 AWS 员工名称/别名（测试环境）。
+      手法与此前报告完全相同：aws datazone list-domains --endpoint-url <non-prod-endpoint>，
+      API 正常返回但等待 5-10 分钟后 CloudTrail 无日志。
+      (原文: "We have found 44 non-production endpoints for the Datazone service which can be
+      used with standard IAM credentials, and do not log to CloudTrail."
+      "these endpoints appear to include AWS employee names or aliases in them.
+      Presumably these are for test environments or something similar.")
+  - url: "https://hackerone.com/reports/3009411"
+    author: "nick_frichette_dd"
+    platform: "AWS DocumentDB Elastic Service"
+    severity: "Medium (CVSS 5.0)"
+    note: >
+      同一研究者发现 DocumentDB Elastic 服务 3 个非生产端点可用标准 IAM 凭证调用但不记录 CloudTrail 日志。
+      手法与此前报告完全相同：aws docdb-elastic list-cluster-snapshots --endpoint-url <non-prod-endpoint>，
+      API 正常返回但 CloudTrail 无日志。研究者已在 devicefarm, datazone, cloudwatch,
+      bedrock, bedrock-agent, ssm 等 10+ 服务中报告同类问题。
+      (原文: "We have found 3 non-production endpoints for the DocumentDB Elastic service
+      which can be used with standard IAM credentials, and do not log to CloudTrail."
+      "we have reported similar findings for different services: devicefarm, datazone,
+      cloudwatch, bedrock, bedrock-agent, ssm")
+      2025-02 报告，2025-03 公开。
+  - url: "https://hackerone.com/reports/3021451"
+    author: "nick_frichette_dd"
+    platform: "AWS ElastiCache Service"
+    severity: "Medium (CVSS 5.0)"
+    note: >
+      同一研究者发现 ElastiCache 服务 1 个非生产端点可用标准 IAM 凭证调用但不记录 CloudTrail 日志。
+      手法与此前报告完全相同：aws elasticache describe-users --endpoint-url <non-prod-endpoint>，
+      API 正常返回但 CloudTrail 无日志。攻击者可据此判断被入侵凭证是否有 elasticache 相关权限。
+      研究者注明此前已在 datazone, docdb-elastic, devicefarm, cloudwatch, bedrock,
+      bedrock-agent, ssm 等多个服务中报告同类问题。
+      2025-03 报告，2025-04 公开。
+  - url: "https://hackerone.com/reports/2800091"
+    author: "nick_frichette_dd"
+    platform: "AWS Bedrock-Agent Service"
+    severity: "Medium (CVSS 5.0)"
+    note: >
+      同一研究者发现 bedrock-agent 服务 26 个非生产端点可用标准 IAM 凭证调用但不记录 CloudTrail 日志。
+      端点中疑似包含 AWS 员工名称/别名（测试环境）。
+      手法与此前报告完全相同：aws bedrock-agent list-agents --endpoint-url <non-prod-endpoint>，
+      API 正常返回但 CloudTrail 无日志。AWS 已确认此类问题应报告。
+      (原文: "We have found 26 non-production endpoints for the bedrock-agent service
+      which can be used with standard IAM credentials, and do not log to CloudTrail."
+      "these endpoints appear to include AWS employee names or aliases in them.
+      Presumably these are for test environments or something similar.")
+      2024-10 报告，2025-05 公开。
+  - url: "https://hackerone.com/reports/2926361"
+    author: "nick_frichette_dd"
+    platform: "AWS SSM Service"
+    severity: "Medium (CVSS 5.0)"
+    note: >
+      同一研究者发现 SSM 服务 18 个非生产端点可用标准 IAM 凭证调用但不记录 CloudTrail 日志。
+      两类端点行为不同：Category 1（14 个端点）仅对 DescribeInstanceInformation 和
+      DescribeInstanceProperties 两个操作不记录日志，其他操作会记录；
+      Category 2（4 个端点）范围更广，DescribeParameters/GetOpsSummary/ListCommandInvocations
+      等多个操作均不记录日志。虽无法访问客户分区数据，但可用于静默权限枚举。
+      (原文: "We have found 18 non-production endpoints for the ssm service which can be
+      used with standard IAM credentials, and do not log to CloudTrail."
+      "Category 1: These endpoints do not log to CloudTrail only for the
+      ssm:DescribeInstanceInformation and ssm:DescribeInstanceProperties actions."
+      "Category 2: These endpoints are not nearly as limited as Category 1.
+      While they still can't access the customer partition, they have a wider variety
+      of actions they can perform without logging to CloudTrail.")
+      2025-01 报告，2025-04 公开。
+  - url: "https://hackerone.com/reports/3021618"
+    author: "nick_frichette_dd"
+    platform: "AWS EventBridge Service"
+    severity: "Medium"
+    note: >
+      同一研究者发现 EventBridge 服务 1 个非生产端点可用标准 IAM 凭证调用但不记录 CloudTrail 日志。
+      手法与此前报告完全相同：aws events list-event-buses --endpoint-url <non-prod-endpoint>，
+      API 正常返回但等待 5-10 分钟后 CloudTrail 无日志。
+      报告中明确引用了 AWS 对此类问题的官方立场，以及此前在 elasticache, datazone,
+      docdb-elastic, devicefarm, cloudwatch, bedrock, bedrock-agent, ssm 等
+      服务中的相同发现。
+      2025-03 报告，2025-05 公开。
+  - url: "https://hackerone.com/reports/2951803"
+    author: "nick_frichette_dd"
+    platform: "AWS Bedrock Service"
+    severity: "Medium (CVSS 4.3)"
+    note: >
+      同一研究者发现 bedrock 服务 5 个非生产端点可用标准 IAM 凭证调用但不记录 CloudTrail 日志。
+      可调用 bedrock:ListImportedModels 和 bedrock:ListModelImportJobs 两个操作。
+      手法与此前报告完全相同：aws bedrock list-imported-models --endpoint-url <non-prod-endpoint>，
+      API 正常返回但 CloudTrail 无日志。此前已在 bedrock-agent, ssm 等服务中报告同类问题。
+      (原文: "We have found 5 non-production endpoints for the bedrock service which can be
+      used with standard IAM credentials, and do not log to CloudTrail.")
+      2025-01 报告，2025-05 公开。
+  - url: "https://hackerone.com/reports/2972435"
+    author: "nick_frichette_dd"
+    platform: "AWS CloudWatch Service"
+    severity: "Medium (CVSS 5.0)"
+    note: >
+      同一研究者发现 CloudWatch 服务 2 个非生产端点可用标准 IAM 凭证调用但不记录 CloudTrail 日志。
+      手法与此前报告完全相同：aws cloudwatch describe-alarms --endpoint-url <non-prod-endpoint>，
+      API 正常返回但 CloudTrail 无日志。端点中疑似包含 AWS 员工名称/别名（测试环境）。
+      (原文: "We have found 2 non-production endpoints for the cloudwatch service which can be
+      used with standard IAM credentials, and do not log to CloudTrail."
+      "these endpoints appear to include AWS employee names or aliases in them.
+      Presumably these are for test environments or something similar.")
+      2025-02 报告，2025-04 公开。
+  - url: "https://hackerone.com/reports/3029552"
+    author: "nick_frichette_dd"
+    platform: "AWS Global Accelerator Service"
+    severity: "Medium"
+    note: >
+      同一研究者发现 Global Accelerator 服务 8 个非生产端点可用标准 IAM 凭证调用但不记录 CloudTrail 日志。
+      手法与此前报告完全相同：aws globalaccelerator list-accelerators --region us-west-2
+      --endpoint-url <non-prod-endpoint>，API 正常返回但 CloudTrail 无日志。
+      (原文: "We have found 8 non-production endpoints for the Global Accelerator service
+      which can be used with standard IAM credentials, and do not log to CloudTrail.")
+      2025-03 报告，2025-05 公开。
+  - url: "https://hackerone.com/reports/3042588"
+    author: "nick_frichette_dd"
+    platform: "AWS Health Service"
+    severity: "Medium (CVSS 5.0)"
+    note: >
+      同一研究者发现 Health 服务 11 个非生产端点可用标准 IAM 凭证调用但不记录 CloudTrail 日志。
+      手法与此前报告完全相同：aws health describe-entity-aggregates --endpoint-url <non-prod-endpoint>，
+      API 正常返回但 CloudTrail 无日志。报告中引用 AWS 官方立场及此前在 glue, globalaccelerator,
+      forecast, events, elasticache, datazone, docdb-elastic, devicefarm, cloudwatch,
+      bedrock, bedrock-agent, ssm 等 13+ 服务中的相同发现。
+      (原文: "We have found 11 non-production endpoints for the AWS Health service which can be
+      used with standard IAM credentials, and do not log to CloudTrail."
+      "An adversary can enumerate permissions of compromised credentials for the health
+      service without logging to CloudTrail.")
+      2025-03 报告，2025-05 公开。
+  - url: "https://hackerone.com/reports/3031512"
+    author: "nick_frichette_dd"
+    platform: "AWS Glue Service"
+    severity: "Medium"
+    note: >
+      同一研究者发现 Glue 服务 12 个非生产端点可用标准 IAM 凭证调用但不记录 CloudTrail 日志。
+      手法与此前报告完全相同：aws glue list-jobs --endpoint-url <non-prod-endpoint>，
+      API 正常返回但等待 5-10 分钟后 CloudTrail 无日志。报告中引用 AWS 官方立场及此前在
+      globalaccelerator, forecast, events, elasticache, datazone, docdb-elastic,
+      devicefarm, cloudwatch, bedrock, bedrock-agent, ssm 等 12+ 服务中的相同发现。
+      (原文: "We have found 12 non-production endpoints for the AWS Glue service which can be
+      used with standard IAM credentials, and do not log to CloudTrail."
+      "An adversary can enumerate permissions of compromised credentials for the glue
+      service without logging to CloudTrail.")
+      2025-03 报告，2025-04 公开。
+  - url: "https://hackerone.com/reports/3068422"
+    author: "nick_frichette_dd"
+    platform: "AWS Neptune Graph Service"
+    severity: "Medium (CVSS 4.3)"
+    note: >
+      同一研究者发现 Neptune Graph 服务 7 个非生产端点可用标准 IAM 凭证调用但不记录 CloudTrail 日志。
+      其中 6 个端点支持多个操作，另 1 个仅支持 ListGraphSnapshots。
+      手法与此前报告完全相同：aws neptune-graph list-graphs --endpoint-url <non-prod-endpoint>，
+      API 正常返回但 CloudTrail 无日志。报告中引用了此前在 lakeformation, m2, health,
+      glue, globalaccelerator, forecast, events, elasticache, datazone, docdb-elastic,
+      devicefarm, cloudwatch, bedrock, bedrock-agent, ssm 等 15+ 服务中的相同发现。
+      (原文: "We have found 7 non-production endpoints for the Amazon Neptune Graph service
+      which can be used with standard IAM credentials, and do not log to CloudTrail.")
+      2025-03 报告，2025-05 公开。
+  - url: "https://hackerone.com/reports/3418966"
+    author: "nick_frichette_dd"
+    platform: "AWS AI Ops Service"
+    severity: "Medium"
+    note: >
+      同一研究者发现 AI Ops（aiops）服务 5 个非生产端点可用标准 IAM 凭证调用但不记录 CloudTrail 日志。
+      端点疑似为开发者个人 stack。手法与此前报告完全相同：
+      aws aiops list-investigation-groups --endpoint-url <non-prod-endpoint>，
+      API 正常返回但 CloudTrail 无日志。报告中引用了此前在 neptune-graph, transcribe,
+      storagegateway, sso-admin, ssm-quicksetup, securityhub, route53, redshift-data
+      等 25+ 服务中的相同发现。
+      (原文: "We have found 5 non-production endpoints for the AI Ops service which could be
+      used with standard IAM credentials, and do not log to CloudTrail."
+      "These appear to be personal stacks for a few developers.")
+      2025-11 报告，2026-01 公开。
+  - url: "https://hackerone.com/reports/3092085"
+    author: "nick_frichette_dd"
+    platform: "AWS Route 53 Domains Service"
+    severity: "Medium"
+    note: >
+      同一研究者发现 Route 53 Domains 服务 2 个非生产端点可用标准 IAM 凭证调用但不记录 CloudTrail 日志。
+      手法与此前报告完全相同：aws route53domains list-domains --endpoint-url <non-prod-endpoint>，
+      API 正常返回但 CloudTrail 无日志。报告中引用了此前在 redshift-data, neptune-graph,
+      lakeformation, m2, health, glue, globalaccelerator, forecast, events, elasticache,
+      datazone, docdb-elastic, devicefarm, cloudwatch, bedrock, bedrock-agent, ssm 等
+      17+ 服务中的相同发现。
+      (原文: "We have found 2 non-production endpoints for the Amazon Route 53 service
+      which can be used with standard IAM credentials, and do not log to CloudTrail.")
+      2025-04 报告，2025-05 公开。

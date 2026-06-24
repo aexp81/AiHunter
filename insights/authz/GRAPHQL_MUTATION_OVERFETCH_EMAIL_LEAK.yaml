@@ -1,0 +1,63 @@
+name: "GraphQL Mutation 后续 refetch 泄露被邀请用户的私有字段（email）"
+id: "GRAPHQL_MUTATION_OVERFETCH_EMAIL_LEAK"
+applicable: "blackbox"
+phase: "authz"
+also_phases: []
+tags: ["graphql", "info-disclosure", "over-fetching", "mutation", "email-leak", "access-control", "collaboration", "hackerone"]
+source: "https://hackerone.com/reports/2032716"
+
+observation: >
+  HackerOne 的 SaveCollaboratorsMutation 添加协作者后，紧随的请求中
+  泄露了被邀请 hacker 的 email，即使对方尚未接受邀请。
+  (原文: 添加协作者后的 refetch 响应包含目标用户 email)
+
+hypothesis: "未叙述（仅结果）"
+action_result: >
+  对任意 hacker username 执行 SaveCollaboratorsMutation，
+  后续 refetch 响应中获取其私有 email 地址。
+  (原文: 可以对任意 hacker username 操作)
+
+why_here_first: "未叙述（仅结果）"
+chaining: "N/A — 信息泄露"
+
+approach: >
+  对 GraphQL mutation 中涉及用户关联的操作（邀请/协作/分享），
+  检查 mutation 后续的自动 refetch/subscription 响应中是否包含关联用户的私有字段。
+
+reasoning_chain:
+  - "问：目标 GraphQL API 中有哪些与邀请/协作相关的 mutation？"
+  - "问：执行 mutation 后，紧随的 refetch/query 请求的响应中是否包含关联用户的私有字段？"
+  - "问：即使目标用户处于 pending 状态（未接受邀请），其数据是否已被泄露？"
+  - "如果泄露 → 评估可获取的字段范围（email/phone/real name）"
+
+vuln_root: "GraphQL resolver 按类型统一返回字段，权限检查只在顶层 query 做，嵌套关联对象的字段未做逐字段访问控制。"
+
+transferable_to:
+  - "任何 GraphQL API 中涉及用户关联的 mutation"
+  - "邀请/协作/分享功能后的 refetch 响应"
+
+cases:
+  - url: "https://hackerone.com/reports/2032716"
+    note: "HackerOne SaveCollaboratorsMutation 邮箱泄露，$12,500。"
+  - url: "https://hackerone.com/reports/871749"
+    title: "Unauthorized access to metadata of undisclosed reports that were retested"
+    platform: "HackerOne"
+    severity: "Medium"
+    bounty: "有奖金（金额未公开）"
+    note: >
+      查询 User node 的 report_retests 嵌套连接，当 report 字段为 null（未公开报告）时，
+      同级的 asset_name、severity_rating、weakness_name 等元数据仍被返回。
+      属于 GraphQL 嵌套关联对象泄露私有字段的广义模式：resolver 按类型统一返回所有字段，
+      未对关联对象（report_retests）中的敏感字段做逐字段访问控制。
+  - url: "https://hackerone.com/reports/724944"
+    title: "latest_activity_id and latest_activity_at may disclose information about internal activities to unauthorized users"
+    platform: "HackerOne"
+    severity: "Low (CVSS 3.4)"
+    bounty: "有赏金（金额未公开）"
+    note: >
+      报告参与者（participant）通过 /reports/<id>.json 端点和 GraphQL
+      query { node(id:"gid://hackerone/Report/...") { latest_activity_at } }
+      获取报告的内部活动 ID 和时间戳，可推断团队内部讨论/assign group 等操作的频率和时间。
+      纯结果文，无导航叙事。
+      (原文: "latest_activity_id and latest_activity_at related with
+      team internal discussion exposed")

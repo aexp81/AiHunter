@@ -1,0 +1,81 @@
+name: "页面源码中嵌入的应用级签名绕过 API key 权限且移除成员后永不失效"
+id: "ADMIN_SIGNATURE_ACL_INDEPENDENT_PERSISTENT_ACCESS"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["auth"]
+tags: ["signature", "acl-bypass", "persistent-access", "page-source", "admin-endpoint", "api-key-independent", "team-member-removal", "algolia"]
+source: "https://hackerone.com/reports/156520"
+
+# ——— L3 核心 ———
+
+observation: >
+  受限团队成员（仅 Search 权限、限单个 index）被 Dashboard 拒绝访问后，
+  检查页面源码发现了一个 `signature` 值，该签名是应用级的，与 API key 无关。
+  (原文: "Check in the page source for `signature` and copy its value...
+  Note that the signature is application specific and completely API key independent.")
+
+hypothesis: >
+  如果 signature 是应用级凭证且不绑定具体 API key 权限，
+  那么持有它就能直接访问 `/1/admin/*` 端点，绕过 API key 上设置的任何权限限制。
+  (原文: "Using this signature, you can perform queries now against `/1/admin/*`,
+  even though you don't have the rights.")
+
+action_result: >
+  成功：
+  1. 用 signature + applicationID 调用 POST /1/admin/listindexes → 返回所有 index 及统计信息
+  2. 调用 POST /1/admin/userlogs → 返回所有历史 API 调用的完整请求体和响应体（含搜索结果和添加的记录）
+  3. 确认被移除的团队成员仍可使用 signature 访问上述端点（即使 admin API key 被重新生成，signature 不变）
+  (原文: "if I remove an old team member he still continues to have access to the above endpoints.
+  Even if the admin regenerates the admin API key, the signature remains the same.
+  Therefore, once a team member obtained the signature, he will have access indefinitely to the application.")
+
+why_here_first: >
+  被 Dashboard 403 拒绝后没有放弃，而是查看页面源码寻找可利用的凭证材料。
+  (原文: "You will be greeted with a `You don't have access to the Algolia Dashboard.` error message.
+  Check in the page source for `signature` and copy its value")
+
+chaining: >
+  页面源码泄露 signature → 绕过 API key ACL 访问 admin 端点 →
+  /1/admin/userlogs 泄露所有 index 的完整请求/响应（含敏感数据）→
+  被移除成员仍保留永久访问权（signature 不随权限/API key 变更而失效）。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  当低权限用户被 Dashboard/UI 拒绝后，检查页面源码中是否存在
+  应用级签名/token（不绑定具体 API key 或用户身份），
+  然后用它直接调用 admin/internal API 端点绕过 per-key ACL。
+
+reasoning_chain:
+  - "问：低权限用户访问管理面板被拒时，页面源码（含隐藏变量/JS 对象）中是否有 signature/token/secret 等值？"
+  - "如果有 → 问：该值是绑定当前 API key 还是应用/租户级别的（所有用户相同）？"
+  - "如果应用级 → 问：用该值直接调用 /admin/* 或内部 API 端点，是否能绕过 per-key 权限限制？"
+  - "问：移除用户权限或团队成员后，该签名是否仍然有效？"
+  - "问：重新生成 API key 后，该签名是否也随之更新？如果不变则为永久持久化访问。"
+  - "问：还有哪些 admin 端点可以用该签名访问？（如 /admin/stats、/admin/building 等）"
+
+vuln_root: >
+  开发者在 Dashboard 页面嵌入了一个应用级签名供内部功能使用，
+  该签名不绑定具体用户或 API key，且不随权限变更而失效。
+  UI 层面的 403 拒绝给开发者造成了"已保护"的错觉，
+  但签名本身可直接用于 admin API 调用。
+
+transferable_to:
+  - "任何在前端页面（含被 403 拦截的页面）嵌入签名/token 的 SaaS 平台"
+  - "API 管理平台——per-key ACL 是否被应用级凭证绕过"
+  - "搜索引擎即服务（Algolia/Elasticsearch/Typesense Cloud）的管理 API"
+  - "团队成员权限管理——移除后哪些凭证材料仍有效"
+  - "任何 admin 端点鉴权独立于主应用 session 的架构"
+
+cases:
+  - url: "https://hackerone.com/reports/156520"
+    author: "eboda"
+    platform: "Algolia"
+    severity: "Improper Authentication"
+    bounty: "$400"
+    note: >
+      Algolia 受限团队成员（仅 Search 权限）在 Dashboard 被拒页面的源码中找到 signature，
+      用它调用 /1/admin/listindexes 和 /1/admin/userlogs 获取所有 index 数据和完整 API 日志。
+      signature 是应用级的，与 API key 无关，移除团队成员后仍有效，
+      即使重新生成 admin API key，signature 也不变——永久持久化访问。
+      2016-08 报告，2016-11 公开。

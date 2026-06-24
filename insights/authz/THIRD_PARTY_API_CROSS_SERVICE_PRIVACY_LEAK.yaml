@@ -1,0 +1,63 @@
+name: "新增 scope 域名的 API 端点未继承主服务隐私设置——跨服务 OAuth 连接泄露受保护内容"
+id: "THIRD_PARTY_API_CROSS_SERVICE_PRIVACY_LEAK"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["recon"]
+tags: ["privacy", "access-control", "api", "oauth", "cross-service", "scope-expansion", "twitter", "niche"]
+source: "https://hackerone.com/reports/273698"
+
+# ——— L3 核心 ———
+
+observation: >
+  研究者注意到 Bug Bounty 项目新增了一个 in-scope 域名 niche.co，
+  且 niche.co 允许用户通过 OAuth 连接 Twitter 账户。
+  (原文: "in your policy i see there is new domain add as in scope target, and the domain is niche.co")
+
+hypothesis: >
+  如果 niche.co 通过 OAuth 获取了用户的 Twitter 数据（包括受保护推文），
+  那么 niche.co 自己的 API 可能不尊重 Twitter 侧的隐私设置，
+  导致受保护的推文可通过 niche.co API 公开访问。
+  未叙述（仅结果）
+
+action_result: >
+  访问 niche.co 的公开 API /api/v1/users/[victim_twitter_account]，
+  无需认证即可获取受害者信息，进一步通过 /users/ID/posts?accounts=ID
+  获取受害者的全部受保护推文。
+  (原文: "attacker no need to have twitter account and or no need to have Niche account here...
+  just visit https://www.niche.co/api/v1/users/[victim_twitter_account]...
+  and BOOM! the attacker now have Access to Protected Tweets from victim account")
+
+why_here_first: >
+  研究者因 Bug Bounty scope 新增域名而注意到 niche.co，
+  并以此作为切入点。
+  (原文: "in your policy i see there is new domain add as in scope target, and the domain is niche.co")
+
+chaining: "N/A — 单步即可通过第三方 API 获取主服务受保护内容"
+
+# ——— 落地检查清单 ———
+
+approach: >
+  当目标 Bug Bounty 新增 scope 域名或收购服务时，检查该服务是否通过 OAuth
+  与主服务同步用户数据，然后测试其 API 端点是否继承了主服务的隐私/可见性设置
+  ——第三方服务往往缓存了数据但未复制访问控制策略。
+
+reasoning_chain:
+  - "问：目标 Bug Bounty 最近是否新增了 scope 域名或收购了服务？"
+  - "问：新增域名是否提供 OAuth 社交登录与主服务绑定？"
+  - "问：新增服务的 API 是否可公开访问（无需认证或仅需低权限）？"
+  - "问：主服务上被标记为私有/受保护的内容，在新增服务的 API 中是否仍然可见？"
+  - "如果可见 → 第三方 API 未同步主服务的隐私策略，确认跨服务隐私泄露"
+
+vuln_root: >
+  第三方服务通过 OAuth 获取并缓存了主服务的用户数据，
+  但未同步主服务的隐私/可见性设置，导致受保护内容通过第三方 API 公开可访问。
+
+transferable_to:
+  - "社交平台收购的附属服务（如 Twitter/niche.co、Facebook/Instagram 早期）"
+  - "通过 OAuth 集成的第三方分析/营销平台"
+  - "SSO 绑定的子服务（如企业 SSO 关联的 HR/CRM 系统）"
+  - "任何通过 API 同步数据但未同步 ACL 的跨服务架构"
+
+cases:
+  - url: "https://hackerone.com/reports/273698"
+    note: "Twitter/niche.co，High，无赏金。niche.co API 无需认证即可获取已保护的推文。"

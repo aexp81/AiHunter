@@ -1,0 +1,40 @@
+name: "CI/CD 平台 OAuth 域限制缺失——任意 Google 账号登录 Jenkins 到 Script Console RCE"
+id: "CICD_OAUTH_DOMAIN_UNRESTRICTED"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["recon"]
+tags: ["jenkins", "oauth", "ci-cd", "misconfiguration", "rce", "google-oauth", "snapchat"]
+source: "https://hackerone.com/reports/231460"
+
+observation: >
+  Snapchat 生产环境 Jenkins 实例配置了 Google OAuth 但未限制邮箱域，
+  任意 Google 账号可登录。
+  (原文团队摘要: "found a Jenkins instance where they could login with any valid Google account")
+
+hypothesis: "未叙述（仅结果）"
+action_result: >
+  登录后获得敏感 API tokens、公开 App 源码，并可通过 Jenkins Script Console 执行任意代码。
+  (原文: "gained access to sensitive API tokens...ability to execute arbitrary code via the Jenkins Script Console")
+
+why_here_first: "未叙述（仅结果）"
+chaining: "任意 Google 登录 → API tokens 泄露 + 源码泄露 + Script Console RCE"
+
+approach: >
+  对暴露在公网的 CI/CD 平台（Jenkins/GitLab CI），测试 OAuth 登录是否限制了允许的邮箱域，
+  未限制则任意第三方账号可登录并接触 Script Console/构建日志等高危功能。
+
+reasoning_chain:
+  - "问：目标是否有暴露在公网的 Jenkins/CI 实例？（子域枚举 + 8080/8443 端口扫描）"
+  - "问：登录页是否使用 OAuth（Google/GitHub/SAML）？"
+  - "问：使用自己的 Google/GitHub 账号是否能成功登录？（未限制邮箱域）"
+  - "如果登录成功 → 检查 /script、/configure、/credentials 等端点权限"
+
+vuln_root: "配置 OAuth 时未限制允许的邮箱域，全球任何 Google 账号都能通过认证。"
+
+transferable_to:
+  - "任何使用第三方 OAuth 但未限制邮箱域的 CI/CD 平台"
+  - "Jenkins、GitLab CI、TeamCity、Drone 等"
+
+cases:
+  - url: "https://hackerone.com/reports/231460"
+    note: "Snapchat 生产 Jenkins，任意 Google 登录→RCE，$15,000。"

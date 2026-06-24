@@ -1,0 +1,70 @@
+name: "IPv6 socket option 缺失锁保护——race 触发 UAF 获取内核任意读写原语"
+id: "KERNEL_SOCKET_OPTION_RACE_UAF_ARBITRARY_RW"
+applicable: "whitebox"
+phase: "input"
+also_phases: ["chain"]
+tags: ["kernel", "freebsd", "use-after-free", "race-condition", "ipv6", "setsockopt", "privilege-escalation", "binary-exploitation", "ps4"]
+source: "https://hackerone.com/reports/826026"
+
+observation: >
+  setsockopt 的 IPV6_2292PKTOPTIONS 选项处理中缺失锁保护，
+  ip6_pktopts 结构体在被 ip6_setpktopt 操作期间可被并发释放。
+  该结构体包含可被劫持的指针（ip6po_pktinfo）。
+  (原文: "Due to missing locks in option IPV6_2292PKTOPTIONS of setsockopt,
+  it is possible to race and free the struct ip6_pktopts buffer, while it is
+  being handled by ip6_setpktopt.")
+
+hypothesis: >
+  如果能在 ip6_setpktopt 处理 ip6_pktopts 期间通过竞态释放该结构体，
+  就能构造 Use-After-Free，劫持其中的指针获得内核任意读写原语。
+  (原文: "This structure contains pointers (ip6po_pktinfo) that can be hijacked
+  to obtain arbitrary kernel R/W primitives.")
+
+action_result: >
+  成功在 FreeBSD 9 和 FreeBSD 12 上实现本地提权（PoC attached）。
+  可从 WebKit sandbox 内触发（无需额外权限提升到达内核接口）。
+  (原文: "Attached is a Proof-Of-Concept that achieves a Local Privilege Escalation
+  on FreeBSD 9 and FreeBSD 12.")
+  (原文: "This vulnerability is reachable from WebKit sandbox and is available
+  in the latest FW, that is 7.02.")
+
+why_here_first: >
+  未叙述（仅结果）。推测：研究者审计了 FreeBSD 内核中 IPv6 socket option 处理的
+  并发安全性，发现 IPV6_2292PKTOPTIONS 是遗留的已弃用选项（RFC 2292），
+  可能缺乏现代代码路径的锁保护。
+
+chaining: >
+  WebKit exploit（沙箱内代码执行） → 本漏洞（内核 UAF → 任意 R/W）
+  → 本地提权 → 完全控制设备。
+  (原文: "In conjunction with a WebKit exploit, a fully chained remote attack can be achieved.")
+
+approach: >
+  审计内核 socket option 处理代码中的锁使用情况，对 setsockopt / getsockopt
+  路径进行并发 race，在结构体被操作期间触发释放以构造 UAF，
+  劫持结构体中的指针获取内核任意读写原语实现提权。
+
+reasoning_chain:
+  - "问：目标内核中 setsockopt 的各个 option 处理路径是否有适当的锁保护？"
+  - "问：是否存在遗留/已弃用的 option（如 IPV6_2292* 系列）仍可被调用但缺乏维护？"
+  - "如果某个 option 处理路径无锁 → 能否通过多线程并发调用触发 race？"
+  - "问：被操作的结构体中是否包含可被劫持的函数指针或数据指针？"
+  - "如果结构体在操作中被释放（UAF）→ 能否通过 heap spray 控制释放后的内存内容？"
+  - "问：该 socket option 是否可从沙箱内访问（无需额外权限）？"
+
+vuln_root: >
+  内核 socket option 处理函数缺失并发锁保护，假设操作期间结构体不会被其他线程释放。
+
+transferable_to:
+  - "FreeBSD 及其衍生系统（PS4/PS5 使用 FreeBSD 内核）"
+  - "其他操作系统内核的 setsockopt 处理——特别是遗留/已弃用的 option"
+  - "内核中并发操作共享结构体但缺乏锁保护的代码路径"
+  - "游戏主机/嵌入式设备使用旧版 BSD/Linux 内核的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/826026"
+    note: "PS4 FreeBSD 内核 IPV6_2292PKTOPTIONS UAF → LPE，$10,000，by theflow0。"
+  - url: "https://hackerone.com/reports/1441103"
+    note: >
+      同一 CVE-2020-7457 在 PS5 上的重现（no-content 公开）。theflow0 报告。
+      与 bd-j exploit chain 组合获得 PS5 内核访问。$10,000。
+      团队摘要确认 "vulnerable to #826026 which easily grants kernel access"。

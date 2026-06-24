@@ -1,0 +1,80 @@
+name: "应用层缓存键缺少用户标识前缀——跨用户缓存数据泄露"
+id: "APP_CACHE_KEY_MISSING_USER_PREFIX_CROSS_USER_LEAK"
+applicable: "both"
+phase: "authz"
+also_phases: []
+tags: ["cache", "access-control", "cachePrefix", "cross-user-data-leak", "reference-provider", "nextcloud", "deck", "CVE-2023-22469"]
+source: "https://hackerone.com/reports/1767503"
+
+# ——— L3 核心 ———
+
+observation: >
+  Nextcloud Deck 的 CardReferenceProvider 使用了与用户无关的 cachePrefix 来缓存引用数据，
+  而同一系统中 GitHub Integration 的 ReferenceProvider 正确地使用了 userId 作为 cachePrefix。
+  (原文: "The used cachePrefix in deck (see here) is independent of the user."
+  以及 "The GitHub-Integration uses the userId as a cachePrefix, this so this shouldn't be
+  a issue in that case, see here.")
+
+hypothesis: >
+  如果 User1 有权访问某张 Deck 卡片并触发了引用缓存，任何知道 boardId/cardId 的用户
+  都能通过缓存读取该卡片的信息，即使他们没有访问权限。
+  (原文: "If User1 has access to a deck card and the reference data is stored in the cache,
+  any user with knowledge of the boardId/cardId can access the information of that deck card.")
+
+action_result: >
+  成功：User1 在 Talk 中分享 Deck 卡片链接 → 引用数据被缓存 →
+  User2（无 Deck 卡片访问权限）通过相同链接可以查看卡片内容。
+  (原文: "User1 has a deck card and shares the link in a talk conversation.
+  Any user of that conversation (or with knowledge of the link) is able to see the deck card,
+  if the call to the reference provider was done for user1 before")
+
+why_here_first: >
+  研究者阅读源码时比较了不同 ReferenceProvider 实现的 cachePrefix 策略，
+  发现 Deck 用了与用户无关的 prefix，而 GitHub Integration 正确使用了 userId。
+  这种"实现差异比对"是触发点。
+  (原文引用 GitHub 源码链接对比两个实现的 cachePrefix)
+
+chaining: >
+  N/A — 单步即可读取缓存中的跨用户数据。但在有多个 ReferenceProvider 的系统中，
+  同一 cachePrefix 模式错误可能影响多个集成插件。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  审计应用层的缓存/预览/引用系统，检查缓存键（cache key / cache prefix）
+  是否包含用户标识（userId / sessionId）。若缓存键仅基于资源标识
+  （如 resourceId、URL），则一个有权用户触发缓存后，
+  无权用户可通过相同资源标识读取缓存的敏感数据。
+
+reasoning_chain:
+  - "问：目标系统是否有链接预览/引用展开/OEmbed/社交卡片等功能？"
+  - "问：这些功能是否使用了缓存来提升性能？（检查 Cache-Control 头、源码中的 cache/redis 调用）"
+  - "问：缓存键是怎样构造的？是否包含用户标识（userId、sessionId）？"
+  - "如果缓存键仅含资源标识（URL/resourceId）→ 用一个有权账户触发对受限资源的引用/预览"
+  - "问：用另一个无权账户请求同一资源的引用/预览，是否从缓存返回了数据？"
+  - "如果返回 → 确认跨用户缓存泄露。评估可泄露的数据类型和缓存存活时间。"
+  - "白盒审计：对比同一系统中不同 Provider/Plugin 的 cachePrefix 实现是否一致——不一致暗示部分有漏洞。"
+
+vuln_root: >
+  开发者假设缓存层是透明的性能优化不改变访问控制语义，
+  但缓存键未包含用户标识导致缓存成为授权绕过的隐式通道。
+
+transferable_to:
+  - "任何使用应用层缓存（Redis/Memcached/本地缓存）存储用户数据的系统"
+  - "链接预览/OEmbed/社交卡片/URL unfurling 功能（Slack、Teams、Nextcloud、Discourse 等）"
+  - "带有插件/集成生态的平台——不同插件可能有不同的缓存键策略，存在不一致风险"
+  - "多租户 SaaS 中的数据缓存——tenant_id 是否在 cache key 中？"
+  - "API 网关/BFF 层的响应缓存——是否按用户区分缓存？"
+
+cases:
+  - url: "https://hackerone.com/reports/1767503"
+    title: "Reference caching can leak data to unauthorized users"
+    author: "systemkeeper"
+    platform: "Nextcloud Deck"
+    severity: "Medium (CVSS 5.4)"
+    cve: "CVE-2023-22469"
+    note: >
+      Nextcloud Deck 的 CardReferenceProvider 缓存键缺少 userId 前缀，
+      有权用户触发缓存后，无权用户可通过知道 boardId/cardId 读取卡片数据。
+      同系统的 GitHub Integration 正确使用了 userId 作为 cachePrefix。
+      白盒代码审计发现，通过实现差异比对定位漏洞。

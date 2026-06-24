@@ -1,0 +1,85 @@
+name: "跨模块数据流中 Shell 命令字符串拼接注入——黑名单属性过滤绕过 + import_type 逻辑分支劫持"
+id: "SHELL_CMD_STRING_INJECTION_VIA_CROSS_BOUNDARY_FLOW"
+applicable: "whitebox"
+phase: "chain"
+also_phases: ["input"]
+tags: ["command-injection", "shell-metacharacter", "Open3-popen3", "blacklist-bypass", "cross-module-trust-boundary", "bulk-import", "feature-flag", "template-pivot", "gitlab", "ruby", "CVE-2022-2185"]
+source: "https://hackerone.com/reports/1609965"
+
+# ——— L3 核心 ———
+
+observation: >
+  DecompressedArchiveSizeValidator 使用 Open3.popen3 以单字符串形式执行 shell 命令：
+  "gzip -dc #{@archive_path} | wc -c"，字符串形式会触发 /bin/sh -c 解释，
+  允许 shell 元字符生效。
+  (原文: 引用 decompressed_archive_size_validator.rb L82 源码，
+  command 方法拼接 @archive_path 到 shell 命令字符串)
+
+hypothesis: >
+  如果能控制 archive_path（来自 project.import_source），就能注入 shell 元字符实现 RCE。
+  CVE-2022-2884 的补丁只修了 Gitlab::Cache::Import::Caching，
+  BulkImport pipeline 的属性过滤器采用黑名单模式，import_source 不在黑名单中。
+  (原文: ProhibitedAttributesTransformer 的 PROHIBITED_REFERENCES 正则仅过滤
+  _id、_ids、_html、cached_markdown_version、remote_*_url 等 key，
+  import_source 未在列表中)
+
+action_result: >
+  成功执行：
+  1. 搭建 Flask mock GitLab API + ngrok，返回包含恶意 import_source 的 JSON
+  2. 通过 template_name="rails" 触发 CreateFromTemplateService 分支，
+     将 import_type 从不可利用的 gitlab_project_migration 变换为 gitlab_project
+  3. Shell 命令 "gzip -dc /tmp/ggg;echo lala|tee /tmp/1234;# | wc -c" 被执行
+  4. 验证 cat /tmp/1234 输出 "lala"，RCE 确认
+  (原文: 引用报告中的 PoC 步骤、错误日志输出、以及验证结果)
+  限制：payload 不能包含 > 字符（JSON 序列化会转义为 \u003e）
+
+why_here_first: >
+  研究者从 sink 点（Open3.popen3 字符串拼接）出发，逆向追踪 archive_path 参数来源，
+  跨越 FileImporter → Importer → project.import_source 的调用链，
+  发现 BulkImport pipeline 是唯一允许外部控制 import_source 的入口。
+  (原文: 逐层引用 file_importer.rb、importer.rb 源码中的参数传递链，
+  以及 ProhibitedAttributesTransformer 的黑名单遗漏)
+
+chaining: >
+  三环链：
+  1. 黑名单属性过滤绕过 → BulkImport pipeline 放行 import_source
+  2. import_type 逻辑分支劫持 → template_name 触发 CreateFromTemplateService，
+     将 import_type 从 gitlab_project_migration 改写为 gitlab_project
+  3. Shell 命令字符串注入 → Open3.popen3 以 /bin/sh -c 解释含元字符的 import_source → RCE
+
+# ——— 落地检查清单 ———
+
+approach: >
+  定位 Shell 命令字符串拼接 sink 点（Open3.popen3/system/exec 单字符串参数），
+  逆向追踪参数来源跨越功能模块边界，寻找黑名单过滤遗漏的可控属性注入点，
+  并通过逻辑分支劫持（如 template_name pivot）打通最后一环。
+
+reasoning_chain:
+  - "问：代码库中有哪些位置使用 Open3.popen3/system/exec 且参数为单字符串（非数组）？"
+  - "白盒：grep -rn 'Open3.popen3\\|Open3.capture3\\|system(\\|exec(' --include='*.rb' | grep -v '\\['"
+  - "问：这些 sink 点的参数中是否包含变量插值（如 #{variable}）？"
+  - "如果包含 → 追踪该变量的数据来源，是否可被用户控制？"
+  - "问：数据来源是否跨越功能模块边界（如 BulkImport → Import/Export）？跨越边界的信任假设是否成立？"
+  - "问：中间的属性过滤器是白名单还是黑名单？黑名单是否覆盖了危险属性？"
+  - "白盒：grep -rn 'PROHIBITED\\|ALLOWED\\|whitelist\\|blacklist' --include='*.rb' 检查过滤模式"
+  - "如果黑名单遗漏了目标属性 → 确认是否还需要其他条件（如 import_type 匹配）才能触发 sink"
+  - "问：是否可以通过注入其他参数（如 template_name）改变逻辑分支，满足触发条件？"
+  - "白盒：追踪 import_type 的赋值逻辑，寻找可被用户控制的分支条件"
+
+vuln_root: >
+  Shell 命令字符串拼接（Open3.popen3 单字符串参数触发 shell 解释）
+  + 属性过滤采用黑名单而非白名单导致危险属性 import_source 逃逸
+  + 跨模块信任边界缺失（BulkImport pipeline 的输出未被 Import/Export 模块重新校验）
+
+transferable_to:
+  - "任何使用 Open3.popen3/system/exec 且参数为字符串（非数组）的 Ruby 应用"
+  - "跨功能模块的数据流中，一个模块的用户输入流入另一模块的危险函数"
+  - "属性过滤采用黑名单模式的 import/export 功能——黑名单几乎总有遗漏"
+  - "feature flag 保护的新功能——安全审计往往跳过未全量开放的代码路径"
+
+cases:
+  - url: "https://hackerone.com/reports/1609965"
+    note: >
+      GitLab v15.1.0-ee，CVE-2022-2185，$33,510 赏金。
+      BulkImport pipeline 黑名单遗漏 import_source → Shell 命令注入 RCE。
+      需 bulk_import_projects feature flag 启用。

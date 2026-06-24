@@ -1,0 +1,96 @@
+name: "提权进程通过 ShellExecute 打开 URL 时信任 HKCU 注册表浏览器处理程序——低权限篡改键值劫持提权执行"
+id: "ELEVATED_PROCESS_HKCU_HANDLER_HIJACK_UAC_BYPASS"
+applicable: "whitebox"
+phase: "chain"
+also_phases: ["authz"]
+tags: ["uac-bypass", "registry", "hkcu", "shellexecute", "elevated-process", "windows", "privilege-escalation", "veracrypt", "handler-hijack"]
+source: "https://hackerone.com/reports/530292"
+
+# ——— L3 核心 ———
+
+observation: >
+  报告者注意到 VeraCryptExpander.exe 的 manifest 声明了 requireAdministrator 级别执行，
+  同时其 UI 上有一个 "Homepage" 按钮直接使用 ShellExecute 打开外部 URL。
+  ShellExecute 会查找 HKCU (当前用户) 注册表中的 URL 协议处理程序来决定用哪个程序打开链接。
+  (原文: "you launch a web page through an elevated process but trust the link to be opened
+  by an app specified by registry keys belonging to HKCU Hive (current user domain)
+  and not an elevated HIVE set like HKEY_LOCAL_MACHINE")
+
+hypothesis: >
+  如果提权进程用 ShellExecute 打开 URL，而 URL 协议的处理程序由 HKCU 注册表键决定，
+  那么低权限用户（无需 UAC）就能篡改 HKCU 下的浏览器关联键值，
+  将处理程序指向恶意脚本，在提权上下文中被执行，从而绕过 UAC 实现本地提权。
+  (原文: "It is possible for an attacker that has limited admin privileges (not full admin with UAC)
+  to hijack the execution of you code by tampering specific registry keys linked to browsers
+  and elevate his privileges")
+
+action_result: >
+  成功：
+  1. 攻击者以受限 admin（无 UAC 全权限）身份修改 HKCU 下多个浏览器协议注册表键
+     (ChromeHTML, ChromeURL, FirefoxHTML, FirefoxURL, IE.HTTP, IE.HTTPS, HTTP, HTTPS)
+     的 shell\open\command 值，指向攻击者的恶意脚本 malstaller.bat
+  2. 运行 VeraCryptExpander.exe（以提权方式执行），点击 "Homepage" 按钮
+  3. ShellExecute 在提权上下文中查找 HKCU 的协议处理程序，执行了攻击者的恶意脚本
+  4. 恶意脚本以完全管理员权限运行，可向 VeraCrypt 安装目录写入文件、替换二进制
+  在 Win 7 和 Win 10 上均验证成功。
+  (原文: "The execution in now hijacked and UAC bypass is achieved.
+  A one liner used in the video will place fake VeraCrypt2.exe under your installation folder
+  and execute it with full admin priviledges.")
+
+why_here_first: >
+  报告者检查了 VeraCryptExpander.exe 的 manifest（requireAdministrator）
+  和 WinMain.cpp 中的 ShellExecute 调用，识别出提权进程与低权限注册表之间的信任边界不匹配。
+  (原文: "The issue is located here:
+  https://github.com/veracrypt/VeraCrypt/blob/.../VeraCryptExpander.manifest
+  https://github.com/veracrypt/VeraCrypt/blob/.../WinMain.cpp")
+
+chaining: >
+  HKCU 注册表键篡改（无需 UAC）→ 等待/诱导提权进程的 ShellExecute 调用 →
+  恶意脚本在提权上下文中执行 → 获得完全管理员权限 →
+  篡改安装目录二进制 / 创建持久化后门。
+  (原文: "A file less malware that has hijacked the reghive altering or creating specific keys
+  can hijack the execution of you binary and bypass UAC achieving full admin right.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  审计 Windows 桌面应用程序时，检查以提权（requireAdministrator / highestAvailable）
+  运行的进程是否使用 ShellExecute / ShellExecuteEx 打开 URL 或文件。
+  如果是，检查其解析协议处理程序时是否依赖 HKCU 注册表键（而非 HKLM），
+  因为 HKCU 可被低权限用户修改，从而劫持提权执行上下文。
+
+reasoning_chain:
+  - "问：目标应用程序的 manifest 中声明了什么执行级别（asInvoker / highestAvailable / requireAdministrator）？"
+  - "如果是 highestAvailable 或 requireAdministrator → 问：代码中是否有 ShellExecute / ShellExecuteEx 调用来打开 URL 或外部文件？"
+  - "如果有 → 问：ShellExecute 打开的 URL 协议处理程序（http/https）在注册表中的解析顺序是什么？HKCU 优先于 HKLM 吗？"
+  - "如果 HKCU 优先 → 问：低权限用户能否修改 HKCU\\Software\\Classes\\ 下的协议处理程序键值？"
+  - "如果能 → 构造 PoC：篡改 HKCU 注册表将处理程序指向恶意脚本，触发提权进程的 ShellExecute，验证脚本是否在提权上下文中执行"
+  - "扩展：同一应用中是否还有其他 ShellExecute 调用（帮助链接、更新检查、错误报告）可被类似利用？"
+  - "修复验证：是否改用 explorer.exe（非提权）来打开 URL，或使用 HKLM 中固定的浏览器路径？"
+
+vuln_root: >
+  开发者假设 ShellExecute 打开 URL 是安全操作，忽略了它在提权进程中会继承提权上下文，
+  而 URL 协议处理程序由低权限可控的 HKCU 注册表键决定——提权进程信任了低权限来源的配置。
+
+transferable_to:
+  - "任何 Windows 桌面应用中以提权方式运行并包含 '打开网页' / '访问主页' 功能的场景"
+  - "安装程序（installer）在 UAC 提权后通过 ShellExecute 打开 README / 许可证 / 更新页面"
+  - "系统管理工具（以管理员运行）中的 '帮助' / '检查更新' 链接"
+  - "提权服务或后台进程中调用 ShellExecute 处理用户可控的文件类型关联"
+  - "类似模式：提权进程信任低权限来源的 COM 对象 / 文件类型关联 / 环境变量"
+
+cases:
+  - url: "https://hackerone.com/reports/530292"
+    author: "penrose"
+    platform: "VeraCrypt (VeraCryptExpander.exe)"
+    severity: "Medium"
+    bounty: "$1,250 (Internet Bug Bounty)"
+    cve: "CVE-2019-19501"
+    note: >
+      VeraCryptExpander.exe 的 manifest 声明 requireAdministrator，
+      WinMain.cpp 中使用 ShellExecute(0, 0, L"http://...", 0, 0, SW_SHOW) 打开主页。
+      攻击者篡改 HKCU\Software\Classes\ 下多个浏览器协议的 shell\open\command 键值，
+      将处理程序指向恶意 bat 脚本。点击 "Homepage" 按钮后，
+      恶意脚本在提权上下文中执行，实现 UAC 绕过。
+      修复建议：改用 system("explorer http://...") 以非提权方式打开 URL。
+      Win 7 和 Win 10 均受影响，Win 10 需要受害者切换默认浏览器至被篡改的浏览器。

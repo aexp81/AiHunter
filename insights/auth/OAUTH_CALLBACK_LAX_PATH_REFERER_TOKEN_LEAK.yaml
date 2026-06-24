@@ -1,0 +1,92 @@
+name: "OAuth callback_url 仅验证 host 不验证路径——重定向到含外链的页面通过 Referer 泄露 token"
+id: "OAUTH_CALLBACK_LAX_PATH_REFERER_TOKEN_LEAK"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["chain"]
+tags: ["oauth", "callback-url", "referer-leak", "token-theft", "digits", "fabric", "redirect-validation", "twitter"]
+source: "https://hackerone.com/reports/166942"
+
+# ——— L3 核心 ———
+
+observation: >
+  Digits OAuth 认证流程中，callback_url 参数仅校验 host（如 fabric.io），
+  接受该 host 下任意子域名或任意路径。
+  (原文: "the callback_url is not solid i.e. any sub domain or any path is
+  accepted as callback_url with host as fabric.io.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：若 callback_url 可指向 host 下任意路径，
+  则可重定向到包含外部链接的页面（如 Fabric kits 中展示的第三方网站 URL），
+  当用户点击外链时 authorization token 会通过 HTTP Referer 头泄露给第三方。
+
+action_result: >
+  路径 1（通过 Kits 页面第三方链接泄露）：
+  将 callback_url 设为 https://fabric.io/kits/ios/stripe，
+  授权后重定向到 Stripe kit 页面，点击 Stripe 官网链接，
+  authorization token 通过 Referer 泄露到 stripe.com。
+  (原文: "While on stripe kits page click on the stripe website URL (https://stripe.com)
+  — The authorization token will be leaked to stripe.com")
+
+  路径 2（通过组织内 issue 注释中的攻击者链接泄露）：
+  将受害者加入攻击者组织 → 在 Fabric issue 中添加含攻击者域名的注释链接 →
+  将 callback_url 设为该 issue 的 URL →
+  授权后重定向到 issue 页面，受害者点击注释中的链接 →
+  token 通过 Referer 泄露到攻击者控制的域名。
+  (原文: "Change the call back URL to issue url... click the link in the notes
+  and the OAuth token will be leaked to the attacker controlled domain.")
+
+  路径 3（研究者后续发现的嵌套 OAuth 回调链）：
+  构造嵌套 URL 使 Digits callback 重定向到另一个 Digits OAuth 授权，
+  第二次授权的 callback 直接指向攻击者域名，无需点击。
+  (原文: "A better attack vector was also identified by chaining OAuth callbacks")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  callback_url 宽松验证 →
+  重定向到 host 域下含外部链接/攻击者可控内容的页面 →
+  Referer 头泄露 authorization token →
+  攻击者获取受害者 OAuth 凭据。
+  进阶：嵌套 OAuth 回调链消除用户点击交互需求。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  审计 OAuth/SSO 流程中的 callback_url / redirect_uri 参数：
+  1) 检查是否仅校验 host/domain 而不校验完整路径或精确匹配已注册 URL；
+  2) 若允许同域任意路径，寻找该域下含外部链接或用户可控内容的页面；
+  3) 构造 callback_url 指向该页面，观察 authorization token 是否通过
+     Referer 泄露到外部站点。
+  与 redirect_uri path traversal 的区别：本打法不需要路径穿越，
+  直接利用"同域任意路径合法"这一过宽策略。
+
+reasoning_chain:
+  - "问：目标 OAuth 流程的 callback_url/redirect_uri 验证策略是什么？（精确匹配 / 子目录 / 仅 host）"
+  - "问：是否接受已注册域名下的任意路径或任意子域名？"
+  - "如果仅验证 host → 问：该域下是否有页面包含外部链接？（如第三方集成页、文档页、用户内容页）"
+  - "问：该域下是否有页面允许攻击者注入可点击链接？（如评论、issue 注释、配置面板）"
+  - "如果存在 → 将 callback_url 指向该页面，测试授权后 Referer 头是否携带 token。"
+  - "问：是否可通过嵌套 OAuth 回调链将 token 无交互地传递到攻击者域？"
+
+vuln_root: >
+  开发者假设只要 callback_url 的 host 与已注册应用匹配就足够安全，
+  但忽略了同域其他路径可能包含外部链接或用户可控内容，
+  导致 authorization token 通过 Referer 头泄露到第三方。
+
+transferable_to:
+  - "任何仅按 host 验证 callback_url 的 OAuth 实现（如自建 SSO 平台）"
+  - "SaaS 产品的 OAuth 集成页面（fabric.io 类型的开发者平台）"
+  - "含用户可控内容的企业门户（wiki、issue tracker、论坛）作为 OAuth callback 宿主域"
+
+cases:
+  - url: "https://hackerone.com/reports/166942"
+    author: "akhil-reni"
+    platform: "Twitter Digits / Fabric.io"
+    severity: "Information Disclosure"
+    bounty: "有赏金（金额未公开）"
+    note: >
+      Digits OAuth callback_url 仅校验 host 为 fabric.io，
+      接受任意路径。三种利用路径：
+      1) 重定向到 kits 页面 → 点击第三方链接 → Referer 泄露 token；
+      2) 重定向到含攻击者注释链接的 issue → 点击 → Referer 泄露；
+      3) 嵌套 OAuth 回调链直接将 token 传递到攻击者域（无交互）。

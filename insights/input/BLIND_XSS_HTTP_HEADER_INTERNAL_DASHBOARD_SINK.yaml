@@ -1,0 +1,77 @@
+name: "HTTP 请求头注入 Blind XSS——瞄准内部错误追踪/日志看板的渲染接收器"
+id: "BLIND_XSS_HTTP_HEADER_INTERNAL_DASHBOARD_SINK"
+applicable: "blackbox"
+phase: "input"
+also_phases: ["recon"]
+tags: ["blind-xss", "user-agent", "referer", "sentry", "error-tracking", "logging", "admin-panel", "http-header", "stored-xss"]
+source: "https://hackerone.com/reports/275518"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。研究者向 demand.mopub.com/accounts/login/ 发送请求时，
+  在 User-Agent 头中注入了 Blind XSS payload，
+  之后在 Sentry 错误追踪看板中触发了脚本执行。
+  (原文: "I've identified a Blind XSS vulnerability that fires in the
+  Mobpub Marketplace Admin Production | Sentry dashboard and can be triggered
+  by sending a HTTPS request to an endpoint from the domain demand.mopub.com")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  向 https://demand.mopub.com/accounts/login/ 发送包含 Blind XSS payload 的
+  User-Agent 头请求后，一段时间后收到两次回调，确认脚本在
+  http://sentry-test.mopub.com/exchange-marketplace/marketplace-admin-production/
+  上执行。提取了 DOM 内容、cookies、IP 地址等信息。
+  User-Agent 值被反射到 <option> 标签内且未正确编码，可逃逸上下文注入 <script> 标签。
+  (原文: "Some time later after this initial request I've received two hits
+  and the script from thx.bz was downloaded and executed."
+  "the value of the User-Agent is reflected inside a <option> tag without
+  proper encoding and it was possible to escape the context and inject
+  an additional SCRIPT tag.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  Blind XSS 在内部管理看板触发 → 获取管理员 session cookie →
+  可接管内部 Sentry 看板的管理员权限。
+  (原文: "An attacker can gain access and execute arbitrary JavaScript code
+  in the context of the administrative dashboard")
+
+approach: >
+  对目标域名的公开端点批量注入 Blind XSS payload 到 HTTP 请求头
+  （User-Agent / Referer / X-Forwarded-For），等待 payload 在
+  内部错误追踪系统（Sentry / ELK / Datadog / Splunk）或管理后台的
+  日志展示页面中渲染触发。核心假设：后端系统会将请求头原样存入日志/错误事件，
+  而内部看板在展示时未做 HTML 编码。
+
+reasoning_chain:
+  - "问：目标是否使用了错误追踪/日志聚合服务（Sentry、ELK、Datadog、Splunk、Grafana Loki）？子域名枚举中是否有 sentry.* / kibana.* / logs.* 等域名？"
+  - "问：目标的公开端点是否接受并记录 HTTP 请求头（User-Agent、Referer、X-Forwarded-For、Accept-Language）？"
+  - "问：当这些请求头包含特殊字符（< > ' \" /）时，后端是否原样存储而不做净化？"
+  - "问：内部看板在展示请求头数据时，是否对 HTML 特殊字符做了转义？（Blind XSS 特性：攻击者无法直接验证，需通过 OOB 回调确认）"
+  - "问：Blind XSS 触发后的执行上下文中有什么高价值资产？（管理员 cookies、内部 API token、源码引用、内部 URL 等）"
+  - "如果触发 → 检查是否可提取看板的认证凭证以进一步访问内部系统"
+
+vuln_root: "内部错误追踪/日志系统在渲染 HTTP 请求元数据时未做 HTML 编码，信任了来自外部请求的非可信输入。"
+
+transferable_to:
+  - "使用 Sentry / Rollbar / Bugsnag 等 SaaS 错误追踪的任何组织（自托管实例尤其高危）"
+  - "使用 ELK / Kibana 展示请求日志的运维看板"
+  - "自研管理后台中展示访客 User-Agent / IP / Referer 的页面"
+  - "WAF / CDN 管理界面中展示被拦截请求详情的页面"
+  - "客服/工单系统中展示用户浏览器信息的页面"
+
+cases:
+  - url: "https://hackerone.com/reports/275518"
+    title: "Blind XSS in Mobpub Marketplace Admin Production | Sentry via demand.mopub.com (User-Agent)"
+    platform: "X / Twitter (MoPub)"
+    severity: "High"
+    bounty: "有赏金（金额未公开）"
+    note: >
+      触发点：demand.mopub.com/accounts/login/ 的 User-Agent 头。
+      Sink：Sentry 自托管实例 sentry-test.mopub.com 的 Marketplace Admin 看板。
+      User-Agent 值被渲染到 <option> 标签内且未编码，可注入 <script>。
+      提取了管理员 cookies、内部 IP、DOM 内容。
+      (原文: "the value of the User-Agent is reflected inside a <option> tag
+      without proper encoding")

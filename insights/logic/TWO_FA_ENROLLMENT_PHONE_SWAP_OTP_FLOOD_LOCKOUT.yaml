@@ -1,0 +1,73 @@
+name: "2FA 注册流替换受害者号码——OTP 洪泛锁定目标账户登录"
+id: "TWO_FA_ENROLLMENT_PHONE_SWAP_OTP_FLOOD_LOCKOUT"
+applicable: "blackbox"
+phase: "logic"
+also_phases: ["auth"]
+tags: ["2fa", "otp-flood", "account-lockout", "dos", "phone-substitution", "enrollment-flow", "zero-click", "shopify"]
+source: "https://hackerone.com/reports/1406495"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。报告者发现 Shopify 的 2FA 手机号注册流程中，
+  向服务端提交手机号时可在请求中替换为任意手机号码。
+  (原文: "Hacker Enter his Mobile Number → Capture the Request in Burpsuite →
+  Hacker Change the Mobile Number to [victim's number] → Forward the Request")
+
+hypothesis: >
+  未叙述（仅结果）。报告者推断可利用 OTP 重发机制耗尽受害者号码的
+  服务端发送配额，导致受害者无法收到有效 OTP。
+
+action_result: >
+  成功：攻击者在自己账户的 2FA 设置流程中将手机号替换为受害者号码，
+  然后反复点击"RESEND CODE"直到服务端限制该号码的 OTP 发送。
+  受害者随后登录时，服务端跳转到 2FA 页面，但因 OTP 发送被限制，
+  受害者无法收到验证码，也无法通过"Resend"获取，账户被锁定 24 小时。
+  (原文: "Hacker Tap Multiple times in 'RESEND CODE' untill Server Reflect Stop…
+  Victim Click Resend But Server Block the Attempt. As a Result Victim not Allowed
+  to Login to his Account")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  2FA 注册流手机号替换 → OTP 洪泛耗尽限额 → 受害者登录被锁 24h（Zero-Click DoS）。
+  攻击者可批量对多个店铺 Owner 执行，造成大规模业务中断。
+  (原文: "Attacker Perform a BruteForce Attack on 2FA page (infinite Time) →
+  Server Not able to send correct OTP to Real Victim")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在 2FA/MFA 注册流程（而非登录流程）中，拦截手机号提交请求并替换为目标号码，
+  然后反复触发 OTP 重发以耗尽服务端对该号码的发送配额/速率限制，
+  导致目标用户在自身登录时无法接收有效 OTP，实现跨账户 DoS 锁定。
+
+reasoning_chain:
+  - "问：目标平台的 2FA 注册/修改流程中，手机号是否在客户端提交并可被拦截修改？"
+  - "问：修改为他人号码后，OTP 是否会发送到该号码（服务端是否校验号码归属）？"
+  - "问：OTP 重发端点是否有速率限制？限制是绑定在号码维度还是会话维度？"
+  - "如果绑定号码维度 → 问：耗尽配额后，该号码在其他账户（受害者）的登录 2FA 中是否也被限制？"
+  - "如果是 → 确认跨账户 OTP 配额共享导致的 DoS"
+  - "问：锁定时长是多少？是否可以自动化脚本批量锁定多个目标账户？"
+
+vuln_root: >
+  OTP 发送的速率限制绑定在手机号维度而非用户/会话维度，
+  且 2FA 注册流程未验证提交的手机号是否属于当前账户，
+  导致攻击者可跨账户消耗目标号码的 OTP 配额。
+
+transferable_to:
+  - "任何支持手机号 2FA 且 OTP 速率限制按号码维度的 SaaS 平台"
+  - "手机号注册/绑定流程中未验证号码归属的身份认证系统"
+  - "短信验证码相关功能（密码重置、手机号变更）中 OTP 发送与速率限制的分离设计"
+
+cases:
+  - url: "https://hackerone.com/reports/1406495"
+    title: "Ability to Disable the Login Attempt of any Shopify Owner for 24 hrs (Zero_Click)"
+    author: "saurabhsankhwar3"
+    platform: "Shopify (accounts.shopify.com)"
+    severity: "Low (CVSS 3.7)"
+    bounty: "$900"
+    note: >
+      Shopify 2FA 手机号注册流程：攻击者在自己账户设置 2FA 时替换手机号为受害者号码，
+      反复点击 RESEND CODE 耗尽服务端 OTP 配额，受害者登录时被锁定 24 小时。
+      2021-11 报告，2022-02 公开。纯结果文，未叙述挖掘思路。

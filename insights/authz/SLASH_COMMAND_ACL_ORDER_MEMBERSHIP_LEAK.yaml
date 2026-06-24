@@ -1,0 +1,76 @@
+name: "Slash Command 的 ACL 检查在成员身份查询之后——通过命令报错枚举私有频道成员"
+id: "SLASH_COMMAND_ACL_ORDER_MEMBERSHIP_LEAK"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["access-control", "check-order", "information-disclosure", "slash-command", "private-channel", "membership-enumeration", "rocket.chat", "CVE-2023-28357"]
+source: "https://hackerone.com/reports/1445810"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。Rocket.Chat 的 /mute Slash Command 处理流程中，
+  ACL 权限检查发生在成员身份查询之后——先检查"目标用户是否是该频道的成员"，
+  再检查"调用者是否有权限在该频道执行 mute 操作"。
+  (原文团队摘要: "the ACL checks in the Slash Command /mute occur after checking
+  whether a user is a member of a given channel, leaking private channel members
+  to unauthorized users.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：攻击者可利用差异化的错误响应来枚举用户是否是
+  某个无权访问的私有频道的成员——如果目标用户不是成员，返回"用户不在频道中"的错误；
+  如果目标用户是成员，则返回"无权限执行 mute"的错误。两种错误消息的差异泄露了成员信息。
+
+action_result: >
+  未叙述（仅结果）。CVE-2023-28357 已分配，CVSS 4.3 (Medium)。
+  确认已认证用户可通过 /mute 命令的差异错误响应枚举任意私有频道的成员。
+  (原文团队摘要: "This allows authenticated users to enumerate whether a username
+  is a member of a channel that they do not have access to.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  私有频道成员枚举（信息泄露）→ 社工攻击 / 组织架构探测。
+  虽然单独看是中危信息泄露，但在内部通信平台中可用于
+  确认哪些人参与了敏感项目/频道。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在具有频道/房间/群组概念的通信平台中，寻找需要指定目标用户+目标频道的管理命令
+  （如 /mute、/kick、/invite、/ban），测试对无权访问的私有频道执行这些命令时，
+  服务端是否先进行成员身份查询再进行权限验证——
+  关键在于发现"检查顺序不当导致差异错误响应泄露私有频道成员信息"的逻辑缺陷。
+
+reasoning_chain:
+  - "问：平台是否有 Slash Command 或管理 API 允许指定目标用户和目标频道？（如 /mute @user #channel）"
+  - "问：对于无权访问的私有频道，执行该命令时返回什么错误？"
+  - "问：用一个确定不在该私有频道中的用户测试，错误消息是否不同？（如'用户不在频道中' vs '无权限'）"
+  - "如果错误消息不同 → 差异化响应可用于枚举成员身份。"
+  - "问：还有哪些命令（/kick、/invite、/ban、/assign-role）也存在相同的检查顺序问题？"
+  - "问：是否可以通过 API 直接调用而非 UI 命令来触发相同的检查？"
+  - "延伸：命令的错误响应是否还泄露了其他信息？（如频道名称、用户状态等）"
+
+vuln_root: >
+  Slash Command 处理逻辑先查询目标用户是否为频道成员（业务逻辑），
+  再检查调用者是否有权限执行该操作（ACL 检查），
+  导致即使调用者最终被拒绝，服务端已通过差异化错误响应泄露了成员信息。
+  正确顺序应为先检查调用者权限再查询业务数据。
+
+transferable_to:
+  - "Slack/Teams/Discord 等团队通信平台的管理命令"
+  - "项目管理工具的成员操作（如 assign、mention）对私有项目/频道的探测"
+  - "论坛/社区平台的版主命令对私有板块成员的枚举"
+  - "任何多步骤 API 处理中检查顺序不当导致信息泄露的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/1445810"
+    author: "gronke"
+    platform: "Rocket.Chat"
+    severity: "Medium (CVSS 4.3)"
+    cve: "CVE-2023-28357"
+    bounty: "无赏金"
+    note: >
+      Rocket.Chat /mute 命令 ACL 检查顺序不当，
+      已认证用户可枚举私有频道成员。
+      no-content 公开，仅团队摘要可见。由内部团队成员提交。

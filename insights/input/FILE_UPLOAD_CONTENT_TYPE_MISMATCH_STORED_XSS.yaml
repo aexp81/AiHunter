@@ -1,0 +1,88 @@
+name: "文件上传扩展名与 Content-Type 不一致——服务端按 Content-Type 提供文件导致 Stored XSS"
+id: "FILE_UPLOAD_CONTENT_TYPE_MISMATCH_STORED_XSS"
+applicable: "blackbox"
+phase: "input"
+also_phases: ["chain"]
+tags: ["file-upload", "xss", "stored-xss", "content-type", "mime-type", "privilege-escalation", "workspace-takeover"]
+source: "https://hackerone.com/reports/3115705"
+
+# ——— L3 核心 ———
+
+observation: >
+  文件上传 API 允许客户端指定 Content-Type（'text/html'）且文件扩展名为 .png，
+  服务端在提供文件下载/预览时按客户端声明的 Content-Type 返回而非按扩展名或白名单校验。
+  (原文: "contentType': 'text/html', 'fileName': 'xss_poc.png'")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  上传 HTML 文件伪装为 .png，服务端以 text/html 返回 → 浏览器渲染 HTML
+  → JS 读取受害者 session → 调用 /api/w/{workspace}/members/{attacker}/
+  提升为 admin → 完整 workspace takeover。
+  无扑空叙述。
+  (原文: "When another user, including an admin, visits the uploaded file,
+  JavaScript is executed in their authenticated browser session")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  Stored XSS（文件上传）→ 通过受害者 session 调用成员管理 API 提升攻击者权限
+  → 降级合法 admin → 完整 workspace takeover。
+  (原文: "Promoting their own account to Admin, Downgrading or removing
+  legitimate admins, Accessing and deleting secrets, Full control over
+  the workspace")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在文件上传功能中，故意让文件扩展名与 Content-Type 不一致（如 .png 扩展名
+  配 text/html Content-Type），测试服务端是否按客户端声明的 Content-Type 而非
+  文件内容/扩展名白名单返回文件，若按原样返回则浏览器会渲染 HTML 执行 JS。
+
+reasoning_chain:
+  - "问：文件上传 API 是否允许客户端指定 Content-Type？（检查上传请求参数）"
+  - "黑盒：上传请求中将 contentType 字段设为 'text/html'，fileName 设为 .png/.jpg 等安全扩展名。"
+  - "问：上传后访问文件 URL，响应的 Content-Type header 是什么？是客户端指定的还是服务端强制覆写的？"
+  - "如果响应 Content-Type 为 text/html → 浏览器会渲染 HTML 内容，确认 XSS 可利用。"
+  - "问：响应中是否有 Content-Disposition: attachment（强制下载而非内联渲染）？"
+  - "如果无 Content-Disposition: attachment 且 Content-Type 为 text/html → Stored XSS 成立。"
+  - "问：文件是否从主域名提供服务？（若从独立域名如 CDN 提供，则 XSS 影响受限）"
+  - "如果从主域名提供 → 可通过 JS 调用同源 API，尝试读取用户信息、修改权限等提升影响。"
+  - "问：是否存在 CSP 限制 inline script 执行？"
+
+vuln_root: >
+  服务端信任客户端提供的 Content-Type 而未基于文件内容检测或扩展名白名单
+  覆写，且未设置 Content-Disposition: attachment 强制下载——
+  攻击者可上传恶意 HTML 并在受害者浏览器上下文中执行 JS。
+
+transferable_to:
+  - "任何允许用户上传文件并直接通过浏览器访问的 Web 应用"
+  - "SaaS 协作平台（Slack、Teams、Notion 等）的文件共享功能"
+  - "CMS / Wiki 系统的附件上传"
+  - "云存储服务的文件预览功能"
+  - "内部工具 / 管理后台的文件上传"
+  - "API-first 应用中上传端点与下载端点分离但共享存储的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/3115705"
+    title: "Stored XSS in File Upload Leads to Privilege Escalation and Full Workspace Takeover (Dust)"
+    author: "sjalu"
+    platform: "Dust (dust.tt)"
+    bounty: "N/A（无赏金项目）"
+    severity: "High (CVSS 8.7)"
+    note: >
+      上传 .png 扩展名文件但 Content-Type 设为 text/html，服务端按原样返回
+      → 浏览器渲染 HTML → JS 调用 admin API 提权 → 完整 workspace takeover。
+      L1 结果文，无导航叙事。
+  - url: "https://hackerone.com/reports/149589"
+    title: "CSRF to add admin [wordpress] — Flash file upload with trusted extension"
+    author: "abdullah"
+    platform: "WordPress"
+    bounty: "有奖金（金额未公开）"
+    severity: "未公开"
+    note: >
+      上传 Flash（SWF）内容文件但使用可信文件扩展名（如 .jpg 等），
+      Flash 插件会基于文件实际内容而非扩展名/Content-Type 加载执行。
+      攻击者通过此方式在 WordPress 中实现 CSRF → 添加管理员账户。
+      WordPress 修复方案：对上传文件实施更严格的文件类型检查以阻止 Flash 文件上传。
+      no-content 公开，仅团队摘要，无导航叙事。

@@ -1,0 +1,81 @@
+name: "WordPress 活动日志插件 redirect hook 未净化参数存储导致管理面板 Stored XSS"
+id: "WP_PLUGIN_HOOK_REDIRECT_LOG_UNSANITIZED_STORED_XSS"
+applicable: "both"
+phase: "chain"
+also_phases: ["input"]
+tags: ["wordpress", "plugin", "stream", "redirect-hook", "activity-log", "stored-xss", "referer-injection", "unauthenticated", "admin-panel", "rce-chain"]
+source: "https://hackerone.com/reports/127948"
+
+# ——— L3 核心 ———
+
+observation: >
+  WordPress 的 Stream 活动日志插件会 hook wp_redirect() 函数，当重定向 URL 包含
+  "plugin-editor.php" 时，将 URL 中的 file 参数记录到日志中。
+  (原文: "The Stream plugin hooks many WordPress events to log user activity.
+  In the file connectors/installer.php there is a wp_redirect() hook - the plugin
+  checks every URL redirection to see if it involved the plugin editor.")
+
+hypothesis: >
+  如果 file 参数可被外部攻击者控制（比如通过 Referer 头触发 wp-login.php 的重定向），
+  且日志展示时未做 HTML 编码，那么未认证攻击者可以向管理面板注入存储型 XSS。
+  (原文: "In some cases the logged events aren't sanitized properly and can
+  contain HTML tags and JavaScript. An unauthenticated user can produce such
+  a log message to inject JavaScript in the admin panel.")
+
+action_result: >
+  通过 curl 构造包含恶意 Referer 头（含 plugin-editor.php 和 script 标签的 file 参数）
+  的 POST 请求到 wp-login.php?action=postpass，WordPress 将 302 重定向到 Referer 值，
+  触发 Stream 插件的 wp_redirect hook 记录恶意 file 参数。管理员查看 Stream 日志时
+  XSS 触发。
+  (原文: "curl -v -H 'Referer: /hello?plugin-editor.php&file=aaa<script>alert(
+  'stored xss');</script>' --data 'post-password=foo'
+  'https://newsroom.uber.com/wp-login.php?action=postpass'")
+
+why_here_first: >
+  审计 WordPress 活动日志插件的 hook 注册表，关注哪些 hook 会接收并存储可被外部影响
+  的数据（如重定向 URL、请求头），以及这些数据在管理面板展示时是否经过编码。
+  (原文: "The Stream plugin hooks many WordPress events to log user activity...
+  The event is saved in Stream's database table and shown on the main tab of the
+  plugin without sufficient HTML sanitizing.")
+
+chaining: >
+  未认证 Stored XSS → 管理员查看日志时执行 → 拥有管理员权限的 JS 上下文 →
+  通过 WordPress 插件/主题编辑器写入 PHP 代码 → 服务端 RCE。
+  (原文: "The JavaScript stored by an unauthenticated attacker would get executed
+  with administrator privileges, thus having full control over the site contents.
+  Under a normal WordPress setup it could also modify existing PHP files via the
+  plugin or theme editors, leading to server-side compromise.")
+
+approach: >
+  审计 WordPress 活动日志/审计插件的 hook 链，找到能被未认证请求触发的 hook
+  （如 wp_redirect / wp_login_failed），检查 hook 回调是否将请求可控字段
+  （Referer / URL 参数）未经净化地存入日志数据库，并在管理面板渲染时缺少 HTML 编码。
+
+reasoning_chain:
+  - "问：目标 WordPress 站点安装了哪些活动日志/审计插件（Stream / WP Activity Log / Simple History）？"
+  - "问：这些插件 hook 了哪些 WordPress 核心事件（wp_redirect / wp_login_failed / wp_mail 等）？"
+  - "问：哪些 hook 的回调函数会接收可被外部请求影响的数据（URL 参数、HTTP 头、请求体）？"
+  - "问：这些外部可控数据在存入数据库前是否经过净化？在管理面板展示时是否经过 HTML 编码？"
+  - "如果发现未净化存储 + 未编码渲染 → 寻找未认证的触发路径（wp-login.php 的 Referer 重定向、XML-RPC 调用等）"
+  - "如果 XSS 以管理员身份触发 → 检查是否可通过插件/主题编辑器写入 PHP 文件实现 RCE"
+
+vuln_root: "活动日志插件将 hook 捕获的外部可控数据（重定向 URL 的 file 参数）原样存储，在管理面板展示时缺少输出编码，且触发路径对未认证用户开放。"
+
+transferable_to:
+  - "任何使用活动日志 WordPress 插件（Stream / WP Activity Log / Simple History）的站点"
+  - "WordPress Multisite 中的日志聚合看板"
+  - "其他 CMS 的审计日志/活动流功能（Drupal Watchdog / Joomla Action Logs）"
+  - "自研后台中展示用户操作日志且从请求上下文提取数据的系统"
+  - "SIEM / 日志系统 Web 界面中直接渲染用户输入字段的场景"
+
+cases:
+  - url: "https://hackerone.com/reports/127948"
+    title: "Stored XSS on newsroom.uber.com admin panel / Stream WordPress plugin"
+    platform: "Uber (newsroom.uber.com)"
+    severity: "High (unauthenticated → admin XSS → RCE)"
+    bounty: "$5,000"
+    note: >
+      Stream 1.4.9 插件的 connectors/installer.php 中 wp_redirect hook 回调
+      将 file 参数未净化存入日志。通过 wp-login.php?action=postpass 的 Referer
+      重定向触发 hook，在管理面板 Stream 标签页渲染时执行 XSS。
+      可链式提升到 RCE（通过插件编辑器写入 PHP）。

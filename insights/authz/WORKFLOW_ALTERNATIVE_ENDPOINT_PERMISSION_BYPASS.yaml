@@ -1,0 +1,78 @@
+name: "同一工作流存在多个 API 端点，受限端点有权限检查但替代端点缺失——绕过审批直接操作"
+id: "WORKFLOW_ALTERNATIVE_ENDPOINT_PERMISSION_BYPASS"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["api", "endpoint-swap", "permission-bypass", "checkout", "purchase-order", "shopify", "wholesale", "workflow"]
+source: "https://hackerone.com/reports/423546"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。Shopify Wholesale 商店禁用了客户直接结账功能，
+  UI 强制用户提交采购单（purchase order），需管理员审批后才能付款。
+  (原文: "By default, Shopify Wholesale customers are prevented from immediately
+  checking out... a store admin must approve each order before the customer can pay.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：提交采购单使用 PUT /purchase_orders/submit 端点，
+  但可能存在另一个端点（如 /purchase_orders/update_checkout）可以直接触发结账流程，
+  而该替代端点未执行相同的权限检查。
+
+action_result: >
+  成功：拦截 PUT /purchase_orders/submit 请求，将 URL 改为
+  /purchase_orders/update_checkout，成功绕过审批限制直接进入结账流程并下单。
+  同时绕过了商店设置的最大结账金额限制。
+  无扑空叙述（报告直接给出成功路径）。
+  (原文: "intercept the request to PUT /purchase_orders/submit to submit the
+  purchase order and change the url to /purchase_orders/update_checkout...
+  Observe that executing the request will allow the customer to proceed through
+  the checkout flow and place the order")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  N/A — 单步绕过：将 submit 端点替换为 update_checkout 端点，
+  同时绕过审批要求和最大结账金额限制。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对 UI 中被限制的操作（如"需审批才能结账"），分析该工作流涉及的所有 API 端点，
+  寻找同一资源的替代操作端点（如 submit vs. update_checkout、
+  create vs. import、draft vs. publish），测试替代端点是否执行了相同的权限检查。
+  关键在于开发者通常只在"主流程"端点上实施权限控制，而忽略了
+  旁路/管理/批量/导入等替代端点。
+
+reasoning_chain:
+  - "问：目标功能是否有 UI 级别的操作限制？（灰色按钮、'需审批'提示、'权限不足'拦截等）"
+  - "问：该操作涉及哪些 API 端点？（拦截正常流程的请求查看端点 URL）"
+  - "问：同一资源是否存在替代操作端点？（搜索 JS 源码、API 文档、URL 模式中的 update_*、import_*、bulk_*、admin_* 等变体）"
+  - "问：将请求 URL 替换为替代端点后，服务器是否接受并执行了操作？"
+  - "如果执行成功 → 替代端点缺少权限检查"
+  - "问：是否还绕过了其他限制？（金额上限、频率限制、审批流程等）"
+  - "扩展：其他受限工作流是否存在同样的替代端点模式？"
+
+vuln_root: >
+  同一业务操作存在多个 API 端点（主流程 + 替代路径），
+  权限检查仅实施在主流程端点上，替代端点（可能为管理员、批量操作、
+  或历史遗留）缺失相同的权限验证。
+
+transferable_to:
+  - "电商平台的结账/下单流程（不同结账方式有不同端点）"
+  - "内容管理系统的发布流程（draft→publish vs. import→auto-publish）"
+  - "SaaS 的订阅/升级流程（标准购买 vs. 优惠码兑换 vs. 管理员分配）"
+  - "任何有审批工作流且存在多个 API 入口的系统"
+
+cases:
+  - url: "https://hackerone.com/reports/423546"
+    title: "H1514 Wholesale customer without checkout permission can complete purchases"
+    platform: "Shopify (Wholesale)"
+    severity: "Medium (CVSS 5.3)"
+    bounty: "有赏金"
+    note: >
+      PUT /purchase_orders/submit → PUT /purchase_orders/update_checkout，
+      绕过 Wholesale 商店的客户结账权限限制和最大结账金额限制。
+      修复方案：在所有 checkout 相关端点检查客户权限。
+      (团队摘要: "This was fixed by checking the customer permission before allowing
+      the use of any checkout-related endpoints for purchase orders.")

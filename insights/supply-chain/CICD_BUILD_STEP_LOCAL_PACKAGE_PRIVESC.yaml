@@ -1,0 +1,98 @@
+name: "CI/CD 构建步骤允许安装用户指定的本地包——上传含 postinst 后门的 .deb 获取容器 root"
+id: "CICD_BUILD_STEP_LOCAL_PACKAGE_PRIVESC"
+applicable: "both"
+phase: "supply-chain"
+also_phases: ["authz", "chain"]
+tags: ["ci-cd", "container-escape", "privilege-escalation", "malicious-package", "deb", "suid", "postinst", "build-pipeline", "semmle", "lgtm", "codeql", "sandbox"]
+source: "https://hackerone.com/reports/692603"
+
+# ——— L3 核心 ———
+
+observation: >
+  Semmle/LGTM 的代码分析平台在 prepare 步骤允许用户通过构建配置文件指定要安装的系统包，
+  且源代码是在 prepare 步骤之前被导入到 /opt/src/ 目录的，意味着用户可以在源码中
+  附带 .deb 文件并在构建配置中引用本地路径。
+  (原文: "In the prepare step, semmle allows user to install new package."
+  "Because the source code is imported before the prepare step happens, so i will be
+  able to install this package by point directly to it like /opt/src/work.deb")
+
+hypothesis: >
+  若构建配置的 packages 字段接受本地路径（如 /opt/src/work.deb），且 apt install
+  会以 root 权限执行 .deb 包的 postinst 脚本，攻击者可通过上传含 SUID 后门的
+  恶意 .deb 包获取容器内 root 权限。
+  (原文: "By upload a malicious package along with source code and force server to build
+  this package, attacker will gain root access to the container")
+
+action_result: >
+  攻击成功：
+  1. 创建恶意 .deb 包，postinst 脚本将自编译的 SUID binary 复制到 /suidfs/passwd，
+     设置 root 所有、chmod 04755
+  2. 构建配置（extraction.java.prepare.packages）指定 /opt/src/work.deb
+  3. 构建系统执行 apt install -y --no-recommend /opt/src/work.deb，触发 postinst
+  4. SUID binary 通过 setreuid(0,0) + system(argv[1]) 提供 root shell
+  5. after_prepare 阶段通过 /usr/bin/setpasswd 'id' 确认已获得 root 权限
+  (原文: "The install command now will be like this apt install -y --no-recommend
+  /opt/src/work.deb. And it is legal.")
+
+why_here_first: >
+  未叙述（仅结果）。报告直接展示攻击流程，未叙述为何选择审计 prepare 步骤的
+  包安装功能或发现过程的思考链。
+
+chaining: >
+  1. 源代码导入先于 prepare 步骤（时序依赖）→ 本地 .deb 路径可达
+  2. packages 字段接受本地路径（输入验证缺失）→ apt install 执行用户提供的 .deb
+  3. postinst 以 root 执行（权限提升）→ 安装 SUID binary
+  4. after_prepare 步骤执行用户命令（正常功能）→ 通过 SUID binary 获得持久 root
+  5. Root 权限 → 可能 dump 容器内所有敏感数据、secrets、其他用户的代码
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对允许用户提供构建配置的 CI/CD 平台（代码分析、CI 构建、在线 IDE），
+  检查构建步骤中的包安装机制是否接受本地路径（指向用户上传的源码目录），
+  以及包安装脚本（postinst/preinst）是否以 root 权限运行，从而实现容器内提权。
+
+reasoning_chain:
+  - "问：目标 CI/CD 或代码分析平台是否允许用户提供自定义构建配置（如 .lgtm.yml、.github/workflows、Dockerfile）？"
+  - "问：构建配置中是否有'安装系统依赖包'的步骤（packages、apt-get install、yum install）？"
+  - "问：packages 字段是否只接受包名（从 registry 安装），还是也接受本地文件路径（如 /opt/src/xxx.deb）？"
+  - "问：用户源代码是否在包安装步骤之前被导入到构建容器中？（时序关系决定本地路径是否可达）"
+  - "如果接受本地路径 → 问：apt/dpkg 安装 .deb 时的 postinst 脚本以什么权限运行？（通常是 root）"
+  - "构造测试：创建最小 .deb 包，postinst 中执行 id > /tmp/whoami.txt 或 DNS callback"
+  - "问：构建容器是否有 /suidfs 或其他可写的 +exec 挂载点？（用于持久化 SUID binary）"
+  - "问：构建步骤中是否有 after_prepare / post_build 阶段允许用户执行任意命令？（用于触发 SUID binary）"
+  - "问：获得容器 root 后能否访问其他用户的数据、环境变量中的 secrets、或逃逸容器？"
+  - "扩展：检查 pip install、npm install、gem install 等语言包管理器是否也允许本地路径安装"
+
+vuln_root: >
+  CI/CD 构建平台假设 packages 字段仅用于从受信 registry 安装系统依赖，
+  未预期用户会指定本地路径安装自带的恶意 .deb 包；
+  同时 apt install 的 postinst 脚本默认以 root 权限执行，
+  导致用户可在低权限构建环境中通过包安装机制提权到 root。
+
+transferable_to:
+  - "LGTM/CodeQL 等代码分析平台的自定义构建配置"
+  - "GitHub Actions self-hosted runner（若允许自定义系统依赖安装）"
+  - "GitLab CI/CD 的 before_script 中使用 apt install 安装用户指定包的场景"
+  - "在线 IDE/编译平台（Repl.it、Gitpod、Codespaces）的包安装功能"
+  - "Docker 构建服务——Dockerfile 中的 COPY + RUN apt install 本地 .deb"
+  - "任何允许用户上传代码并在构建步骤中执行 apt/dpkg install 的 SaaS 平台"
+
+cases:
+  - url: "https://hackerone.com/reports/692603"
+    author: "testanull"
+    platform: "Semmle (LGTM, lgtm-com.pentesting.semmle.net)"
+    bounty: "$1,500"
+    note: >
+      Semmle/LGTM 代码分析平台，用户可在构建配置 extraction.java.prepare.packages
+      中指定 /opt/src/work.deb（本地路径），apt install 以 root 执行 postinst 脚本，
+      通过 SUID binary 获得容器 root 权限。High severity。
+  - url: "https://hackerone.com/reports/1979372"
+    author: "albertspedersen"
+    platform: "Cloudflare Pages (build image v2)"
+    bounty: "$350"
+    note: >
+      no-content 公开。Cloudflare Pages 构建容器中存在用户可读目录，内含 2 个构建过程中
+      以特权执行的可执行文件，攻击者可替换其内容获得容器 root 权限。
+      虽然泄露的 key 仅限于用户自身的 Pages 站点数据，但演示了 CI/CD 构建环境中
+      文件系统权限过松导致提权的通用模式。Low severity, $350。

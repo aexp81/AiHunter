@@ -1,0 +1,101 @@
+name: "预验证邮箱状态跨接口劫持账户"
+id: "EMAIL_PREVERIFY_CROSS_ENDPOINT_ACCOUNT_TAKEOVER"
+applicable: "blackbox"
+phase: "chain"
+also_phases: ["auth", "logic"]
+tags: ["account-takeover", "email-verification", "api-bypass", "account-merge", "shopify"]
+source: "https://hackerone.com/reports/867513"
+
+# ——— L3 核心 ———
+
+observation: >
+  POS Staff 管理接口允许直接修改 staff 的 email 字段，
+  且修改后不触发任何邮件验证流程。
+  (原文: "The pos-channel.shopifycloud.com/graphql-proxy/admin can be exploited
+  to update a staff member email without any email confirmation.")
+
+hypothesis: >
+  未叙述（仅结果）。报告者直接呈现了两个能力的组合：
+  (1) Partner Dashboard 可创建"未绑定 Shopify ID"的 store 并验证 email；
+  (2) POS Staff 接口能在无验证的情况下更新 email。
+  两者叠加后，已验证状态可以"挪"给任意 email，从而绕过账户合并时的邮件校验。
+
+action_result: >
+  成功：通过 Partner Dashboard 对攻击者控制的 email 完成验证 →
+  通过 POS Staff API 将 email 改为受害者 email（无需二次验证）→
+  触发 Shopify ID 合并流程时系统认为 email 已验证 → 直接接管受害者账户。
+  无扑空叙述（文章直接给出成功路径）。
+
+why_here_first: >
+  未叙述（仅结果）。推测触发点：
+  研究 POS 渠道的 GraphQL proxy 时发现 staff update mutation 对 email 字段
+  没有触发 confirmation flow，与"修改 email 应当重新验证"的常规预期不符，
+  引发关注。
+
+chaining: >
+  单独的"API 无邮件验证修改 email"本身危害有限（需有 POS staff 权限）。
+  单独的"Partner Dashboard 可对任意 email 完成预验证"也不足以劫持账户。
+  组合后：用 Dashboard 先把攻击者控制的 email 标记为已验证，
+  再用 API 把 email 偷换成受害者 email，
+  最终在账户合并阶段系统看到"已验证状态 = True"而不再要求重新验证，
+  实现完整账户劫持。
+  (原文: "you won't need to validate that you own the email since it is already verified")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  寻找同一平台内"邮件验证状态"的生命周期：
+  哪个入口负责打标（验证），哪个入口负责消费（合并/登录）；
+  两者的验证状态是否绑定到同一 email，还是可以在操作间解耦复用。
+
+reasoning_chain:
+  - "问：平台是否有账户合并 / SSO 绑定 / 邮箱变更流程？这类流程通常依赖邮件验证状态。"
+  - "问：修改 email 的 API（尤其内部/移动端/第三方渠道）是否会独立触发验证流，还是复用已有验证状态？"
+  - "黑盒：在 Burp 中捕获 email 更新请求，直接 replay 把 email 字段换成目标邮箱，观察响应是否 200 且不发验证邮件。"
+  - "问：平台是否有多种方式可对一个 email 完成验证（注册、Partner Dashboard、Invite 等）？"
+  - "问：用渠道 A 验证 email X，再通过未验证的 API 把 email 改为 Y，系统是否仍认为 Y 已验证？"
+  - "如果：API 更新 email 无需重验证 + 存在另一个渠道可预验证任意 email → 两者串联，尝试用预验证状态劫持目标账户的合并/绑定流程。"
+  - "问：目标账户是否存在'未绑定 IdP / 未完成账户合并'的状态？（此类边界账户最易被劫持）"
+
+vuln_root: >
+  开发者假设"email 已验证"状态与具体 email 值绑定且不可迁移；
+  实际上 POS Staff API 允许在保持"已验证"标志的前提下修改 email 值，
+  导致验证状态被解耦并转移到任意目标 email。
+
+transferable_to:
+  - "任何支持账户合并 / SSO 绑定的平台，尤其存在多个独立渠道管理 email 的场景"
+  - "移动端 App 配套的内部 API，通常跳过 Web 端的验证中间件"
+  - "SaaS 多租户平台的 Staff/Member 管理接口（与主账户系统验证逻辑不同步）"
+  - "Partner/Developer Dashboard 入口，因测试用途往往宽松于生产账户"
+
+cases:
+  - url: "https://hackerone.com/reports/867513"
+    title: "Takeover an account that doesn't have a Shopify ID and more"
+    platform: "Shopify"
+    severity: "Critical"
+    bounty: "$22,500"
+    note: >
+      受害者限制：目标账户必须尚未合并 Shopify ID，且未开启 2FA。
+      攻击者需有 Shopify Partner 账户（创建 dev store）和目标店铺的 POS staff 权限。
+  - url: "https://hackerone.com/reports/2885269"
+    title: "Shopify Partners Invitation Process Allows Privilege Escalation Without Email Verification"
+    platform: "Shopify"
+    severity: "Medium"
+    bounty: "$3,500"
+    note: >
+      Shopify Partners 邀请流程变更后不再要求邮件验证——攻击者用受害者 email
+      创建账户（无需验证）→ 等待/观察到该 email 被邀请为 Owner →
+      用攻击者控制的账户接受邀请 → 提权为 Owner。
+      纯结果文，无 L3 思考过程叙述。本质仍为"email 验证状态在流程间未一致校验"。
+  - url: "https://hackerone.com/reports/892904"
+    title: "Ability to link a Google account to another staff account/store owner that isn't linked yet"
+    author: "imgnotfound"
+    platform: "Shopify"
+    severity: "Critical"
+    note: >
+      同一 POS GraphQL proxy (pos-channel.shopifycloud.com/graphql-proxy/admin) 的
+      StaffMemberUpdate mutation，将未关联 Google 账户的 staff/store owner 的 email
+      修改为攻击者的 Google Apps email，然后通过 Google Apps SSO 登录直接关联账户。
+      与 #867513 使用完全相同的端点和 mutation，approach 一致：
+      POS API 修改 email 无验证 + SSO 自动关联未绑定账户。
+      额外提到：结合 XSS 可将此攻击扩展到 store owner 级别。

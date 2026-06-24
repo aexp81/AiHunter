@@ -1,0 +1,93 @@
+name: "项目分享端点的目标组 ID 未校验访问权限——枚举私有组和仓库元数据"
+id: "GROUP_SHARE_IDOR_PRIVATE_NAMESPACE_LEAK"
+applicable: "both"
+phase: "authz"
+also_phases: ["recon"]
+tags: ["idor", "group-sharing", "gitlab", "namespace", "private-group", "metadata-leak", "project-sharing", "enumeration"]
+source: "https://hackerone.com/reports/131210"
+
+# ——— L3 核心 ———
+
+observation: >
+  GitLab 的 "Share with Group" 功能（/projects/:id/group_links）允许用户为自己的项目
+  添加某个组的访问权限。请求中的 link_group_id 参数由下拉列表的公开组填充，
+  但用户可以直接修改该参数值为任意组 ID，包括自己无权访问的私有组。
+  (原文: "Now select a random public group from the dropdown list. Before clicking on the
+  'Share' button, make sure you intercept your network traffic... Now change the link_group_id
+  in this request to the ID that you memorized")
+
+hypothesis: >
+  group_links 控制器在处理 "Share with Group" 请求时，
+  未验证当前用户是否有权访问 link_group_id 指定的目标组。
+  如果服务端接受任意 group ID，攻击者就能将自己的项目与私有组建立关联，
+  从而获得对该私有组元数据的读取权限。
+  (原文: "The issue itself originates from line 11 of the Projects::GroupLinksController,
+  which can be found at app/controllers/projects/group_links_controller.rb")
+
+action_result: >
+  1. Jane 创建自己的项目 dummy-project
+  2. Jane 访问 /jane/dummy-project/group_links，选择任意公开组
+  3. 拦截请求，将 link_group_id 改为私有组 ID（如 7）
+  4. 请求成功 → 页面显示私有组名称
+  5. Jane 可以访问 /groups/private-group 看到私有组页面
+  6. 通过 API /api/v3/groups/7/projects.json 泄露私有仓库的名称、描述、URL、
+     issue 数量等完整元数据
+  (原文: "Your page will now show the name of the private group. If Jane now goes to
+  http://gitlab-instance/groups/private-group, the secret group page is shown...
+  By sending a request to the /api/v3/groups/7/projects.json endpoint with Jane's API token,
+  the private repositories are leaked.")
+
+why_here_first: >
+  报告者（jobert）审查了 group_links 控制器的源码，在 line 11 发现
+  controller 没有对 link_group_id 参数做授权校验——这是白盒审计直接发现的 IDOR。
+  (原文: "This can be fixed by restricting which groups can be added to a project by a user.
+  The issue itself originates from line 11 of the Projects::GroupLinksController")
+
+chaining: >
+  第一步单独看是低-中危（IDOR 获取组成员资格），但报告者展示了串链价值：
+  1. 通过 IDOR 与私有组建立关联 → 获取组的 read 权限
+  2. 利用 read 权限通过 API 枚举所有私有仓库元数据（名称、描述、URL、issue 数量）
+  3. 可遍历所有 namespace ID → 系统性枚举全实例的私有组和私有仓库
+  (原文: "In a real world scenario, someone could iterate over all namespace IDs and get access
+  to all private groups. From there, it could send a request to the GitLab API to gain more
+  knowledge about the private projects.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在支持"分享/关联/邀请"操作的平台中，测试"目标实体 ID"参数是否校验当前用户的访问权限。
+  具体方法：拦截分享请求，将目标 group/team/org ID 替换为攻击者无权访问的私有实体 ID，
+  观察服务端是否接受该关联，以及关联建立后是否泄露该私有实体的元数据。
+
+reasoning_chain:
+  - "问：平台是否有'将资源分享给某个组/团队'的功能？"
+  - "问：分享目标是通过 ID 参数指定的吗？前端是否仅展示当前用户有权访问的组？"
+  - "如果是 → 拦截请求，将目标组 ID 替换为自己无权访问的私有组 ID"
+  - "问：服务端是否返回成功？是否泄露了私有组的名称或其他信息？"
+  - "如果成功 → 确认 IDOR：分享端点仅校验了用户对自己项目的权限，未校验对目标组的权限"
+  - "问：关联建立后，通过 API（如 /groups/:id/projects）是否可以枚举该私有组的所有仓库元数据？"
+  - "问：是否可以遍历所有 namespace ID 实现系统性枚举？"
+
+vuln_root: >
+  开发者假设"用户只能选择前端下拉列表中展示的公开组"，
+  但未在服务端验证用户是否有权访问 link_group_id 指定的目标组。
+  前端限制 ≠ 服务端授权。
+
+transferable_to:
+  - "代码托管平台（GitHub / GitLab / Bitbucket）的团队/组分享功能"
+  - "项目管理工具（Jira / Linear / Asana）的跨团队共享"
+  - "任何支持'邀请组/团队协作'的 SaaS 平台"
+  - "文件存储平台的'分享给某个部门/组'功能"
+  - "CRM/ERP 系统的跨组织资源关联"
+
+cases:
+  - url: "https://hackerone.com/reports/131210"
+    title: "Privilege escalation to access all private groups and repositories"
+    author: "jobert"
+    platform: "GitLab"
+    severity: "未定级（已修复）"
+    note: >
+      白盒审计发现 Projects::GroupLinksController 的 link_group_id 参数无授权校验，
+      攻击者可遍历所有 namespace ID 与私有组建立关联，
+      通过 API 枚举私有仓库名称、描述、URL、issue 数等完整元数据。
+      修复：在 group_links#create 中添加 current_user.can?(:read_group, group) 校验。

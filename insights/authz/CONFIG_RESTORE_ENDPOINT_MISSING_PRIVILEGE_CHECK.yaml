@@ -1,0 +1,71 @@
+name: "备份恢复/配置恢复端点缺少权限校验——低权限用户覆写配置创建管理员账户"
+id: "CONFIG_RESTORE_ENDPOINT_MISSING_PRIVILEGE_CHECK"
+applicable: "both"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["backup-restore", "config-overwrite", "privilege-escalation", "admin-creation", "ubiquiti", "unifi", "wizard-endpoint", "embedded-device"]
+source: "https://hackerone.com/reports/329659"
+
+# ——— L3 核心 ———
+
+observation: >
+  UniFi Video Server 的 Configuration Restore 功能（通过 "backup" 和 "wizard" 端点暴露）
+  未对调用者权限做充分校验，属于 PUBLIC_GROUP 或 CUSTOM_GROUP 的低权限用户
+  也可访问这些端点并覆写当前应用配置。
+  (原文团队摘要: "The UniFi Video Server (Windows) web interface configuration restore
+  functionality at the 'backup' and 'wizard' endpoints does not implement sufficient
+  privilege checks.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：备份/恢复和初始化向导（wizard）是管理员级操作，
+  但对应的 API 端点可能被视为"内部工具"而未加入统一的权限中间件保护。
+
+action_result: >
+  低权限用户（PUBLIC_GROUP/CUSTOM_GROUP）通过访问 backup/wizard 端点，
+  成功覆写应用配置并添加新的管理员用户，获得完整管理权限。
+  (原文团队摘要: "Low privileged users, belonging to the PUBLIC_GROUP or CUSTOM_GROUP
+  groups, can access these endpoints and overwrite the current application configuration.
+  This can be abused for various purposes, including adding new administrative users.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  配置恢复端点无权限检查 → 低权限用户覆写配置 → 注入管理员账户 → 完整管理权限。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在嵌入式设备、NVR、IoT 管理面板中，寻找备份恢复（backup restore）、
+  初始化向导（setup wizard）、配置导入（config import）等管理级端点，
+  测试低权限或未认证用户是否可以调用这些端点覆写当前配置——
+  特别关注可通过配置注入创建管理员账户的场景。
+
+reasoning_chain:
+  - "问：目标设备/应用是否有备份/恢复、初始化向导、配置导入功能？"
+  - "问：这些功能的 API 端点是否对所有已认证用户开放，还是仅限管理员？"
+  - "问：以低权限用户身份（viewer/operator/public_group）访问 /backup、/wizard、/restore 等端点，是否返回 200 而非 403？"
+  - "问：能否构造一个包含管理员账户定义的配置文件并通过恢复功能导入？"
+  - "问：恢复操作是否会覆盖现有用户数据库/权限表？（是否追加还是全量替换？）"
+  - "如果可以 → 注入管理员账户配置 → 恢复 → 以新管理员登录确认提权成功"
+
+vuln_root: >
+  开发者将备份恢复/初始化向导视为"安装阶段"或"管理员工具"的内部功能，
+  未在 API 路由层对其施加统一的角色权限校验，
+  导致低权限用户可调用这些端点完全覆盖应用配置。
+
+transferable_to:
+  - "Ubiquiti 全产品线（UniFi Controller、EdgeOS、UISP 等）的备份/恢复端点"
+  - "NVR/DVR 产品的配置恢复 Web UI"
+  - "IoT 网关/路由器的 /wizard 或 /setup 残留端点"
+  - "企业级应用（Jenkins、Grafana、Nexus 等）的配置导入 API"
+  - "任何在同一 Web 界面中同时提供管理员和只读用户角色的设备管理平台"
+
+cases:
+  - url: "https://hackerone.com/reports/329659"
+    title: "UniFi Video web interface Configuration Restore user privilege escalation"
+    author: "ajxchapman"
+    platform: "Ubiquiti (UniFi Video Server)"
+    severity: "High (CVSS 8.0, CVE-2020-8145)"
+    note: >
+      no-content 公开。低权限 UniFi Video 用户通过 backup/wizard 端点覆写配置，
+      添加管理员账户实现提权。

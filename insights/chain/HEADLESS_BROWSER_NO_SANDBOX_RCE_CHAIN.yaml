@@ -1,0 +1,73 @@
+name: "服务端内嵌无沙箱 Headless Browser 的 RCE 串链"
+id: "HEADLESS_BROWSER_NO_SANDBOX_RCE_CHAIN"
+applicable: "both"
+phase: "chain"
+also_phases: ["recon", "input"]
+tags: ["headless-browser", "chromium", "no-sandbox", "rce", "html-injection", "open-redirect", "pdf-export", "screenshot", "kibana", "reporting"]
+source: "https://hackerone.com/reports/1168765"
+
+observation: >
+  Kibana 的 Reporting 功能使用内嵌的 headless Chromium 生成 PNG/PDF，
+  且在 Elastic Cloud、ECE、ECK 部署中以 --no-sandbox 运行。
+  (原文: "Reporting uses a headless Chromium to generate PNGs and PDFs.
+  This is invoked (at least on Elastic Cloud, ECE and ECK) with --no-sandbox to work at all.")
+
+hypothesis: >
+  既然 Chromium 以 --no-sandbox 运行，已公开的 Chrome RCE exploit
+  可以直接利用；只需找到一种方式让 Reporting 功能访问攻击者控制的 JS 页面即可完成链。
+  HTML 注入（即使有 CSP 也可重定向）或 open redirect 均可满足。
+  (原文: "There are RCEs readily available for Chrome, and at least the versions shipped with
+  7.11 and 7.12 are susceptible to the attached example."
+  以及 "anything that enables pointing reporting at attacker-controlled JS would be able to
+  pop an RCE this way. HTML-injection or XSS (even with the CSP a HTML injection will enable
+  a redirect) or an open redirect would enable pointing reporting at custom JS code.")
+
+action_result: >
+  成功用 Metasploit 的 Chrome exploit 适配版在 Docker 容器中通过 headless_shell 触发
+  uname -a > /tmp/alexb-says-hi 命令执行，证实了 RCE 可行性。
+  链的第二步（让 Reporting 指向恶意 URL）尚未完成，因此报告为"hazard"。
+  (原文: "I have not been able to devise a complete chain yet (thus the 'hazard'),
+  but anything that enables pointing reporting at attacker-controlled JS would be able to
+  pop an RCE this way.")
+
+why_here_first: >
+  Reporting 功能需要渲染用户内容为 PDF/PNG，必然内嵌浏览器引擎；
+  --no-sandbox 标志意味着 Chrome 自身的沙箱层被移除，
+  任何 renderer 层漏洞直接等于宿主进程的 RCE。
+  (原文: "This is invoked ... with --no-sandbox to work at all.")
+
+chaining: >
+  HTML 注入或 XSS 或 open redirect →
+  重定向 headless Chromium 到攻击者控制的页面 →
+  触发 Chromium renderer 层 RCE exploit →
+  宿主进程（Kibana）命令执行。
+  (原文: "Kibana is an HTML-injection (even without full-blown XSS) or an open redirect
+  away from being RCE-able via Reporting.")
+
+approach: >
+  识别目标应用中内嵌的 headless browser（Chromium/Puppeteer/Playwright/PhantomJS）
+  用于 PDF 导出/截图/报告等功能，检查其运行参数是否禁用沙箱（--no-sandbox），
+  再结合已知浏览器引擎 CVE 和低危入口（HTML 注入/open redirect）串链为 RCE。
+
+reasoning_chain:
+  - "问：目标应用是否有 PDF 导出、截图、报告生成等需要渲染 HTML 的功能？"
+  - "问：该功能底层使用什么浏览器引擎？（Chromium headless、PhantomJS、wkhtmltopdf）"
+  - "问：浏览器引擎版本是否包含已知 RCE 漏洞？（检查 CVE 数据库和 Metasploit 模块）"
+  - "问：浏览器引擎是否以 --no-sandbox 或类似降权方式运行？（容器化部署中常见）"
+  - "如果 --no-sandbox → renderer exploit 直接等于宿主 RCE，漏洞严重性大幅提升"
+  - "问：是否存在让该渲染功能访问攻击者控制 URL 的入口？（HTML 注入、XSS、open redirect、SSRF）"
+  - "即使有 CSP → HTML 注入仍可通过 meta refresh 或 iframe 实现重定向"
+  - "问：低危漏洞（如 self-XSS、stored HTML injection）能否通过触发导出/截图功能升级为 RCE？"
+
+vuln_root: "服务端内嵌浏览器引擎以 --no-sandbox 运行，消除了浏览器自身的进程隔离防线，使 renderer 层漏洞直接升级为宿主进程 RCE。"
+
+transferable_to:
+  - "使用 Puppeteer/Playwright 生成 PDF 或截图的 SaaS 应用"
+  - "wkhtmltopdf / PhantomJS 等旧版 headless 工具（无沙箱设计）"
+  - "CI/CD 中使用 headless Chrome 进行 E2E 测试的环境"
+  - "内部 BI/报表系统中嵌入 Chromium 的报告导出功能"
+  - "任何在容器中以 --no-sandbox 运行 Chrome 的服务端渲染（SSR）场景"
+
+cases:
+  - url: "https://hackerone.com/reports/1168765"
+    note: "Elastic Kibana Reporting 内嵌 Chromium 以 --no-sandbox 运行，已有 Metasploit exploit 可触发 RCE，仅缺少将渲染指向恶意 URL 的第二步。$10,000 bounty。"

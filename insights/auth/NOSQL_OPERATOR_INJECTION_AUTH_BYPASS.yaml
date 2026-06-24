@@ -1,0 +1,74 @@
+name: "NoSQL 操作符注入查询参数——绕过认证匹配任意 token/密码"
+id: "NOSQL_OPERATOR_INJECTION_AUTH_BYPASS"
+applicable: "blackbox"
+phase: "auth"
+also_phases: ["input"]
+tags: ["nosql-injection", "mongodb", "operator-injection", "auth-bypass", "account-takeover", "rocket-chat", "query-parameter"]
+source: "https://hackerone.com/reports/3564655"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。Rocket.Chat 的认证端点接受 access_token 查询参数，
+  该参数被直接传入 MongoDB 查询而未过滤 MongoDB 操作符。
+  (原文团队摘要: "A NoSQL injection vulnerability in Rocket.Chat allows
+  unauthenticated remote attackers to bypass authentication and perform account takeover")
+
+hypothesis: >
+  未叙述（仅结果）。通过传入 MongoDB 操作符 $ne（不等于）作为 access_token 的值，
+  可以匹配数据库中第一个非 null 的 OAuth token，从而无需有效凭据即可认证。
+  (原文团队摘要: "By passing a MongoDB operator as the access_token query parameter
+  (e.g., ?access_token[$ne]=null), an attacker can match the first OAuth token in
+  the database without supplying valid credentials")
+
+action_result: >
+  成功绕过认证获得管理员权限。前提是数据库中至少存在一个 OAuth token。
+  影响多个版本线。
+  (原文团队摘要: "Exploitation requires at least one OAuth token to exist in the database.
+  Affected versions: <8.3.0, <8.2.1, <8.1.2, <8.0.3, <7.13.5, <7.12.6, <7.11.6, and <7.10.9")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  NoSQL 操作符注入 → 匹配任意 OAuth token → 完全认证绕过 → 管理员权限 ATO。
+  (原文标题: "Complete authentication bypass to admin permissions",
+  CVE-2026-29198, CVSS 9.8)
+
+approach: >
+  对使用 MongoDB/NoSQL 后端的 Web 应用，在认证相关的查询参数
+  （token、password、api_key、session_id）中注入 MongoDB 操作符
+  （[$ne]=null、[$gt]=''、[$regex]=.*），检查是否能绕过精确匹配逻辑
+  并匹配到数据库中已有的合法记录。
+
+reasoning_chain:
+  - "问：目标应用是否使用 MongoDB/CouchDB/NoSQL 后端？（技术栈特征：Node.js+Express、Meteor、Rocket.Chat）"
+  - "问：认证/授权端点是否通过 query string 或 JSON body 接收 token/密码/API key？"
+  - "问：将参数值替换为 MongoDB 操作符格式（param[$ne]=null）后，服务端是否返回成功而非 401？"
+  - "如果成功 → 确认 NoSQL 注入。问：匹配到的是哪个用户/角色的 token？是否为管理员？"
+  - "扩展：是否可以用 $regex 操作符逐字符提取 token 值？（盲注）"
+  - "扩展：其他端点（密码重置、API 认证、Webhook 验证）是否也存在同样的操作符注入？"
+  - "扩展：应用是否使用了 Mongoose 之类的 ODM？如果是，检查是否启用了 sanitizeFilter"
+
+vuln_root: >
+  开发者将用户可控的查询参数直接传入 MongoDB 查询条件而未过滤
+  $ne/$gt/$regex 等操作符，使得精确匹配 (token == value) 被替换为
+  范围匹配 (token != null)，匹配到数据库中第一条合法记录。
+
+transferable_to:
+  - "所有使用 MongoDB + Express/Koa/Fastify 的 Node.js 应用"
+  - "Meteor 框架应用（默认使用 MongoDB）"
+  - "Rocket.Chat、Reaction Commerce 等 MongoDB 原生应用"
+  - "REST API 中通过 query string 传递认证凭据的场景"
+  - "使用 CouchDB/DynamoDB 等 NoSQL 且存在操作符注入面的后端"
+
+cases:
+  - url: "https://hackerone.com/reports/3564655"
+    author: "npc"
+    platform: "Rocket.Chat"
+    severity: "Critical (CVSS 9.8)"
+    bounty: "无赏金"
+    cve: "CVE-2026-29198"
+    note: >
+      Rocket.Chat NoSQL 注入：?access_token[$ne]=null 绕过认证匹配
+      数据库中首个 OAuth token，获得管理员权限。
+      影响 8 个版本线。2026-02 报告，2026-04 公开。95 votes。

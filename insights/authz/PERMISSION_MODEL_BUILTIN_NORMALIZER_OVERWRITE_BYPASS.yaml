@@ -1,0 +1,65 @@
+name: "权限模型依赖的内置路径规范化函数可被用户代码覆写——绕过文件系统权限检查"
+id: "PERMISSION_MODEL_BUILTIN_NORMALIZER_OVERWRITE_BYPASS"
+applicable: "both"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["permission-model", "path-normalization", "monkey-patch", "prototype-override", "node.js", "sandbox-bypass", "fs-permission", "CVE-2024-21891", "path-traversal"]
+source: "https://hackerone.com/reports/2259914"
+
+# ——— L3 核心 ———
+
+observation: "未叙述（仅结果）"
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  Node.js 权限模型依赖内置的路径规范化工具函数来清理传入 node:fs 的路径，
+  但这些函数可被用户自定义实现覆写，导致路径穿越攻击绕过权限检查。
+  (原文团队摘要: "Node.js depends on multiple built-in utility functions to normalize
+  paths provided to node:fs functions, which can be overwitten with user-defined
+  implementations leading to filesystem permission model bypass through path traversal attack.")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  覆写内置 normalize 函数 → 权限检查使用被篡改的规范化结果 → 路径穿越绕过 --allow-fs-read/write 限制
+  → 读写超出授权范围的文件系统路径。
+
+approach: >
+  当目标运行时/沙箱的权限模型依赖内置工具函数（如路径规范化/解析函数）进行安全判断时，
+  检查这些工具函数是否可被用户代码（monkey-patch / prototype override / globalThis 覆写）替换，
+  使权限检查使用攻击者控制的规范化逻辑。
+
+reasoning_chain:
+  - "问：目标运行时的权限模型在文件系统操作前调用了哪些内置工具函数做路径规范化/解析？"
+  - "问：这些工具函数是 C++ 层不可覆写的，还是 JS 层可被用户代码替换的？"
+  - "如果 JS 层可覆写 → 问：用户代码能否在权限检查之前执行？（如模块加载顺序、preload 脚本）"
+  - "问：将 normalize/resolve 函数替换为恒等函数（直接返回输入），权限检查是否仍能拦截 ../ 路径穿越？"
+  - "问：替换后用 ../ 路径访问超出 --allow-fs-read 范围的文件，是否成功读取？"
+  - "扩展：同一权限模型中还有哪些内置函数被信任但可被覆写？（如 URL 解析、权限判断函数本身）"
+
+vuln_root: >
+  权限模型将内置 JS 层工具函数视为可信的规范化器，但 JavaScript 的动态特性允许用户代码
+  在运行时覆写这些函数，破坏权限检查的前提假设。
+
+transferable_to:
+  - "Node.js --permission 模型的其他依赖 JS 层函数的安全检查点"
+  - "Deno 的权限模型——是否存在类似的可覆写 JS 层依赖？"
+  - "Electron 沙箱中依赖 JS 层 API 做安全判断的场景"
+  - "任何在动态语言（JS/Python/Ruby）中实现的安全沙箱，其安全逻辑依赖可被 monkey-patch 的标准库函数"
+  - "浏览器扩展安全模型中依赖可被页面脚本覆写的 Web API"
+
+cases:
+  - url: "https://hackerone.com/reports/2259914"
+    title: "Multiple permission model bypasses due to improper path traversal sequence sanitization"
+    author: "xion"
+    platform: "Node.js"
+    severity: "High (CVSS 7.9)"
+    cve: "CVE-2024-21891"
+    bounty: "无赏金"
+    note: >
+      Node.js v20/v21 的 --experimental-permission 权限模型中，
+      用于规范化 node:fs 路径的内置工具函数可被用户代码覆写，
+      导致路径穿越序列未被正确清理，攻击者可绕过 --allow-fs-read/write 限制
+      访问未授权的文件系统路径。
+      2023-11 报告，2024-02 公开。no-content 公开。

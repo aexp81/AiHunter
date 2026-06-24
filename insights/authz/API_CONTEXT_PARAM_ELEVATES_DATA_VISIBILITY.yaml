@@ -1,0 +1,79 @@
+name: "API 的 context/view 参数在未认证状态下仍可切换到高权限视图——暴露敏感字段"
+id: "API_CONTEXT_PARAM_ELEVATES_DATA_VISIBILITY"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["recon"]
+tags: ["access-control", "api", "context-parameter", "wp-rest-api", "user-enumeration", "information-disclosure", "unauthenticated"]
+source: "https://hackerone.com/reports/138244"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。WP REST API 的 /wp-json/wp/v2/users 端点支持 context 参数
+  （view/embed/edit），context=edit 应仅面向有编辑权限的认证用户，
+  但未对请求者做权限校验即返回完整用户数据。
+  (原文: "The WP REST API WordPress plugin fails to apply access controls for the 'edit' context.
+  This means that with a single HTTP request, an attacker can obtain the following information
+  for every single registered user: username, email address, first name, last name,
+  date of registration, and detailed privilege information.")
+
+hypothesis: "未叙述（仅结果）"
+
+action_result: >
+  未认证状态发送 GET /wp-json/wp/v2/users?context=edit，成功获取所有注册用户的
+  用户名、邮箱、姓名、注册日期和详细权限信息。
+  (原文: "To replicate this issue, simply send the following request while unauthenticated:
+  GET /wp-json/wp/v2/users?context=edit")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  用户枚举+邮箱泄露 → 定向钓鱼/凭据填充攻击管理员账户 → 接管 WordPress 站点。
+  (原文: "This is a treasure trove of information for someone planning an attack -
+  they know exactly which email addresses to target in order to gain admin privileges
+  and complete control over the webserver.")
+
+approach: >
+  对提供 REST API 的应用，枚举 API 端点支持的 context/view/fields/expand 参数
+  （如 ?context=edit、?view=admin、?fields=email,role、?expand=all），
+  在未认证或低权限状态下切换到高权限视图参数，检查服务端是否根据请求者权限
+  过滤返回字段——关键洞见是 API 框架常将视图切换与权限检查解耦。
+
+reasoning_chain:
+  - "问：目标 API 是否支持 context/view/fields/expand 等参数？（阅读 API 文档或 fuzz 常见值）"
+  - "问：切换到 edit/admin/full 等高权限 context 时，返回的字段是否比默认视图多？"
+  - "问：在未认证状态下切换高权限 context，是否返回 403/401 还是正常返回扩展数据？"
+  - "如果返回扩展数据 → 确认 context 参数未做权限校验"
+  - "问：泄露的字段中是否包含敏感信息？（邮箱、角色、内部 ID、注册时间、权限详情）"
+  - "扩展：同一 API 的其他资源端点（/posts、/pages、/comments）是否也支持 context 参数且未做权限校验？"
+  - "扩展：其他 API 框架（Django REST Framework 的 ?format=api、Spring HATEOAS 的 ?projection=）是否有类似行为？"
+
+vuln_root: >
+  API 框架将 context/view 参数作为序列化层的字段选择器实现，
+  但未在序列化之前根据请求者的认证状态和权限等级校验是否有权使用该 context，
+  假设"前端不会传 context=edit"即足够安全。
+
+transferable_to:
+  - "WordPress REST API 站点（全球 40%+ 网站使用 WP）"
+  - "Django REST Framework 的 ViewSet 使用 serializer_class 按权限切换但可被参数覆盖的场景"
+  - "任何 REST API 支持 ?fields=、?expand=、?include= 参数的应用"
+  - "GraphQL 的 introspection 或 field-level 权限缺失场景（类似思路）"
+  - "Headless CMS（Strapi/Directus/Ghost）的 API 端点"
+
+cases:
+  - url: "https://hackerone.com/reports/138244"
+    author: "albinowax"
+    platform: "WP REST API (WordPress plugin)"
+    severity: "未评级（has_bounty）"
+    note: >
+      2016 年报告，albinowax 发现。GET /wp-json/wp/v2/users?context=edit
+      未认证即可获取所有用户的邮箱、姓名、注册日期和权限信息。
+      已向受影响实体直接报告。
+  - url: "https://hackerone.com/reports/772744"
+    author: "pwrspl0it"
+    platform: "MTN Group (lonestarcell.com, WordPress)"
+    severity: "Medium"
+    note: >
+      2020 年报告。同一 WP REST API /wp-json/wp/v2/users/ 端点暴露管理员用户名。
+      报告者将其包装为 CORS 问题，但核心 approach 相同：
+      WordPress REST API 默认公开用户列表端点，未做认证限制。

@@ -1,0 +1,91 @@
+name: "注册邮箱正则修剪绕过→CSP bypass Blind XSS→客服审核泄露内部URL→IDOR更新用户→Stored XSS+Headless Chrome SSRF"
+id: "CTF_REGEX_TRIM_ATO_CSP_BYPASS_SSRF_CHAIN"
+applicable: "blackbox"
+phase: "chain"
+also_phases: ["auth", "input"]
+tags: ["ctf", "multi-chain", "regex-bypass", "account-takeover", "csp-bypass", "blind-xss",
+       "support-review", "idor", "stored-xss", "ssrf", "headless-chrome", "hackerone-ctf",
+       "qr-code", "user-agent-recon"]
+source: "https://hackerone.com/reports/781281"
+
+# ——— L3 核心 ———
+
+observation: >
+  源码中暴露了客户 email（jobert@mydocz.cosmic），注册同一 email 被系统拒绝；
+  但 QR code 生成流程会修剪 < > 等符号，而注册端未同步验证。
+  (原文: "'jobert@mydocz.cosmic' seems to be a customer of MyDocz and the system
+  does not allow any new registration with same email ID...
+  the flaw here is the QR code generation process trims following symbols {<>}")
+
+hypothesis: >
+  如果注册时附加一个会被 QR 生成器修剪的字符（如 <），注册系统认为是新邮箱允许注册，
+  但 QR 码实际编码的是原始邮箱，用它做恢复时就能接管原账号。
+  (原文: "Modify the email ID parameter as 'jobert@mydocz.cosmic<',
+  Now after registration, save the QR code... Select the QR code saved previously
+  and now you have become jobert@mydocz.cosmic")
+
+action_result: >
+  5 步串链——
+  1. 注册 jobert@mydocz.cosmic< → QR 码修剪后编码为 jobert@mydocz.cosmic →
+     用 QR 恢复直接接管账号。
+  2. 支持门户存在 HTML 注入，利用 githack.com 的 raw proxy 绕过 CSP 执行脚本 →
+     但这是 self-XSS → 发现 showReviewModal() 函数：1 星评价让客服审核聊天记录，
+     触发 Blind XSS。
+  3. Blind XSS 回传的 document.location 暴露了内部 URL
+     （localhost:3000/support/review/{hash}），将 localhost 替换为 h1-415.h1ctf.com 访问。
+  4. 审核页面有更新用户详情的表单，user_id 参数可指向其他账户 → IDOR →
+     注入 <script> 到 name 字段 → Stored XSS。
+  5. User-Agent 显示 headless chrome → 推断 9222 端口为 Chrome Debugger →
+     注入 iframe src='http://localhost:9222/json' → SSRF 读取内部资源，获取 flag。
+  (原文: "5d. 9222 port because the user-agent says that it is headless chrome
+  hence 9222 which is the debugger port")
+
+why_here_first: >
+  入口选择源于源码中暴露的客户邮箱——直接的信息泄露提供了目标账号。
+  每步转向基于新获信息：QR 修剪差异 → self-XSS 无用转向客服审核 →
+  内部 URL 暴露 → IDOR 转 Stored XSS → User-Agent 推断端口号。
+  (原文: "'jobert@mydocz.cosmic' email exposed in source code...
+  Rating 1 star makes the support agent review the chat logs...
+  the user-agent says that it is headless chrome")
+
+chaining: >
+  5 环串链：源码邮箱泄露(Info) → 正则修剪差异接管账号(High)
+  → CSP bypass + 客服审核 Blind XSS(Medium) → 内部 URL + IDOR 更新用户(Medium)
+  → Stored XSS + Headless Chrome SSRF(Critical)。
+  关键转折：self-XSS 本身无用，但 showReviewModal() 将其变为 Blind XSS 触发器。
+
+approach: >
+  从源码泄露的标识符出发 → 利用注册/认证流程中不同组件对同一输入的
+  处理差异（正则修剪 vs 原样存储）接管账号 → 将 self-XSS 通过内置审核机制
+  转化为 Blind XSS → 从回传的内部 URL 逐步深入 → 利用 IDOR + Stored XSS
+  在 headless browser 环境中实现 SSRF。
+
+reasoning_chain:
+  - "问：应用的前端源码或页面中是否泄露了客户/管理员的邮箱或用户名？"
+  - "问：注册系统拒绝已有邮箱时，是否有字符（如 <、>、空格、+）在注册验证与后续流程（QR 生成、邮件发送）之间被不同处理（修剪/转义差异）？"
+  - "问：用修剪后的凭证（QR 码、重置链接）是否能认证为原始邮箱的账户？"
+  - "问：支持/客服系统是否有 HTML 注入？CSP 是否允许通过代理域（如 raw.githack.com）加载外部脚本？"
+  - "问：self-XSS 场景中，是否有内置的审核/举报机制（如 showReviewModal()）会让内部人员浏览用户提交的内容？"
+  - "问：Blind XSS 触发后，回传的 document.location 是否暴露了内部 URL 或管理后台路径？"
+  - "问：内部管理页面的表单是否检查 user_id 参数的归属？（IDOR 风险）"
+  - "问：目标系统后端是否使用 headless browser（从 User-Agent 判断）？其 debugger 端口（9222）是否开放？/json 端点是否返回敏感信息？"
+
+vuln_root: >
+  注册和 QR 生成两个组件对特殊字符的处理不一致（修剪差异），
+  加上支持系统缺乏输入过滤、用户更新接口缺乏归属校验、
+  headless browser 的 debugger 端口暴露在 localhost，多个独立缺陷组合成完整攻击链。
+
+transferable_to:
+  - "任何有 QR 码/魔法链接认证的系统——检查生成器对特殊字符的修剪是否与注册验证一致"
+  - "有客服/审核功能的平台——self-XSS 可通过 review 机制转化为 Blind XSS"
+  - "使用 headless browser 做截图/渲染的服务——Chrome DevTools Protocol 9222 端口常被忽略"
+  - "管理后台有用户编辑 IDOR 的系统——user_id 参数替换跨用户写入"
+
+cases:
+  - source: "https://hackerone.com/reports/781281"
+    title: "[h1-415 2020] Chain of vulnerabilities leading to account takeover and unauthorized access of sensitive internal resources"
+    context: >
+      h1-415 CTF 解题，5 步串链：源码邮箱泄露 → 注册正则修剪差异 ATO
+      → CSP bypass + 客服审核 Blind XSS → IDOR 用户更新 + Stored XSS
+      → Headless Chrome debugger SSRF。关键 L3：self-XSS 转 Blind XSS
+      需要发现 showReviewModal() 函数，以及 User-Agent 推断 9222 端口。

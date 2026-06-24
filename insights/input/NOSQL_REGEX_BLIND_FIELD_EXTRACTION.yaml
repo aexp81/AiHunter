@@ -1,0 +1,79 @@
+name: "NoSQL $regex 操作符逐字符盲注——提取数据库字段值（邮箱/token）"
+id: "NOSQL_REGEX_BLIND_FIELD_EXTRACTION"
+applicable: "blackbox"
+phase: "input"
+also_phases: ["recon"]
+tags: ["nosql-injection", "mongodb", "regex-operator", "blind-injection", "email-enumeration", "data-extraction", "express", "node.js"]
+source: "https://hackerone.com/reports/397445"
+
+# ——— L3 核心 ———
+
+observation: >
+  未叙述（仅结果）。express-cart 的客户登录和管理员登录端点将 JSON body 参数
+  直接传入 MongoDB 查询，未对输入类型做校验。
+  (原文: "The vulnerability is caused by the lack of user input sanitization
+  in the login handlers. In both cases, the customer login and the admin login,
+  parameters from the JSON body are sent directly into the MongoDB query
+  which allows to insert operators.")
+
+hypothesis: >
+  未叙述（仅结果）。通过 $regex 操作符可以逐字符测试数据库字段的值，
+  类似 SQL 盲注逐字符提取的方式，从首字符开始递增匹配直至确认完整字段值。
+  (原文: "the $regex operator is used to guess each character of the token
+  from the start")
+
+action_result: >
+  成功：编写 Python 脚本利用客户登录端点的 $regex 注入，逐字符枚举数据库中
+  所有客户邮箱地址。脚本使用递归确保提取所有记录。
+  输出与数据库中的客户列表完全匹配。
+  (原文: "The provided Python script exploits the customer login to find all
+  the customer emails in the database... alan.k@example.com, alice.r@hotmail.com,
+  ben76543@gmail.com, bob@test.com")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  NoSQL $regex 盲注 → 枚举所有客户和管理员邮箱 → 邮箱可用于钓鱼、垃圾邮件、
+  窃取客户信息。在 GDPR 背景下构成严重隐私泄露。
+  (原文: "Administrator emails could be used for phishing attemps and spam.
+  Customers emails could be used by an adversary to deliver spam, steal customers
+  and more. In this GDPR era, leaking customer emails is not very desirable.")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  对使用 MongoDB/NoSQL 后端的 Web 应用，在接受 JSON body 的登录/查询端点中，
+  将参数值替换为 $regex 操作符（如 {"email": {"$regex": "^a"}}），
+  根据响应差异逐字符提取数据库字段值（邮箱、token、API key 等），
+  类似 SQL 盲注但针对 MongoDB 操作符注入。
+
+reasoning_chain:
+  - "问：目标应用是否使用 MongoDB/NoSQL 后端？（技术栈特征：Node.js+Express、package.json、错误页面泄露）"
+  - "问：登录或查询端点是否接受 JSON body？（Content-Type: application/json）"
+  - "问：将字段值替换为 {\"$regex\": \"^a\"} 后，响应是否与正常失败不同？（如返回'密码错误'而非'用户不存在'）"
+  - "如果响应有差异 → 确认 NoSQL 注入。问：能否通过 $regex 逐字符枚举完整字段值？"
+  - "问：是否能用 $regex 的负向匹配排除已知值，发现数据库中更多记录？"
+  - "问：除了登录端点，密码重置、搜索、注册等端点是否也将 JSON 参数直接传入 MongoDB 查询？"
+  - "扩展：是否可以提取 token/session_id 等敏感字段而非仅邮箱？"
+
+vuln_root: >
+  开发者将 JSON body 中用户可控的参数直接传入 MongoDB 查询条件而未验证
+  参数类型（期望 string，实际收到 object），使得 $regex 等查询操作符被注入，
+  允许攻击者通过布尔差异逐字符提取数据库中任意字段的值。
+
+transferable_to:
+  - "所有使用 MongoDB + Express/Koa/Fastify 且未使用 Mongoose sanitizeFilter 的 Node.js 应用"
+  - "接受 JSON body 且未做类型校验的登录/认证端点"
+  - "电商平台、CMS 等存储用户 PII（邮箱、手机号）的 MongoDB 应用"
+  - "任何将 JSON 参数直接拼入 MongoDB find/findOne 查询的端点"
+
+cases:
+  - url: "https://hackerone.com/reports/397445"
+    author: "becojo"
+    platform: "express-cart (Node.js third-party modules)"
+    severity: "High (CVSS 8.2)"
+    bounty: "无赏金"
+    note: >
+      express-cart 1.1.7 的客户登录和管理员登录端点将 JSON body 直接传入
+      MongoDB findOne 查询，$regex 操作符可逐字符提取所有客户和管理员邮箱。
+      附带完整 Python PoC 脚本。2018-08 报告，2018-09 公开。

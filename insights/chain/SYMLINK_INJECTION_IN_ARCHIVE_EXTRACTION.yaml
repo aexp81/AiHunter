@@ -1,0 +1,95 @@
+name: "归档文件解压中 Symlink 未过滤导致任意文件读取——同一代码库的 patch gap 审计"
+id: "SYMLINK_INJECTION_IN_ARCHIVE_EXTRACTION"
+applicable: "both"
+phase: "chain"
+also_phases: ["input"]
+tags: ["symlink-following", "archive-extraction", "arbitrary-file-read", "import-export", "bulk-import", "patch-gap", "gitlab", "ruby", "tar", "CWE-59", "CWE-22"]
+source: "https://hackerone.com/reports/1439593"
+
+# ——— L3 核心 ———
+
+observation: >
+  GitLab 的 BulkImport UploadsPipeline 下载并解压 uploads.tar.gz 时，
+  untar_zxf 方法仅修改文件权限而不过滤或删除 tar 包中的符号链接。
+  解压后 File.open(file_path, 'r') 会跟随 symlink 读取其指向的任意系统文件。
+  (原文: "Since untar_zxf only changes the permissions, any symlinks that are
+  extracted from the tar will remain")
+  (原文: 引用 uploads_pipeline.rb L15/L23 源码，
+  UploadService.new(..., File.open(file_path, 'r'), ...) 跟随 symlink)
+
+hypothesis: >
+  如果能在 tar 包中嵌入指向敏感文件的 symlink，解压后通过正常的 uploads URL
+  即可下载服务器任意文件。同一代码库中 project import 已有 symlink 过滤，
+  但 bulk imports 的 UploadsPipeline 是后来添加的新功能，可能遗漏了相同的安全检查。
+  (原文: "Symlinks should be removed similar to the project import")
+
+action_result: >
+  成功执行：
+  1. 创建 group 并上传文件获取 upload secret（32字节 hash 路径）
+  2. 构造包含 symlink 的恶意 tar.gz（ln -s /etc/passwd ./hash/passwd）
+  3. 部署 Flask MITM 代理替换 uploads.tar.gz 下载请求
+  4. 通过 bulk import 导入 group，后端解压含 symlink 的 tar
+  5. 访问新 group 的 uploads URL 成功下载 /etc/passwd 和 /srv/gitlab/config/secrets.yml
+  (原文: 报告包含 /etc/passwd 全文和 secrets.yml 含脱敏密钥的实际内容)
+
+why_here_first: >
+  未叙述（仅结果）。报告直接呈现了漏洞发现和利用，未叙述发现过程。
+  但从技术上下文可推断：研究者(vakzz)持续审计 GitLab 的 import 功能，
+  在 project import 已有 symlink 防护的前提下，检查了新增的 bulk import
+  是否继承了同样的安全措施。
+
+chaining: >
+  symlink 任意文件读取 → 读取 secrets.yml（含 secret_key_base、OTP 密钥、RSA 私钥）
+  → 可进一步构造反序列化 RCE（类似 LFI_RAILS_SECRET_TO_RCE 的串链模式）
+  → 或解密 encrypted credentials 获取数据库密码/API keys
+
+# ——— 落地检查清单 ———
+
+approach: >
+  审计所有接受归档文件（tar/zip/gz）并解压处理的功能点，检查解压逻辑是否过滤
+  symlink/hardlink。重点关注同一代码库中新增功能是否继承了旧功能的安全措施
+  （patch gap），尤其是 import/export、backup/restore、bulk upload 等场景。
+
+reasoning_chain:
+  - "问：目标应用中有哪些功能接受归档文件（tar/zip/gz）并在服务端解压？"
+  - "白盒：grep -rn 'untar\\|unzip\\|extract\\|decompress\\|Archive' --include='*.rb' --include='*.py'"
+  - "问：解压逻辑中是否有 symlink 检查？是否调用 File.symlink?() 或 tar --no-same-permissions？"
+  - "白盒：grep -rn 'symlink\\|File.lstat\\|File.ftype' --include='*.rb' 在解压相关文件中"
+  - "如果无 symlink 过滤 → 问：解压后的文件是否被 File.open/IO.read/FileUtils.cp 打开？"
+  - "问：同一代码库中是否有其他类似功能已经有 symlink 防护？新功能是否遗漏了？"
+  - "白盒：对比同一代码库中所有解压场景的安全处理——如 project import vs bulk import"
+  - "如果确认 symlink 未过滤且文件被打开 → 构造含 symlink 的 tar.gz 验证"
+  - "问：如何控制 tar 包的传输？是否可通过 MITM/URL 替换注入恶意归档？"
+  - "如果成功读取文件 → 问：能读到什么高价值目标？（secrets.yml、.env、/etc/shadow）"
+
+vuln_root: >
+  归档文件解压逻辑未过滤 symlink，且新增功能（bulk import）未继承
+  旧功能（project import）已有的安全检查——典型的 patch gap 模式。
+
+transferable_to:
+  - "任何接受 tar/zip 上传并服务端解压的 Web 应用（CI/CD artifact、备份恢复、文档导入）"
+  - "同一代码库中功能相似但实现不同的代码路径——新功能常遗漏旧修复"
+  - "使用原始 tar/unzip 命令而非安全封装库的解压场景"
+  - "Zip Slip 的 symlink 变种：关注读取（symlink following）而非写入（path traversal）"
+
+cases:
+  - url: "https://hackerone.com/reports/1439593"
+    note: >
+      GitLab v14.6.0-ee，BulkImport UploadsPipeline symlink 任意文件读取，
+      $29,000 赏金，CVSS 9.6。可读取 secrets.yml 含 secret_key_base。
+      研究者(vakzz)通过 Flask 代理 + ngrok 替换 uploads.tar.gz。
+  - url: "https://hackerone.com/reports/213558"
+    title: "Arbitrary Local-File Read from Admin - Restore From Backup due to Symlinks (Discourse)"
+    author: "ziot"
+    platform: "Discourse (try.discourse.org)"
+    severity: "High"
+    bounty: "$512"
+    note: >
+      Discourse 的 Admin Backup/Restore 功能：管理员可上传并恢复 tar 备份。
+      攻击者在 tar 的 /uploads/ 目录中嵌入指向 /etc/passwd 的 symlink
+      （ln -s /etc/passwd uploads/default/original/1X/file.jpg），上传后恢复备份，
+      解压后 symlink 被提取到 public/uploads/ 目录，通过浏览器直接访问即可读取文件内容。
+      纯结果文，无导航叙事。
+      (原文: "Manually modifying the tar archive and adding a symlink, you are able
+      to read any arbitrary file that the user has permission to including files
+      outside of the Discourse application directory.")

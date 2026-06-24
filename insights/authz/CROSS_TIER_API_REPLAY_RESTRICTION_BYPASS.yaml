@@ -1,0 +1,64 @@
+name: "跨产品层级 API 重放——标准版的创建操作在受限版本域名上同样生效"
+id: "CROSS_TIER_API_REPLAY_RESTRICTION_BYPASS"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["product-tier", "api-replay", "govslack", "slack", "workspace-creation", "cross-domain", "restriction-bypass"]
+source: "https://hackerone.com/reports/1758174"
+
+observation: >
+  研究者在 slack.com 上创建 workspace 时捕获了 /api/signup.createTeam 请求，
+  然后尝试在 slack-gov.com（GovSlack 产品）上重放同一请求。
+  GovSlack 禁止用户自行创建 workspace（需要被邀请或联系 Slack），
+  但 API 端点在 slack-gov.com 上同样存在且可响应。
+  (原文: "Login to slack-gov.com, where the option to create a workspace for new users is disabled.
+  Send this same fetch request, replacing slack.com with slack-gov.com.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：GovSlack 与标准 Slack 共享底层 API 基础设施，
+  前端禁用了 workspace 创建入口但后端 API 未针对 GovSlack 域名做产品层级限制。
+
+action_result: >
+  成功：将 slack.com 的 /api/signup.createTeam 请求中的域名替换为 slack-gov.com 后发送，
+  成功在 GovSlack 上创建了 workspace（viomck.slack-gov.com）。
+  (原文: "In my case, the workspace created is viomck.slack-gov.com."
+  团队确认: "This behavior bypassed security controls which normally require a user to be invited
+  to an existing GovSlack instance or contact Slack to create a new GovSlack instance")
+
+why_here_first: >
+  未叙述（仅结果）。研究者可能在标准 Slack 上测试完 workspace 创建流程后，
+  自然联想到在受限的 GovSlack 域名上重放同一操作。
+
+chaining: >
+  单步即可绕过 GovSlack 的访问控制——自行创建 workspace 后可访问仅限 GovSlack 的功能；
+  虽未暴露已有 workspace 数据，但绕过了产品级别的准入限制。
+  (原文: "Slack's internal team... confirmed that no data from existing workspaces was exposed")
+
+approach: >
+  当目标平台存在多个产品层级（标准版/企业版/政府版）且使用不同域名但共享技术栈时，
+  在标准版上抓取创建/配置/管理类 API 请求，将域名替换为高权限或受限版本的域名后重放，
+  测试受限版本是否仅在前端/入口层面禁用了操作而后端 API 仍然响应。
+
+reasoning_chain:
+  - "问：目标平台是否有多个产品版本/层级使用不同域名？（如 app.example.com vs gov.example.com，free vs enterprise）"
+  - "问：高层级/受限版本在前端是否禁用了某些功能入口？（如隐藏创建按钮、禁用注册页面）"
+  - "问：标准版中该功能对应的 API 端点是什么？在受限版域名上是否同样可达？"
+  - "如果可达 → 使用标准版获取的合法 session/cookie，在受限版域名上调用该 API 是否成功？"
+  - "问：受限版是否需要独立的认证流程？能否用失败的登录尝试获得足够的 session 状态来调用 API？"
+  - "如果成功 → 确认：受限版本仅在 UI/前端层面禁用了功能，后端 API 未做产品层级校验"
+  - "扩展：其他受限操作（配置变更、用户管理、数据导出）是否也存在相同的跨层级绕过？"
+
+vuln_root: >
+  多产品层级共享同一后端 API 基础设施，受限产品（GovSlack）仅在前端/入口层面禁用了
+  功能（隐藏 UI 入口），但后端 API 端点未检查请求来源的产品层级，
+  导致标准版的 API 请求重放到受限版时仍被执行。
+
+transferable_to:
+  - "SaaS 平台的 Free/Pro/Enterprise/Gov 多版本产品（共享后端但域名不同）"
+  - "白标/OEM 产品——主品牌的 API 在子品牌域名上可能仍然可用"
+  - "地区限定版本（如 .cn / .eu 域名）与全球版共享 API 的场景"
+  - "内部工具/管理后台与外部 API 共享端点但权限分离不足的系统"
+
+cases:
+  - url: "https://hackerone.com/reports/1758174"
+    note: "Slack 标准版的 /api/signup.createTeam API 在 slack-gov.com 上同样可用，绕过 GovSlack 禁止自行创建 workspace 的限制。Medium，$1,500。"

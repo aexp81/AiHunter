@@ -1,0 +1,71 @@
+name: "可预测序列化 token 的未认证直接对象访问——时间戳 ID 枚举私有消息"
+id: "SEQUENTIAL_TOKEN_UNAUTHENTICATED_DIRECT_OBJECT_ACCESS"
+applicable: "both"
+phase: "authz"
+also_phases: ["recon"]
+tags: ["idor", "predictable-id", "timestamp-token", "unauthenticated", "direct-object-access", "nextcloud", "social-app", "CVE-2020-8278", "message-leak"]
+source: "https://hackerone.com/reports/921717"
+
+# ——— L3 核心 ———
+
+observation: >
+  Nextcloud Social App 的 displayPost 端点 (/@{username}/{token}) 缺少认证和授权检查，
+  且 TODO 注释已标注缺失。token 值仅由数字组成，基于 unix 时间戳。
+  (原文: "The Social App lacks access controls in the displayPost function
+  (/@{username}/{token}) allowing an unauthenticated user to view any message content
+  by knowing or guessing the message ID." 以及 "Note the TODO comment and the lack
+  of authentication and authorization checks." 以及 "The token value consists of
+  digits only and is based on the unix time.")
+
+hypothesis: >
+  未叙述（仅结果）。推断：由于 token 是时间戳数字，攻击者可通过暴力枚举
+  在已知用户名的情况下遍历所有私密消息。
+
+action_result: >
+  使用 curl 发送带 Accept: application/activity+json 头的 GET 请求，
+  成功获取私密（direct）消息内容。
+  (原文: "curl -X 'GET' -H 'Accept: application/activity+json'
+  'http://{nextcloudHost}/apps/social/@{username}/{token}'|jq")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  N/A。单独即可读取所有私密消息。可组合 username 枚举进一步自动化。
+
+# ——— 落地检查清单 ———
+
+approach: >
+  识别使用可预测标识符（时间戳、自增整数）的直接对象访问端点，
+  检查该端点是否缺少认证（未登录可访问）和/或授权（登录但无权限仍可访问）检查。
+  特别关注源码中的 TODO/FIXME 注释暗示的未完成安全检查。
+
+reasoning_chain:
+  - "这个端点是否需要认证？未登录用户能否直接访问资源 URL？"
+  - "资源标识符是否可预测——自增整数、时间戳、短数字 token？"
+  - "源码中是否有 TODO/FIXME 注释暗示认证/授权检查尚未实现？"
+  - "Accept 头变体（如 application/activity+json vs text/html）是否触发不同的代码路径，其中某些路径缺少权限检查？"
+  - "在已知一个合法 token 的情况下，能否通过时间范围枚举获取其他用户的私密数据？"
+
+vuln_root: "开发者在添加公开展示功能时遗留了 TODO 但未实现认证检查，且资源标识符使用可预测的时间戳"
+
+transferable_to:
+  - "任何使用时间戳或自增整数作为资源 ID 的 ActivityPub/联邦社交应用"
+  - "含有 Accept 头内容协商分支的 API 端点（JSON API vs 页面渲染的权限差异）"
+  - "新增功能模块中标有 TODO 的权限检查代码"
+
+cases:
+  - url: "https://hackerone.com/reports/921717"
+    title: "Improper Access Control on Messages of Social App (Nextcloud, CVE-2020-8278)"
+    bounty: "无赏金"
+  - url: "https://hackerone.com/reports/178503"
+    title: "Ability to retrieve a user's phone-number/email for a given inviteCode"
+    author: "voidexploit"
+    platform: "Uber"
+    severity: "Medium (Information Disclosure)"
+    bounty: "有赏金（金额未披露）"
+    note: >
+      no-content 公开。Uber 的 /a/join?invite_code=inviteCode 端点
+      在给定 inviteCode（可预测/枚举）后返回对应用户的邮箱和/或手机号码，
+      无需认证。approach 相同：公开端点+可预测标识符→未认证直接对象访问→PII 泄露。
+      (团队摘要: "The www.uber.com/a/join?invite_code=inviteCode endpoint returned
+      email and/or phone number for the user with the invite code inviteCode.")

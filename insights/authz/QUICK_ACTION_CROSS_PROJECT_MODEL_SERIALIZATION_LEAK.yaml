@@ -1,0 +1,74 @@
+name: "Quick Actions 引用跨项目对象时 JSON 序列化泄露完整 Model 属性含敏感 token"
+id: "QUICK_ACTION_CROSS_PROJECT_MODEL_SERIALIZATION_LEAK"
+applicable: "blackbox"
+phase: "authz"
+also_phases: ["logic"]
+tags: ["gitlab", "quick-actions", "json-serialization", "information-disclosure", "runner-token", "cross-project-reference", "mass-assignment-read", "over-serialization"]
+source: "https://hackerone.com/reports/509924"
+
+# ——— L3 核心 ———
+
+observation: >
+  Quick Actions 解释器允许用户通过 /move 命令引用一个自己无权访问的项目，
+  且返回的 JSON 响应中包含被引用项目的完整 Model 序列化（所有属性）。
+  (原文: "The Quick Actions interpreter allows an attacker to reference a Project it
+  does not have access to. The model attributes are then being serialized and returned
+  to the user")
+
+hypothesis: >
+  如果 JSON 序列化使用了未限制字段的 to_json/as_json，
+  则 Project Model 的所有属性（包括 runners_token、runners_token_encrypted 等敏感字段）
+  都会返回给用户。
+  (原文: "which results in the Runner token (both encrypted and unencrypted)
+  being returned to the user")
+
+action_result: >
+  成功获取任意项目的 Runner token：
+  1. 创建 issue，评论 /move <目标项目 full path>
+  2. 响应 JSON 的 commands_changes.target_project 中包含完整 Project 属性
+  3. 包括 runners_token（明文）和 runners_token_encrypted
+  4. 利用 Runner token 可注册 runner，访问项目的 CI secret variables
+  (原文: "runners_token: mzssqx69THU██████████")
+  (原文: "runners_token_encrypted: A6nIFzMXZzDdfR5iu9hq6███████████████")
+
+why_here_first: "未叙述（仅结果）"
+
+chaining: >
+  Runner token 泄露 → 注册恶意 runner → 获取 CI/CD secret variables →
+  可能部署任意代码到受害者环境。
+  (原文: "This allows any user to register a runner for a project, which may give the
+  attacker access to secret project variables... this may allow an attacker to deploy
+  arbitrary code to a victim's environment")
+
+# ——— 落地检查清单 ———
+
+approach: >
+  在任何涉及跨资源引用的功能中（Quick Actions、@mention、/move、/assign、链接预览），
+  检查引用的对象是否经过字段过滤后再序列化返回。重点关注 commands_changes /
+  preview / autocomplete 类响应中是否泄露了完整 Model 属性。
+
+reasoning_chain:
+  - "问：目标应用中有哪些功能允许用户引用其他资源？（Quick Actions、@mention、链接、搜索）"
+  - "问：引用其他资源时，是否检查了用户对被引用资源的访问权限？"
+  - "如果未检查或仅部分检查 → 问：返回的 JSON 响应中是否包含被引用资源的详细信息？"
+  - "问：JSON 序列化是否使用了白名单字段（serializer/presenter）还是直接 to_json？"
+  - "如果直接 to_json → Model 的所有属性（含 token/secret/encrypted 字段）都会泄露"
+  - "问：泄露的字段中是否包含高价值 token？（runner_token, api_key, webhook_secret, encrypted_*）"
+  - "如果包含 token → 评估 token 的利用价值（注册 runner → CI secrets → RCE）"
+
+vuln_root: >
+  Quick Actions 跨项目引用时未做 (1) 对被引用对象的权限校验，
+  (2) 返回 JSON 时未用 serializer 白名单过滤字段，直接序列化完整 Model 属性。
+
+transferable_to:
+  - "任何有跨资源引用/搜索功能且 JSON 响应未用 serializer 过滤字段的应用"
+  - "Slash commands / bot commands 等文本解析后触发后端查询的功能"
+  - "Rails as_json/to_json 默认序列化所有属性的场景——需显式 only: / except: 或用 serializer"
+  - "自动补全/预览功能中的 over-fetching——返回了比显示更多的数据"
+
+cases:
+  - url: "https://hackerone.com/reports/509924"
+    note: >
+      GitLab.com，Quick Actions /move 命令泄露任意项目 Runner token，
+      $12,000 赏金，CVSS 9.1。研究者 jobert。
+      可利用 token 注册 runner 获取 CI secret variables。

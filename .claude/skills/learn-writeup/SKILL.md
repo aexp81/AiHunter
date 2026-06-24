@@ -1,7 +1,7 @@
 ---
 name: learn-writeup
 # [原始] description: 从任意来源的漏洞挖掘文章（HackerOne / 博客 / Medium / 公众号 / PDF 等）提炼可迁移的"挖洞思路"（L3 导航过程），按决策三元组锚定原文，去重后沉淀进 hunting-insights.yaml。用户给出文章 URL 或粘贴正文时触发。
-description: 从任意来源的漏洞挖掘文章（HackerOne / 博客 / Medium / 公众号 / PDF 等）提炼可迁移的"挖洞思路"（L3 导航过程），按决策三元组锚定原文，去重后沉淀进 insights/<phase>/ 目录。用户给出文章 URL 或粘贴正文时触发。
+description: 从任意来源的漏洞挖掘文章（HackerOne / 博客 / Medium / 公众号 / PDF 等）提炼可迁移的"挖洞思路"（L3 导航过程），按决策三元组锚定原文，去重后沉淀进 knowledge/insights/<phase>/ 目录。用户给出文章 URL 或粘贴正文时触发。
 ---
 
 # learn-writeup：漏洞文章思路提炼
@@ -26,9 +26,9 @@ GitHub writeup。不局限于某个平台。
 <!-- [原始] 5. **必做结构化分类**：每条 insight 必填 `phase`（取自 hunting-insights.yaml 的
    taxonomy.phase：recon/auth/authz/input/logic/chain）+ `tags`（自由标签）。
    学每篇前先读该文件的 taxonomy 与 articles 索引（防重复学习、保持分类一致）。 -->
-5. **必做结构化分类**：每条 insight 必填 `phase`（合法值见 `insights/README.md`：
+5. **必做结构化分类**：每条 insight 必填 `phase`（合法值见 `knowledge/insights/README.md`：
    recon/auth/authz/input/logic/chain/supply-chain）+ `tags`（自由标签）。
-   学每篇前先读 `insights/README.md` 的分类与去重规则，以及 `insights/articles.yaml` 索引（防重复学习、保持分类一致）。
+   学每篇前先读 `knowledge/insights/README.md` 的分类与去重规则，以及 `knowledge/insights/articles.yaml` 索引（防重复学习、保持分类一致）。
 
 ## 执行流程
 
@@ -73,20 +73,20 @@ GitHub writeup。不局限于某个平台。
 `observation: '导出功能的文件名直接回显在 Content-Disposition (原文: "the filename param was reflected...")'`
 
 ### 步骤 4 去重（写入前必做）
-先读 `insights/articles.yaml`（这篇学过没）和相关 phase 目录下已有 insight，判断：
-- **去重键是 `approach`（打法/导航路径），不是 vuln_root**（见 insights/README.md）。
-- **approach 全新** → 在 `insights/<phase>/<ID>.yaml` 新建一个文件。
+先读 `knowledge/insights/articles.yaml`（这篇学过没）和相关 phase 目录下已有 insight，判断：
+- **去重键是 `approach`（打法/导航路径），不是 vuln_root**（见 knowledge/insights/README.md）。
+- **approach 全新** → 在 `knowledge/insights/<phase>/<ID>.yaml` 新建一个文件。
 - **approach 已有** → 不新建，把本篇作为新 `case`（含 source）补进那条 insight，
   并在 articles.yaml 的 `added_cases_to` 登记。
 - **approach 近似但导航路径不同** → 仍算新条目（宁可多一条，别合并掉 L3 差异）。
 - 跨阶段思路：主阶段放目录，其余写 `also_phases` 字段。
 
 ### 步骤 5 审计并写入
-- 文件落位：`insights/<phase>/<ID>.yaml`，一条一文件，文件名=id。
-- 更新 `insights/articles.yaml`：登记 url/title/quality/produced_insights/added_cases_to。
+- 文件落位：`knowledge/insights/<phase>/<ID>.yaml`，一条一文件，文件名=id。
+- 更新 `knowledge/insights/articles.yaml`：登记 url/title/quality/produced_insights/added_cases_to。
 - 走 CLAUDE.md 第 7 节审计：L3 三项是否锚定原文或标"未叙述"？reasoning_chain 全问句？
   必填字段（含 approach）齐全？yaml 能 safe_load？
-- 审计结果追加到 AUDIT_FRAMEWORK.yaml 的 audit_log。
+- 审计结果追加到 pipeline/AUDIT_FRAMEWORK.yaml 的 audit_log。
 
 ## 批量处理
 用户一次给多篇：复用 CVE 批量学习的并行 subagent 模式——每个 subagent 啃一篇返回

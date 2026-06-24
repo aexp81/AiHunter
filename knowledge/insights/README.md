@@ -1,4 +1,4 @@
-# insights/ 挖洞思路库（L3 导航经验）
+# knowledge/insights/ 挖洞思路库（L3 导航经验）
 
 由 `/learn-writeup` 写入，schema 见项目 CLAUDE.md 第 8 节。
 
@@ -14,7 +14,7 @@ recon / auth / authz / input / logic / chain / supply-chain。一条思路一个
 `vuln_root` 降级为标签，仅描述漏洞本质，不参与去重判断。
 → 新文章命中已有 `approach` 才补 case；approach 不同就新建。
 
-## 检索（暂未建工具，约定先行）
-当前数量少，人工/AI 直接按目录+文件名浏览。
-攒到约 50 条再建 INDEX 自动生成 + 检索 skill；届时检索须“整阶段 trigger 过一遍”，
-不可纯关键字匹配（C2）。
+## 检索（C2）
+入口 = `INDEX.yaml`（由 `tools/build_insights_index.py` 自动生成的 approach 目录，**勿手改**）。
+检索铁律：按相关 phase **整段过一遍**，命中 approach 后再拉取 `<phase>/<ID>.yaml` 全文，
+**不可纯关键字匹配**。新增/修改 insight 后刷新：`python3 tools/build_insights_index.py`。

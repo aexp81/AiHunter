@@ -1,4 +1,4 @@
-id: PATH_TRAVERSAL_FILE_OP
+id: PATH_TRAVERSAL
 name: "用户可控路径直接用于文件操作"
 applicable: whitebox
 category: input

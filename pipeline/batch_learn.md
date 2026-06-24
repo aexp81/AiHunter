@@ -5,7 +5,7 @@
 ## 准备
 
 1. 读 `.claude/skills/learn-writeup/SKILL.md` 了解 schema 和核心铁律
-2. 读 `insights/README.md` 了解 phase 列表和去重规则（approach 去重）
+2. 读 `knowledge/insights/README.md` 了解 phase 列表和去重规则（approach 去重）
 
 ## 对每篇报告（5 篇依次处理，每篇间隔 3 秒）
 
@@ -15,7 +15,7 @@
    - 有 L3 内容（扑空/why_here_first/串链） → 全量提炼
    - 纯结果文（仅 PoC 无思维过程） → 看能否补 case 到已有 insight，否则跳过
 6. **去重**：对照传入的 approach ID 列表，approach 命中已有 → 补 case（编辑已有文件的 cases 字段），不新建
-7. **可提炼的**直接写入文件 `insights/<phase>/<ID>.yaml`，schema 如下：
+7. **可提炼的**直接写入文件 `knowledge/insights/<phase>/<ID>.yaml`，schema 如下：
 
 ```yaml
 name: "思路名称（描述判断，不是漏洞类）"
@@ -49,7 +49,7 @@ cases:
 
 ## 重要：不要写 articles.yaml
 
-**禁止直接编辑 `insights/articles.yaml`**——该文件由主线程串行写入，避免并发冲突。
+**禁止直接编辑 `knowledge/insights/articles.yaml`**——该文件由主线程串行写入，避免并发冲突。
 你需要在返回摘要中附带 articles.yaml 条目内容，由主线程统一追加。
 
 ## 写入失败处理

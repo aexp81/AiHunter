@@ -8,46 +8,61 @@
 
 ```
 AiHunter/（仓库根）
-├── security/                          # ★ 三层分离执行架构
-│   ├── INDEX.yaml                     #   Layer 0：触发索引（每次测试必加载）
-│   ├── patterns/
-│   │   ├── blackbox/                  #   Layer 1：黑盒执行清单（按需加载，每文件<40行）
-│   │   │   ├── auth/                  #     AUTH_PARAM_COMPLETENESS（★新增）
-│   │   │   │                          #     LDAP_NULL_PASSWORD, DEFAULT_CREDENTIAL
-│   │   │   ├── authz/                 #     IDOR, MASS_ASSIGN, PARAMETER_BINDING
-│   │   │   │                          #     PERMISSION_LEVEL_CONFUSION, AUTHZ_BRANCH_GAP
-│   │   │   │                          #     INDIRECT_OBJECT_REF
-│   │   │   ├── input/                 #     PATH_TRAVERSAL, SSRF, STORED_XSS
-│   │   │   │                          #     FILE_EXTENSION_XSS
-│   │   │   ├── local/                 #  ★新增：本地/桌面/二进制提权（5个模式）
-│   │   │   │                          #     WRITABLE_LOAD_PATH_HIJACK, PRIVILEGED_FILE_OP_TOCTOU
-│   │   │   │                          #     LOCAL_IPC_PEER_TRUST, SANDBOX_POLICY_COVERAGE_GAP
-│   │   │   │                          #     CLIENT_SIDE_POLICY_LOCAL_BYPASS
-│   │   │   └── universal/             #     UNAUTH_ENDPOINT
-│   │   └── whitebox/                  #   Layer 1：白盒执行清单（含grep命令）
-│   │       ├── auth/ authz/ input/
-│   │       ├── logic/ universal/
-│   │       └── local/                 #  ★新增：本地/二进制提权白盒审计（含MEMORY_CORRUPTION_PRIMITIVE_AUDIT）
-│   ├── cases/                         #   Layer 2：CVE案例库（不加载进上下文，按需查询）
-│   │   └── blackbox-cases.yaml
-│   └── anchor-traps/                  #   ★ AI实测失败记录（强制检查）
-│       └── anchor-traps.yaml
-├── insights/                          #   L3 挖洞导航思路库（writeup 提炼，241条，按 phase 分目录）
-│   ├── README.md
-│   ├── articles.yaml
-│   └── <phase>/<ID>.yaml
-├── .claude/skills/learn-writeup/      #   从 writeup 提炼 L3 思路的 skill
-└── CLAUDE.md                          #   本文件
+├── README.md                              #   项目入口（产品是什么 / 两库怎么查 / 流水线怎么跑）
+├── CLAUDE.md                              #   本文件：项目说明 + 漏洞学习规范
+├── BACKLOG.md                             #   长期任务/缺陷清单（持续迭代）
+├── knowledge/                             # ★ 知识产物（产品本体，长期沉淀+被检索）
+│   ├── security/                          #   三层分离执行架构
+│   │   ├── INDEX.yaml                     #     Layer 0：触发索引（每次测试必加载）
+│   │   ├── patterns/
+│   │   │   ├── blackbox/                  #     Layer 1：黑盒执行清单（按需加载，每文件<40行）
+│   │   │   │   ├── auth/                  #       AUTH_PARAM_COMPLETENESS, LDAP_NULL_PASSWORD, DEFAULT_CREDENTIAL
+│   │   │   │   ├── authz/                 #       IDOR, MASS_ASSIGN, PARAMETER_BINDING,
+│   │   │   │   │                          #       PERMISSION_LEVEL_CONFUSION, AUTHZ_BRANCH_GAP, INDIRECT_OBJECT_REF
+│   │   │   │   ├── input/                 #       PATH_TRAVERSAL, SSRF, STORED_XSS, FILE_EXTENSION_XSS
+│   │   │   │   ├── local/                 #       本地/桌面/二进制提权（5个模式）
+│   │   │   │   │                          #       WRITABLE_LOAD_PATH_HIJACK, PRIVILEGED_FILE_OP_TOCTOU,
+│   │   │   │   │                          #       LOCAL_IPC_PEER_TRUST, SANDBOX_POLICY_COVERAGE_GAP,
+│   │   │   │   │                          #       CLIENT_SIDE_POLICY_LOCAL_BYPASS
+│   │   │   │   └── universal/             #       UNAUTH_ENDPOINT
+│   │   │   └── whitebox/                  #     Layer 1：白盒执行清单（含grep命令）
+│   │   │       ├── auth/ authz/ input/
+│   │   │       ├── logic/ universal/
+│   │   │       └── local/                 #       本地/二进制提权白盒审计（含MEMORY_CORRUPTION_PRIMITIVE_AUDIT）
+│   │   ├── cases/                         #     Layer 2：CVE案例库（不加载进上下文，按需查询）
+│   │   │   └── blackbox-cases.yaml
+│   │   └── anchor-traps/                  #   ★ AI实测失败记录（强制检查，与 INDEX 一起加载）
+│   │       └── anchor-traps.yaml
+│   └── insights/                          #   L3 挖洞导航思路库（writeup 提炼，按 phase 分目录）
+│       ├── INDEX.yaml                      #   ★检索入口：自动生成的 approach 目录（tools 生成，勿手改）
+│       ├── README.md
+│       ├── articles.yaml
+│       └── <phase>/<ID>.yaml              #     recon/auth/authz/input/logic/chain/supply-chain
+├── pipeline/                              # ★ 知识生产/审计流水线（"机器"，不是知识本身）
+│   ├── BATCH_ORCHESTRATOR.md              #     主线程批量学习编排
+│   ├── batch_learn.md                     #     subagent 单批学习指令
+│   ├── AUDIT_FRAMEWORK.yaml               #     模式质量审计框架 + audit_log
+│   └── KNOWN_ISSUES.md                    #     已知平台问题与规避
+├── state/                                 # ★ 流水线运行态（git 跟踪，与知识分离）
+│   ├── task_state.yaml                    #     批量学习进度（断点恢复用）
+│   └── current_ids.txt                    #     approach 去重缓存（可由 knowledge/insights/ 再生）
+├── tools/                                 #   仓库工具（build_insights_index.py 生成索引 / validate.py 校验铁律）
+├── reports/                               #   黑盒报告输出
+└── .claude/skills/learn-writeup/          #   从 writeup 提炼 L3 思路的 skill
 ```
 
 ## 测试执行规则（新架构核心规则）
 
 ### 每次测试开始时必须加载的文件
-1. `security/INDEX.yaml` —— 识别攻击面，找到对应模式文件路径
-2. `security/anchor-traps/anchor-traps.yaml` —— 打断锚定，避免重蹈覆辙
+1. `knowledge/security/INDEX.yaml` —— 识别攻击面，找到对应模式文件路径
+2. `knowledge/security/anchor-traps/anchor-traps.yaml` —— 打断锚定，避免重蹈覆辙
 3. 按 INDEX.yaml 的触发规则，加载 2-3 个对应模式文件
 
 **绝对不要** 全量加载 patterns/ 目录，只加载当前目标需要的模式。
+
+### 侦查/选打法阶段检索 insights（L3 导航库）
+- 加载 `knowledge/insights/INDEX.yaml`（自动生成的 approach 目录），按相关 phase **整段过一遍**，命中后再拉取 `<phase>/<ID>.yaml` 全文。
+- 不可纯关键字匹配（见 insights/README 的 C2）。INDEX 由 `tools/build_insights_index.py` 生成，新增 insight 后需刷新（`python3 tools/build_insights_index.py`）。
 
 ### 强制执行规则
 每个模式文件的 `reasoning_chain` 必须逐条执行，**不允许因为"已经理解了这个接口"而跳过任何一条**。
@@ -55,7 +70,7 @@ AiHunter/（仓库根）
 这是防止 AI 被当前理解框架锚定的核心机制。
 
 ### anchor-traps 的使用
-每次测试结束后，如果发现了"AI 之前跳过了某个检查"，必须在 `anchor-traps/anchor-traps.yaml` 里新增一条记录，包含：
+每次测试结束后，如果发现了"AI 之前跳过了某个检查"，必须在 `knowledge/security/anchor-traps/anchor-traps.yaml` 里新增一条记录，包含：
 - 被什么锚定（anchor）
 - 跳过了什么检查（skipped_check）
 - 为什么跳过（reason）
@@ -200,11 +215,10 @@ reasoning_chain:
 
 每次添加新模式或修改现有模式后，按以下顺序自我检查：
 
-1. **格式检查**：reasoning_chain 是否全部是问句？白盒是否有 grep 命令？
-2. **完整性检查**：对照 AUDIT_FRAMEWORK.yaml 的 common_omissions 逐项确认
+1. **格式检查**：运行 `python3 tools/validate.py`（自动校验 问句格式 / 白盒 grep / 必填字段 / id 唯一 / 无“步骤X”），ERROR 必须清零；WARN 为格式漂移，酌情清理。
+2. **完整性检查**：对照 pipeline/AUDIT_FRAMEWORK.yaml 的 common_omissions 逐项确认
 3. **技术准确性**：涉及协议/框架/浏览器行为的描述是否有依据？
-4. **字段完整性**：transferable_to / access_required / prerequisite 是否都有？
-5. **记录**：将审计结果追加到 AUDIT_FRAMEWORK.yaml 的 audit_log
+4. **记录**：将审计结果追加到 pipeline/AUDIT_FRAMEWORK.yaml 的 audit_log
 
 ---
 

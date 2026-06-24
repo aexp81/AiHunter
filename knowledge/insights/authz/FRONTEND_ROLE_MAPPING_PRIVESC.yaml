@@ -6,7 +6,7 @@ also_phases: [recon]
 tags: [privesc, mass-assignment, registration, frontend-trust]
 approach: "低权限确认后，回前端 JS 找角色↔ID 映射表，注册请求注入高权限参数（ownerId）提权"
 source: "https://mp.weixin.qq.com/s/R-3uPkL88iBndFoWnw9lpA"
-related_pattern: "security/patterns/blackbox/authz/MASS_ASSIGN.yaml"
+related_pattern: "knowledge/security/patterns/blackbox/authz/MASS_ASSIGN.yaml"
 
 observation: '注册得到的是普通账号 roleType=GUEST，访问全部用户接口 403 (原文: "可以看到右边 roleType=GUEST...显示权限低")'
 hypothesis: "权限既然分级，注册时的角色大概率由某个前端可控参数决定，前端 JS 里应有角色↔ID 的映射"

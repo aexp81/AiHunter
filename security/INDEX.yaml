@@ -1,0 +1,102 @@
+# 测试触发索引
+# 作用：测试开始时加载此文件，根据发现的攻击面决定加载哪些模式文件
+# 规模：黑盒触发部分 < 60 行，含白盒触发 < 120 行，不放任何 reasoning_chain，只做路由
+#
+# 使用方式：
+# 1. 侦查阶段识别目标的攻击面类型
+# 2. 查此索引找到对应模式文件路径
+# 3. 加载对应文件，逐条执行 reasoning_chain
+# 4. 禁止跳过任何一条，包括"看起来不像有问题"的检查
+
+version: "2.0"
+
+# ============================================================
+# 强制基础检查（对每个接口无条件执行，不依赖接口类型判断）
+# ============================================================
+universal:
+  - universal/UNAUTH_ENDPOINT          # 去掉 token，先测未认证行为
+
+# ============================================================
+# 按攻击面类型触发
+# ============================================================
+triggers:
+
+  # 任何认证/登录接口（login / auth / token / session / account）
+  auth_endpoint:
+    - auth/AUTH_PARAM_COMPLETENESS     # ★ 最高优先级，参数完整性测试
+    - auth/LDAP_NULL_PASSWORD          # 空密码/缺失密码绕过
+    - auth/DEFAULT_CREDENTIAL          # 默认弱凭证
+
+  # 文件操作（upload / download / file / attachment / avatar）
+  file_operation:
+    - input/PATH_TRAVERSAL
+    - input/FILE_EXTENSION_XSS
+
+  # 带 ID 参数的接口（/api/resource/{id} 或 ?id=xxx）
+  id_parameter:
+    - authz/IDOR
+    - authz/INDIRECT_OBJECT_REF
+
+  # 接受 JSON body 的创建/更新接口（create / update / register）
+  json_mutation:
+    - authz/MASS_ASSIGN
+    - authz/PARAMETER_BINDING
+
+  # 接受 URL 参数的功能（webhook / image_url / url / src）
+  url_parameter:
+    - input/SSRF
+
+  # 富文本/Markdown 渲染（markdown / mermaid / katex / editor）
+  rich_text:
+    - input/STORED_XSS
+    - input/FILE_EXTENSION_XSS
+
+  # 分级共享资源（shared / read-only / permission / role）
+  shared_resource:
+    - authz/PERMISSION_LEVEL_CONFUSION
+    - authz/AUTHZ_BRANCH_GAP
+
+# ============================================================
+# 白盒专用触发（有源码时额外加载）
+# ============================================================
+whitebox_triggers:
+
+  auth_endpoint:
+    - whitebox/auth/LDAP_NULL_PASSWORD
+    - whitebox/auth/FIX_INCONSISTENCY
+    - whitebox/auth/FEATURE_GATE_UI_ONLY
+
+  file_operation:
+    - whitebox/input/PATH_TRAVERSAL
+    - whitebox/input/FILE_EXTENSION_TRUST
+
+  id_parameter:
+    - whitebox/authz/MISSING_OWNERSHIP_CHECK
+    - whitebox/authz/INDIRECT_OBJECT_REF
+    - whitebox/authz/ENDPOINT_PARITY_MISSING
+
+  json_mutation:
+    - whitebox/authz/MASS_ASSIGN_PYDANTIC_EXTRA
+    - whitebox/input/PARAMETER_BINDING_EXPOSURE
+
+  url_parameter:
+    - whitebox/input/SSRF_VALIDATION_BYPASS
+
+  rich_text:
+    - whitebox/input/THIRD_PARTY_LOOSE_CONFIG
+    - whitebox/input/DOMPURIFY_ORDER_XSS
+    - whitebox/input/SVG_DATAURI_XSS
+    - whitebox/input/IFRAME_SANDBOX_NULLIFIED
+
+  long_connection:
+    - whitebox/logic/STALE_SESSION_PRIVILEGE
+
+  dynamic_execution:
+    - whitebox/input/RCE_DYNAMIC_LOAD_EXEC
+
+  authz_general:
+    - whitebox/authz/AUTHZ_BRANCH_GAP
+    - whitebox/authz/PERMISSION_LEVEL_CONFUSION
+
+  universal:
+    - whitebox/universal/UNAUTH_SENSITIVE_ENDPOINT

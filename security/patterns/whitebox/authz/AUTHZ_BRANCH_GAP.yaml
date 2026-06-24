@@ -1,0 +1,21 @@
+id: AUTHZ_BRANCH_GAP
+name: "授权检查的类型/状态分支遗漏"
+applicable: both
+category: authz
+cwe: "CWE-862 / CWE-863"
+
+trigger:
+  - "鉴权代码按资源类型分支：if channel.type in ['group','dm']"
+  - "成员资格检查未过滤 is_active（停用成员仍命中）"
+  - "前缀白名单授权：startswith('user-memory-') 无 else 兜底"
+
+reasoning_chain:
+  - "执行规则：以下每条必须逐一执行，grep 命令必须实际运行，不允许跳过"
+  - "问：鉴权 if/else 是否穷尽所有类型？有无 else 兜底拒绝？"
+  - "白盒：grep -rn \"type in \\['group'\\|\\.type ==\" routers/channels.py"
+  - "问：成员资格检查是否过滤 is_active？"
+  - "白盒：grep -rn 'is_user_channel_member\\|ChannelMember' models/ | grep -L 'is_active'"
+  - "问：前缀白名单是否覆盖所有命名空间（含裸 UUID 的 collection）？"
+  - "白盒：grep -n 'startswith\\|else' routers/retrieval.py"
+  - "如果：standard 分支无检查 / membership 不查 is_active / 前缀无 else → 漏洞"
+  - "验证：在 standard channel（非 group/dm）重放 group 才被拦的操作；被踢出后用旧 channel_id 直接调 API，看是否仍 200"

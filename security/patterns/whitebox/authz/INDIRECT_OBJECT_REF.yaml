@@ -1,0 +1,23 @@
+id: INDIRECT_OBJECT_REF
+name: "间接对象引用链：通过自有容器引用他人对象 ID"
+applicable: both
+category: authz
+cwe: CWE-639
+
+trigger:
+  - "写接口接受对象 ID 引用（file_id / collection / base_model_id）写入调用者资源"
+  - "授权只校验外层资源所有权，未校验被引用对象的归属"
+  - "授权门有'共享链路'分支无条件 return True"
+  - "资源支持链式/嵌套引用（model chaining）"
+
+reasoning_chain:
+  - "执行规则：以下每条必须逐一执行，grep 命令必须实际运行，不允许跳过"
+  - "问：写 handler 是否把用户传入的对象 ID 存入调用者资源而未校验该 ID 归属？"
+  - "白盒：grep -rn 'file_id\\|base_model_id' --include='*.py' routers/ | grep -i 'add\\|update\\|attach\\|batch\\|import'"
+  - "问：被引用对象是否仅'因关联到我拥有的容器'就被授权函数放行？"
+  - "白盒：grep -rn 'has_access_to_file\\|check_model_access' utils/ routers/"
+  - "问：授权函数里有几条 return True？每条是否都校验了请求者身份与 access_type？"
+  - "白盒：grep -n 'return True' utils/access_control/*.py；grep -n 'access_type' <file>（声明却 body 不引用 = 形同虚设）"
+  - "问：解析 base_model_id / parent_id 后是否对父对象重新执行 check_access？"
+  - "如果：外层校验通过但内层对象无独立校验 → 引用链绕过"
+  - "验证：把他人 file_id 写进自己的 folder/KB/chat，再通过自有资源读/删该文件"

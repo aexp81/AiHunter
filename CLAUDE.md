@@ -7,16 +7,58 @@
 ## 知识库结构
 
 ```
-security/
-├── openwebui-patterns-whitebox.yaml   # 白盒代码审计模式库
-├── openwebui-patterns-blackbox.yaml   # 黑盒渗透测试模式库
-├── insights/                          # 挖洞思路库（writeup 提炼的 L3 经验）
-│   ├── README.md                      #   结构说明 + 去重键规则（approach）
-│   ├── articles.yaml                  #   已学文章登记（防重学 + 溯源）
-│   └── <phase>/<ID>.yaml              #   一条思路一文件，按阶段分目录
-├── .claude/skills/learn-writeup/      # 从任意漏洞文章提炼思路的 skill
-└── CLAUDE.md                          # 本文件
+security/                              # ★ 新架构（三层分离）
+├── INDEX.yaml                         #   Layer 0：触发索引（每次测试必加载，< 60行）
+├── patterns/
+│   ├── blackbox/                      #   Layer 1：黑盒执行清单（按需加载，每文件<40行）
+│   │   ├── auth/                      #     AUTH_PARAM_COMPLETENESS（★新增）
+│   │   │                              #     LDAP_NULL_PASSWORD, DEFAULT_CREDENTIAL
+│   │   ├── authz/                     #     IDOR, MASS_ASSIGN, PARAMETER_BINDING
+│   │   │                              #     PERMISSION_LEVEL_CONFUSION, AUTHZ_BRANCH_GAP
+│   │   │                              #     INDIRECT_OBJECT_REF
+│   │   ├── input/                     #     PATH_TRAVERSAL, SSRF, STORED_XSS
+│   │   │                              #     FILE_EXTENSION_XSS
+│   │   └── universal/                 #     UNAUTH_ENDPOINT
+│   └── whitebox/                      #   Layer 1：白盒执行清单（20个模式，含grep命令）
+│       ├── auth/ authz/ input/
+│       ├── logic/ universal/
+├── cases/                             #   Layer 2：CVE案例库（不加载进上下文，按需查询）
+│   └── blackbox-cases.yaml
+├── anchor-traps/                      #   ★ 新增：AI实测失败记录（强制检查）
+│   └── anchor-traps.yaml
+├── insights/                          #   L3 挖洞导航思路库（writeup 提炼）
+│   ├── README.md
+│   ├── articles.yaml
+│   └── <phase>/<ID>.yaml
+├── .claude/skills/learn-writeup/      #   从 writeup 提炼 L3 思路的 skill
+├── openwebui-patterns-blackbox.yaml   #   旧文件（已迁移，保留作参考）
+├── openwebui-patterns-whitebox.yaml   #   旧文件（已迁移，保留作参考）
+└── CLAUDE.md                          #   本文件
 ```
+
+## 测试执行规则（新架构核心规则）
+
+### 每次测试开始时必须加载的文件
+1. `security/INDEX.yaml` —— 识别攻击面，找到对应模式文件路径
+2. `security/anchor-traps/anchor-traps.yaml` —— 打断锚定，避免重蹈覆辙
+3. 按 INDEX.yaml 的触发规则，加载 2-3 个对应模式文件
+
+**绝对不要** 全量加载 patterns/ 目录，只加载当前目标需要的模式。
+
+### 强制执行规则
+每个模式文件的 `reasoning_chain` 必须逐条执行，**不允许因为"已经理解了这个接口"而跳过任何一条**。
+
+这是防止 AI 被当前理解框架锚定的核心机制。
+
+### anchor-traps 的使用
+每次测试结束后，如果发现了"AI 之前跳过了某个检查"，必须在 `anchor-traps/anchor-traps.yaml` 里新增一条记录，包含：
+- 被什么锚定（anchor）
+- 跳过了什么检查（skipped_check）
+- 为什么跳过（reason）
+- 对应的强制检查（forced_checks）
+
+### cases 的使用
+`cases/` 目录只在写报告时查阅，**不加载进测试上下文**。
 
 ---
 

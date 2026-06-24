@@ -1,0 +1,25 @@
+id: SSRF_VALIDATION_BYPASS
+name: "SSRF：URL 验证不完备或缺失"
+applicable: both
+category: input
+cwe: CWE-918
+
+trigger:
+  - "端点接受用户可控 URL，后端发起 HTTP 请求"
+  - "URL 验证只检查初始 URL，但客户端跟随重定向"
+  - "URL 解析库（urlparse）与 HTTP 客户端库（requests）解析不一致"
+  - "新增端点（OAuth/webhook/image/PDF）完全遗漏 validate_url 调用"
+
+reasoning_chain:
+  - "执行规则：以下每条必须逐一执行，grep 命令必须实际运行，不允许跳过"
+  - "问：哪些端点把用户 URL 传给 HTTP 客户端？"
+  - "白盒：grep -rn 'requests.get\\|aiohttp.*get\\|httpx\\|urlopen' --include='*.py' | grep -v test"
+  - "问：该 URL 传给客户端前是否调用 validate_url？"
+  - "白盒：grep -B20 '<HTTP_client_call>' <file> | grep 'validate_url\\|check_url'"
+  - "问：HTTP 客户端是否跟随 3xx 重定向（默认 allow_redirects=True）？"
+  - "白盒：grep -rn 'allow_redirects' --include='*.py' | grep -v 'False'"
+  - "问：验证用 urlparse 而执行用 requests？两者对 backslash/userinfo 解析不同"
+  - "问：IPv6 验证是否依赖 validators 库 private 参数（对 IPv6 无效）？"
+  - "白盒：grep 'validators.ipv6.*private\\|ipv4_mapped\\|is_private' <file>"
+  - "如果：验证缺失 / 只验初始 URL / 解析库不一致 / IPv6 检查有 bug → SSRF"
+  - "验证：公网 302 重定向到内网；backslash 混淆 http://127.0.0.1\\@public.com；IPv6 http://[::1]"

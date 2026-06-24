@@ -1,0 +1,19 @@
+id: FILE_EXTENSION_XSS
+name: "文件扩展名导致的 XSS"
+applicable: blackbox
+category: input
+cwe: CWE-434
+
+trigger:
+  - "应用支持文件上传和预览"
+  - "文件通过浏览器 inline 渲染"
+
+# 执行规则：以下每条必须逐一执行
+reasoning_chain:
+  - "问：curl -I 预览 URL，响应头 Content-Type 是按扩展名设置的吗？"
+  - "问：响应头是否有 X-Content-Type-Options: nosniff？（有则此攻击失效）"
+  - "问：Content-Disposition 是 inline 还是 attachment？（attachment 强制下载无法执行）"
+  - "问：文件 URL 与主应用是否同源？（跨域受 CORB 保护）"
+  - "如果 inline + 无 nosniff + 同源：上传 <svg onload=alert(1)></svg> 保存为 test.svg，访问后是否弹窗？"
+  - "问：直接上传 .html 文件能否被 inline 渲染执行？"
+  - "如果 SVG 被限制：问：用 .svg.jpg / Content-Type 伪造能否绕过扩展名限制？"

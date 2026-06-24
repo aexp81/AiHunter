@@ -1,0 +1,18 @@
+id: DOMPURIFY_ORDER_XSS
+name: "XSS：DOMPurify sanitize 在 markdown 渲染之前调用"
+applicable: both
+category: input
+cwe: CWE-79
+
+trigger:
+  - "见到 {@html marked.parse(DOMPurify.sanitize(...))}"
+  - "sanitize 包在 marked 内层（先 sanitize 后渲染）"
+
+reasoning_chain:
+  - "执行规则：以下每条必须逐一执行，grep 命令必须实际运行，不允许跳过"
+  - "问：sanitize 和 markdown 解析谁先执行？"
+  - "白盒：grep -rn 'marked.parse(DOMPurify' --include='*.svelte'"
+  - "问：是否有裸 {@html} 完全不经 sanitize？"
+  - "白盒：grep -rn '@html' -A1 src/ | grep -i 'marked\\|sanitize'"
+  - "如果：sanitize 在 marked 内层 → 原始 markdown 无 HTML 标签原样通过，marked 再把 [t](javascript:) 转成 <a href=javascript:> → 漏洞"
+  - "验证：在可控 markdown 字段（banner/overlay/model desc）提交 [x](javascript:alert(1))，渲染后点击看是否执行"

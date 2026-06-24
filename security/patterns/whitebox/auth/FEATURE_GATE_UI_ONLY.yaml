@@ -1,0 +1,16 @@
+id: FEATURE_GATE_UI_ONLY
+name: "Feature gate 仅前端隐藏，API 端点未校验开关"
+applicable: both
+category: auth
+cwe: CWE-602
+
+trigger:
+  - "存在敏感功能开关（代码执行/RAG/上传），管理员可关闭"
+  - "开关只在前端隐藏入口，后端 handler 未读 config.*"
+
+reasoning_chain:
+  - "执行规则：以下每条必须逐一执行，grep 命令必须实际运行，不允许跳过"
+  - "问：handler 内是否检查对应 config flag？"
+  - "白盒：grep -rn 'ENABLE_CODE_EXECUTION' backend/ —— 看是否只在前端/config 出现而非 routers/*.py handler 体内"
+  - "如果：flag 仅在 svelte/config 出现，handler 无 'if not config.X: raise 403' → gate 可绕过"
+  - "验证：管理员关掉开关后，直接 curl 对应 API 端点，看返回 200 还是 403"

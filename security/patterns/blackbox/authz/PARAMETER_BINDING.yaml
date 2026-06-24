@@ -1,0 +1,17 @@
+id: PARAMETER_BINDING
+name: "内部参数经 query string 暴露"
+applicable: blackbox
+category: authz
+cwe: CWE-915
+
+trigger:
+  - "端点返回受限数据或 403"
+  - "怀疑存在内部开关参数"
+
+# 执行规则：以下每条必须逐一执行
+reasoning_chain:
+  - "问：追加 ?bypass_filter=true，响应是否从 403 变 200？"
+  - "问：追加 ?admin=true / ?is_admin=1 / ?internal=1，响应是否变化？"
+  - "问：追加 ?base_model_id=X / ?override=true / ?skip_check=1，响应是否变化？"
+  - "如果响应从 403→200 或返回新字段 → 内部参数暴露"
+  - "问：这个参数是否在 API 文档或前端 JS 里出现过？（未文档化 = 内部参数）"

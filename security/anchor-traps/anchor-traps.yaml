@@ -1,0 +1,72 @@
+# Anchor Traps —— AI 实测中会卡住的位置
+# 格式：每条记录一个"AI 因为当前理解框架而跳过的检查"
+# 作用：测试开始时与 INDEX.yaml 一起加载，打断锚定
+# 规则：每条 anchor_trap 必须有对应的 forced_checks
+
+version: "1.0"
+
+traps:
+
+  - id: "AT-001"
+    date: "2026-06-24"
+    target_type: "认证接口（私有化部署）"
+    source: "FlightHub2 account-auth 接口实测"
+
+    # AI 被什么锚定了
+    anchor: "读到前端 JS 代码里描述了接口需要 account+password+timespan 三个参数"
+
+    # 导致跳过了什么
+    skipped_check: "完全不传 password 字段的测试"
+
+    # 为什么会跳过
+    reason: "AI 把 JS 代码当成接口规范，默认'需要三个参数'是正确的，
+             因此所有测试都在三个参数的框架内打转，
+             从来没有质疑'参数列表本身是否完整'"
+
+    # 实际结果
+    actual_finding: "只传 account 不传 password，直接返回 super-admin token（绕过认证）"
+
+    # 强制检查（每次遇到同类场景必须执行）
+    forced_checks:
+      - "问：JS/文档描述的参数列表是实现细节，不是接口规范——逐个去掉每个参数测试"
+      - "问：完全不传任何参数，响应是什么？"
+      - "问：只传账号不传密码，响应是什么？"
+      - "问：只传密码不传账号，响应是什么？"
+
+  - id: "AT-002"
+    date: "2026-06-24"
+    target_type: "自定义错误码接口"
+    source: "FlightHub2 account-auth 210331 错误码实测"
+
+    anchor: "接口持续返回 210331（Bad Request），AI 解读为'参数格式问题'或'zone上下文缺失'"
+
+    skipped_check: "在三个参数框架内的测试——从未测试去掉 password 参数"
+
+    reason: "自定义错误码遮蔽了真实原因，AI 在解读错误码含义后，
+             把测试方向引向'如何满足这个校验'，而不是'这个校验本身是否可以绕过'"
+
+    actual_finding: "210331 的真实含义是'系统未激活'，与密码无关——
+                     但即使在这种情况下，只传 account 仍然成功返回 token"
+
+    forced_checks:
+      - "问：自定义错误码只是一个信号，不要花超过 3 轮测试去解读它"
+      - "问：当某个参数组合一直失败时，尝试去掉不同的参数而不是改变参数的值"
+      - "问：错误码在任何参数值变化下都相同时，说明错误在更早的阶段——考虑减少参数数量"
+
+  - id: "AT-003"
+    date: "2026-06-24"
+    target_type: "多端口服务"
+    source: "FlightHub2 端口扫描实测"
+
+    anchor: "80端口的 /api/* 路径都被 nginx catch-all 重写到 SPA"
+
+    skipped_check: "没有扫描其他端口，没有找到真正的后端 API 在哪里"
+
+    reason: "发现 80 端口行为后，AI 开始集中测试如何绕过 nginx 重写，
+             而不是退出来问'后端 API 到底在哪个端口'"
+
+    forced_checks:
+      - "问：80端口的 /api/* 返回 HTML，说明后端在其他端口——扫描 8080-9090 和 30000-32767"
+      - "问：前端 HTML 里是否有 configHost / server_url / API_BASE 等配置变量？"
+      - "问：前端 JS 里的 axios baseURL 配置指向哪里？"
+      - "问：检查 service.config.js / config.js 等配置文件是否暴露后端地址"

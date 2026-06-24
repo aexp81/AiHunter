@@ -1,0 +1,105 @@
+# cases 数据库 —— 黑盒模式真实案例
+# 作用：供查阅，不加载进测试上下文
+# 使用：写报告时按 pattern_id 查对应案例
+
+version: "1.0"
+
+cases:
+
+  PATH_TRAVERSAL:
+    - cve: "CVE-2026-44566"
+      note: "Open WebUI /rag/api/v1/doc，未过滤 filename"
+
+  LDAP_NULL_PASSWORD:
+    - cve: "CVE-2026-44551"
+      note: "Open WebUI LDAP 认证，空密码触发 Unauthenticated Bind"
+
+  IDOR:
+    - note: "Open WebUI 15+ API 存在 IDOR"
+    - cve: "CVE-2026-45301"
+      note: "全部 /files/ 端点可列/读/删全实例文件"
+    - cve: "CVE-2026-45666"
+      note: "notes {id} 枚举 UUID 读他人笔记"
+    - cve: "CVE-2026-44570"
+      note: "memories API 跨用户查/删/恢复"
+    - cve: "CVE-2026-45349"
+      note: "chat/completions 用他人 chat_id 继续对话"
+    - cve: "CVE-2026-45399"
+      note: "tasks/stop 越权停他人任务"
+
+  STORED_XSS:
+    - cve: "CVE-2026-54011"
+      note: "Mermaid securityLevel: loose"
+    - cve: "CVE-2026-44549"
+      note: "Excel 单元格内容未转义"
+    - cve: "CVE-2026-45665"
+      note: "DOMPurify 顺序错，markdown [x](javascript:) 可执行"
+    - cve: "CVE-2026-45314"
+      note: "SVG data URI 头像触发 XSS"
+    - cve: "CVE-2026-45303"
+      note: "iframe sandbox 失效，localStorage token 泄露"
+    - cve: "CVE-2026-45318"
+      note: "Office/Excel 预览 {@html} 无 DOMPurify"
+
+  FILE_EXTENSION_XSS:
+    - cve: "CVE-2026-45315"
+      note: "文件预览依赖扩展名决定 Content-Type"
+
+  SSRF:
+    - cve: "CVE-2026-45401"
+      note: "302 重定向绕过 URL 校验"
+    - cve: "CVE-2026-45400"
+      note: "backslash 解析差异绕过"
+    - cve: "CVE-2026-45331"
+      note: "IPv6 / IANA 保留段绕过"
+    - cve: "CVE-2025-65958"
+      note: "/retrieval/process/web 完全无验证"
+
+  PERMISSION_LEVEL_CONFUSION:
+    - cve: "CVE-2026-45316"
+      note: "notes pin 操作只检查 read 权限"
+    - cve: "CVE-2026-44571"
+      note: "standard channel 消息 update 只需 read"
+    - cve: "CVE-2026-44564"
+      note: "Socket.IO 文档协作 read 权限可写"
+
+  AUTHZ_BRANCH_GAP:
+    - cve: "CVE-2026-44559"
+      note: "standard channel 成员端点漏检"
+    - cve: "CVE-2026-44561"
+      note: "deactivated 成员仍有权限"
+
+  MASS_ASSIGN:
+    - cve: "CVE-2026-45396"
+      note: "feedback 伪造 user_id"
+    - cve: "CVE-2026-44550"
+      note: "FolderForm 在他人空间建文件夹"
+
+  PARAMETER_BINDING:
+    - cve: "CVE-2026-45365"
+      note: "bypass_filter 绕过模型访问控制"
+    - cve: "CVE-2026-44555"
+      note: "base_model_id 模型链绕过"
+
+  UNAUTH_ENDPOINT:
+    - cve: "CVE-2026-45397"
+      note: "未认证 RAG 配置泄露"
+    - cve: "CVE-2026-45667"
+      note: "未认证 embedding 生成计费 DoS"
+    - cve: "CVE-2024-8053"
+      note: "未认证 PDF 生成 DoS"
+
+  INDIRECT_OBJECT_REF:
+    - cve: "CVE-2026-45402"
+      note: "file_id 跨用户引用读+覆写"
+    - cve: "CVE-2026-45671"
+      note: "shared-chat 分支绕过，读/改/删他人文件"
+    - cve: "CVE-2026-44555"
+      note: "base_model_id 模型链绕过"
+
+  AUTH_PARAM_COMPLETENESS:
+    - date: "2026-06-24"
+      target: "FlightHub2 /manage/api/v1/account-auth"
+      note: "只传 account 不传 password，直接返回 super-admin token"
+      severity: "Critical"
+      lesson: "JS 代码描述了需要3个参数，但服务端在 password 缺失时未做校验"

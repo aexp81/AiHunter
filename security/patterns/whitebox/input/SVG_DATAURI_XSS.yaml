@@ -1,0 +1,19 @@
+id: SVG_DATAURI_XSS
+name: "XSS：SVG / data URI 在同源渲染时执行脚本"
+applicable: both
+category: input
+cwe: CWE-79
+
+trigger:
+  - "image_url / profile_image 接受 data:image/svg+xml"
+  - "服务端按 image/svg+xml + Content-Disposition: inline 直出"
+  - "前端用 innerHTML 注入 SVG"
+
+reasoning_chain:
+  - "执行规则：以下每条必须逐一执行，grep 命令必须实际运行，不允许跳过"
+  - "问：image 字段是否接受 data:image/svg+xml 或上传 .svg？"
+  - "白盒：grep -rn 'svg+xml\\|data:image' backend/ src/"
+  - "问：服务端返回该数据时 media_type 是否 svg、Content-Disposition 是否 inline、是否栅格化为 png？"
+  - "白盒：grep -rn 'StreamingResponse\\|media_type\\|Content-Disposition' backend/"
+  - "如果：inline SVG 未经栅格化/sanitize 且同源渲染 → 漏洞"
+  - "验证：profile/webhook image 设 data:image/svg+xml;base64,<含 onload>，直接访问该 URL 看是否弹窗"

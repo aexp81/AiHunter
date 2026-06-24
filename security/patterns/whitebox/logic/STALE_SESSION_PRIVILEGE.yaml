@@ -1,0 +1,23 @@
+id: STALE_SESSION_PRIVILEGE
+name: "长连接会话权限降级后未失效"
+applicable: whitebox
+category: logic
+cwe: CWE-613
+
+trigger:
+  - "应用使用 WebSocket / Socket.IO / SSE 等长连接"
+  - "有权限降级功能（admin → user）"
+  - "会话池维护在内存中"
+
+reasoning_chain:
+  - "执行规则：以下每条必须逐一执行，grep 命令必须实际运行，不允许跳过"
+  - "问：应用是否使用长连接？(WebSocket / Socket.IO / SSE)"
+  - "白盒：grep -rn 'socketio\\|SocketIO\\|websocket\\|WebSocket\\|EventSource' --include='*.py' --include='*.js'"
+  - "问：连接建立时，用户角色/权限是否被缓存进会话池或连接对象？"
+  - "白盒：定位 connect/on_connect 处理函数，查看是否存 role/permission 到内存(如 SESSION_POOL[sid] = {...})"
+  - "问：处理 socket 事件时，权限是实时查库还是读缓存的连接状态？"
+  - "白盒：grep -rn '@sio.on\\|@socketio.on' -A 15，检查事件处理内是否重新查询 user.role"
+  - "问：降权/封禁用户的代码路径，是否同步断开或刷新其现有连接？"
+  - "白盒：grep -rn 'role\\s*=\\|update.*role\\|ban\\|deactivate' --include='*.py' -A 10 | grep -i 'disconnect\\|socket\\|session'"
+  - "如果：权限读缓存 + 降权时未断开/刷新连接 → 陈旧会话保留旧权限"
+  - "验证：建连接 → 被降权 → 通过旧连接重试高权限操作"

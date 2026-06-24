@@ -1,0 +1,19 @@
+id: PERMISSION_LEVEL_CONFUSION
+name: "权限级别混淆：读权限被当作写权限使用"
+applicable: both
+category: authz
+cwe: CWE-863
+
+trigger:
+  - "同一资源有 read / write 分级共享（AccessGrants）"
+  - "某端点执行状态修改操作（pin/unpin/update/delete/toggle/save/restore）"
+  - "看到写操作的鉴权检查用了 permission='read'"
+
+reasoning_chain:
+  - "执行规则：以下每条必须逐一执行，grep 命令必须实际运行，不允许跳过"
+  - "问：哪些端点是状态修改操作（pin/update/delete/toggle/save）？"
+  - "白盒：grep -rn \"permission='read'\\|type=\\\"read\\\"\" routers/ | grep -iE 'pin|update|delete|toggle|save'"
+  - "问：同文件内 update/delete 用的是 read 还是 write？（横向对比兄弟端点）"
+  - "白盒：grep -rn 'has_access\\|channel_has_access' <file>，逐个比对 permission 实参"
+  - "如果：写操作端点检查 read 而兄弟端点检查 write → 漏洞存在"
+  - "验证：以 read-only 共享身份调 update → 预期 403（确认基线）；同身份调 pin/save/toggle/restore → 若仍 200 则读写错位"

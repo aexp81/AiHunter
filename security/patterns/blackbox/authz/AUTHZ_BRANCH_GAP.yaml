@@ -1,0 +1,17 @@
+id: AUTHZ_BRANCH_GAP
+name: "授权分支遗漏：非常规类型/停用状态绕过"
+applicable: blackbox
+category: authz
+cwe: CWE-862
+
+trigger:
+  - "资源有多种类型（group/dm/standard/channel）"
+  - "成员可被停用或移除"
+
+# 执行规则：以下每条必须逐一执行
+reasoning_chain:
+  - "问：某操作在 group/dm 类型被拦，换到 standard 类型是否放行？"
+  - "问：被踢出/停用后，用旧 token + 旧资源 ID 直接调 API 是否仍 200？"
+  - "问：离开群组后旧 session 是否还能访问群组消息？"
+  - "如果非常规类型通过或停用成员仍可访问 → 授权分支遗漏"
+  - "对比：常规类型返回 403，非常规类型返回 200 → 明确记录差异"

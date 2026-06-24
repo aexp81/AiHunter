@@ -1,0 +1,20 @@
+id: IFRAME_SANDBOX_NULLIFIED
+name: "XSS：iframe sandbox 同时含 allow-scripts 与 allow-same-origin"
+applicable: both
+category: input
+cwe: CWE-79
+
+trigger:
+  - "sandbox=\"allow-scripts allow-same-origin\" 二者并存"
+  - "sandbox 值硬编码而非读用户/管理员配置"
+  - "iframe srcdoc/embeds/html 用户可控（改 chat history JSON）"
+
+reasoning_chain:
+  - "执行规则：以下每条必须逐一执行，grep 命令必须实际运行，不允许跳过"
+  - "问：哪些 iframe 同时给了 scripts + same-origin？"
+  - "白盒：grep -rn 'allow-scripts' src/ | grep 'allow-same-origin'"
+  - "问：sandbox 值是否硬编码 true 而非读配置？"
+  - "白盒：grep -rn 'allowSameOrigin\\|allowScripts' src/"
+  - "问：iframe 内容是否用户可控（chat history embeds/html 字段）？"
+  - "如果：scripts+same-origin 并存 + 内容可控 → iframe 内脚本可读父级 localStorage token"
+  - "验证：HTML 渲染视图/citation/embeds 注入 <script>fetch(...localStorage.token)，分享后他人打开看是否执行"

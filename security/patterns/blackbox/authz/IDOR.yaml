@@ -1,0 +1,25 @@
+id: IDOR
+name: "越权访问资源（IDOR）"
+applicable: blackbox
+category: authz
+cwe: CWE-639
+
+trigger:
+  - "API 端点路径或参数中含有 ID（/api/resource/{id} 或 ?id=xxx）"
+  - "用户可以创建和访问自己的资源"
+
+# 执行规则：以下每条必须逐一执行
+reasoning_chain:
+  - "问：用账户 A 创建一个资源，记录资源 ID（数字递增还是 UUID？）"
+  - "问：用账户 B 的 token + A 的资源 ID 发 GET，返回 200+数据 还是 403/404？"
+  - "如果 200 → 横向 IDOR 确认，继续测试更多方法"
+  - "问：用 B 的 token 对 A 的资源 ID 发 DELETE，返回 200 还是 403？"
+  - "问：用 B 的 token 对 A 的资源 ID 发 PUT/PATCH，返回 200 还是 403？"
+  - "问：子资源路径 /api/resource/{A的ID}/messages 是否也无权限检查？"
+  - "问：GET 返回 403 但 DELETE 返回 200？→ 方法级权限遗漏，仍是高危"
+  - "问：普通用户 token 访问 /api/admin/* 或 /api/organizations/ 是否返回数据？"
+  - "问：批量操作接口（/api/resource/batch）是否单独做了权限检查？"
+
+behavior_signals:
+  confirmed: "B 的 token 成功读取/修改/删除 A 的数据"
+  check_404: "返回 404 不代表安全，可能是有权限检查的 Not Found"

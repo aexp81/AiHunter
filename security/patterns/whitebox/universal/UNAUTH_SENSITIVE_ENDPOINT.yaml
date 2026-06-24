@@ -1,0 +1,17 @@
+id: UNAUTH_SENSITIVE_ENDPOINT
+name: "未认证敏感端点：router 批量加鉴权时单点遗漏"
+applicable: both
+category: universal
+cwe: CWE-306
+
+trigger:
+  - "同 router 多数端点有 Depends(get_*_user)，个别遗漏"
+  - "存在 debug/诊断遗留路由"
+
+reasoning_chain:
+  - "执行规则：以下每条必须逐一执行，grep 命令必须实际运行，不允许跳过"
+  - "问：哪些 handler 缺 Depends 鉴权？"
+  - "白盒：grep -rn '@router.\\(get\\|post\\)' routers/ —— 对照下一行是否有 Depends(get_verified_user/get_admin_user)"
+  - "问：缺 Depends 的 handler 是否读 config、调昂贵函数(EMBEDDING)、或解析用户输入(pdf/markdown)？"
+  - "如果：无 auth + 返回 config / 触发重计算 / 解析无大小限制 → 泄露或 DoS"
+  - "验证：无 token curl 该端点，看返回 200 还是 401；返回 200 且回显配置 → 信息泄露；重复/超大 payload 致 CPU 飙升 → DoS"

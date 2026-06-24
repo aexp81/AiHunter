@@ -7,31 +7,32 @@
 ## 知识库结构
 
 ```
-security/                              # ★ 新架构（三层分离）
-├── INDEX.yaml                         #   Layer 0：触发索引（每次测试必加载，< 60行）
-├── patterns/
-│   ├── blackbox/                      #   Layer 1：黑盒执行清单（按需加载，每文件<40行）
-│   │   ├── auth/                      #     AUTH_PARAM_COMPLETENESS（★新增）
-│   │   │                              #     LDAP_NULL_PASSWORD, DEFAULT_CREDENTIAL
-│   │   ├── authz/                     #     IDOR, MASS_ASSIGN, PARAMETER_BINDING
-│   │   │                              #     PERMISSION_LEVEL_CONFUSION, AUTHZ_BRANCH_GAP
-│   │   │                              #     INDIRECT_OBJECT_REF
-│   │   ├── input/                     #     PATH_TRAVERSAL, SSRF, STORED_XSS
-│   │   │                              #     FILE_EXTENSION_XSS
-│   │   ├── local/                     #  ★新增：本地/桌面/二进制提权（5个模式）
-│   │   │                              #     WRITABLE_LOAD_PATH_HIJACK, PRIVILEGED_FILE_OP_TOCTOU
-│   │   │                              #     LOCAL_IPC_PEER_TRUST, SANDBOX_POLICY_COVERAGE_GAP
-│   │   │                              #     CLIENT_SIDE_POLICY_LOCAL_BYPASS
-│   │   └── universal/                 #     UNAUTH_ENDPOINT
-│   └── whitebox/                      #   Layer 1：白盒执行清单（含grep命令）
-│       ├── auth/ authz/ input/
-│       ├── logic/ universal/
-│       └── local/                     #  ★新增：本地/二进制提权白盒审计（含MEMORY_CORRUPTION_PRIMITIVE_AUDIT）
-├── cases/                             #   Layer 2：CVE案例库（不加载进上下文，按需查询）
-│   └── blackbox-cases.yaml
-├── anchor-traps/                      #   ★ 新增：AI实测失败记录（强制检查）
-│   └── anchor-traps.yaml
-├── insights/                          #   L3 挖洞导航思路库（writeup 提炼）
+AiHunter/（仓库根）
+├── security/                          # ★ 三层分离执行架构
+│   ├── INDEX.yaml                     #   Layer 0：触发索引（每次测试必加载）
+│   ├── patterns/
+│   │   ├── blackbox/                  #   Layer 1：黑盒执行清单（按需加载，每文件<40行）
+│   │   │   ├── auth/                  #     AUTH_PARAM_COMPLETENESS（★新增）
+│   │   │   │                          #     LDAP_NULL_PASSWORD, DEFAULT_CREDENTIAL
+│   │   │   ├── authz/                 #     IDOR, MASS_ASSIGN, PARAMETER_BINDING
+│   │   │   │                          #     PERMISSION_LEVEL_CONFUSION, AUTHZ_BRANCH_GAP
+│   │   │   │                          #     INDIRECT_OBJECT_REF
+│   │   │   ├── input/                 #     PATH_TRAVERSAL, SSRF, STORED_XSS
+│   │   │   │                          #     FILE_EXTENSION_XSS
+│   │   │   ├── local/                 #  ★新增：本地/桌面/二进制提权（5个模式）
+│   │   │   │                          #     WRITABLE_LOAD_PATH_HIJACK, PRIVILEGED_FILE_OP_TOCTOU
+│   │   │   │                          #     LOCAL_IPC_PEER_TRUST, SANDBOX_POLICY_COVERAGE_GAP
+│   │   │   │                          #     CLIENT_SIDE_POLICY_LOCAL_BYPASS
+│   │   │   └── universal/             #     UNAUTH_ENDPOINT
+│   │   └── whitebox/                  #   Layer 1：白盒执行清单（含grep命令）
+│   │       ├── auth/ authz/ input/
+│   │       ├── logic/ universal/
+│   │       └── local/                 #  ★新增：本地/二进制提权白盒审计（含MEMORY_CORRUPTION_PRIMITIVE_AUDIT）
+│   ├── cases/                         #   Layer 2：CVE案例库（不加载进上下文，按需查询）
+│   │   └── blackbox-cases.yaml
+│   └── anchor-traps/                  #   ★ AI实测失败记录（强制检查）
+│       └── anchor-traps.yaml
+├── insights/                          #   L3 挖洞导航思路库（writeup 提炼，241条，按 phase 分目录）
 │   ├── README.md
 │   ├── articles.yaml
 │   └── <phase>/<ID>.yaml

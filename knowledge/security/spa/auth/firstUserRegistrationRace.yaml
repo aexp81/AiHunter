@@ -1,0 +1,106 @@
+id: firstUserRegistrationRace
+name: "多认证路径首用户注册竞态提权"
+applicable: both
+domain: auth
+severity: high
+priority: P2
+accessRequired: lowPrivilege
+
+# ─── 思维链 ───────────────────────────────────
+
+observe:
+  signals:
+    - indicator: "登录页面同时存在多种认证方式（本地注册 + LDAP + OAuth/SSO）"
+      observableAt: "登录页面 UI，多个输入框或认证按钮"
+    - indicator: "系统处于初始化状态，首页显示注册引导或'创建管理员账户'而非登录框"
+      observableAt: "首次访问首页的跳转行为"
+    - indicator: "首次注册的用户自动获得 admin 角色"
+      observableAt: "注册后 API 响应或 JWT 解码中的 role 字段"
+
+infer:
+  assumptions:
+    - assumption: "首用户注册是串行事件——只有一个人在某个时刻完成注册成为 admin"
+      weakness: "多个用户可以同时发起注册/首次登录，尤其 LDAP/OAuth 场景下多个员工可能同时触发"
+    - assumption: "所有认证路径（本地注册/LDAP/OAuth）的安全措施是一致的"
+      weakness: "不同路径由不同人不同时间编写，安全修复常常只应用到被报告的那条路径而不全局排查"
+
+question:
+  challenges:
+    - target: "首用户注册是否为串行"
+      method: "并发发送多个首次注册/登录请求，检查是否多个用户获得 admin"
+      priority: high
+      effort: medium
+    - target: "各认证路径安全措施是否一致"
+      method: "分别通过本地注册、LDAP、OAuth 测试同一安全控制，对比行为差异"
+      priority: medium
+      effort: low
+
+verify:
+  blackbox:
+    - action: "访问目标首页，观察是否显示注册引导而非登录框"
+      expectedResult: "显示登录框说明已有用户"
+      onMatch: "已有用户，竞态窗口已关闭，跳过此测试"
+      onMismatch: "显示注册引导，系统可能是全新部署，继续"
+    - action: "检查登录页面有哪些认证方式"
+      expectedResult: "存在 LDAP 或 OAuth 选项"
+      onMatch: "有多入口，继续"
+      onMismatch: "仅本地注册，竞态可能已被修复，降低优先级"
+    - action: "准备多个有效凭据，编写并发脚本同时发送首次登录请求（100ms 内全部发出）"
+      expectedResult: "请求成功到达服务器"
+      onMatch: "检查每个用户的角色"
+      onMismatch: "调整并发策略"
+    - action: "检查每个用户的 role 字段"
+      expectedResult: "只有一个 admin，其余为默认角色"
+      onMatch: "无竞态，系统安全"
+      onMismatch: "多个 admin 出现 → 竞态漏洞确认"
+  whitebox:
+    grepTargets:
+      - grep: "has_users|get_num_users"
+        reviewPoint: "是否在 insert 之前调用来决定角色（不安全），还是在 insert 之后调用来验证（安全）"
+      - grep: "role.*admin.*insert|insert.*role.*admin"
+        reviewPoint: "所有赋予 admin 角色的代码位置，检查是否都用了先插后查模式"
+      - grep: "DEFAULT_USER_ROLE"
+        reviewPoint: "对比哪些路径用了安全模式（先插默认角色再升级），哪些直接判定 admin"
+    codeReviewFocus: >
+      找到所有调用 insert_new_auth 的位置，
+      检查每个位置在 insert 之前是否有 has_users/get_num_users 的检查。
+      对比已修复的路径（如 signup_handler）和未修复的路径。
+
+extend:
+  - check: "同一应用的其他认证路径（SAML、Trusted Header、API Token Exchange）是否存在同样的先查后写逻辑"
+    reasoning: "本漏洞根因是修复不一致——signup 修了但 LDAP/OAuth 没修，其他路径同理"
+  - check: "修复后的代码中 get_num_users() 是否传了正确的 db session 参数"
+    reasoning: "原文提到 DATABASE_ENABLE_SESSION_SHARING 默认 False，不传 db 参数可能使用独立 session，理论上仍有竞态窗口"
+
+# ─── 补充信息 ──────────────────────────────────
+
+vulnRoot: "多认证路径的首用户注册先查用户数再插入，并发请求在检查和插入之间的窗口内都拿到 admin"
+prerequisite: "目标为全新部署实例（无现有用户）且启用了 LDAP 或 OAuth 认证"
+practicalNotes: >
+  实战利用难度高（CVSS AC:H）：需要全新实例 + 有效 LDAP/OAuth 凭据 + 精确并发。
+  大多数生产实例已有 admin 用户，竞态窗口已关闭。
+  建议定位为快速检查项——花 2 分钟确认是否全新实例，是就测，不是就跳过。
+  accessRequired 标为 lowPrivilege 是因为需要有效的 LDAP 域账号或 OAuth IdP 账号。
+transferableTo:
+  - "所有有'首用户自动 admin'设计且支持多种认证方式的自部署应用（如 Gitea、Portainer、Drone）"
+  - "同一应用内已修复某条路径但其他路径未同步的场景"
+
+# ─── 事实证据 ──────────────────────────────────
+
+evidence:
+  - id: CVE-2026-45675
+    source: "https://github.com/open-webui/open-webui/security/advisories/GHSA-h3ww-q6xx-w7x3"
+    product: "Open WebUI"
+    versions: "<= 0.8.12"
+    rootCause: >
+      LDAP 和 OAuth 认证路径使用 TOCTOU 模式分配首用户 admin 角色。
+      先调用 has_users()/get_num_users()==0 检查用户表是否为空，
+      再调用 insert_new_auth() 创建用户并赋予 admin 角色。
+      两步之间没有原子性保证，并发请求都能通过检查。
+      signup_handler 已用"先插后查"模式修复，但 LDAP/OAuth 路径未同步。
+    fix: >
+      PR #23626 (commit 96a0b3239)：LDAP/OAuth 改为先用 DEFAULT_USER_ROLE 插入，
+      插入后 get_num_users()==1 才升级 admin。与 signup_handler 使用相同模式。
+    learned: >
+      signup_handler 注释明确写了 "to avoid TOCTOU race"，说明开发者知道问题但没全局排查。
+      DATABASE_ENABLE_SESSION_SHARING 默认 False（env.py:387），每次调用用独立 session，扩大竞态窗口。

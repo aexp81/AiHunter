@@ -1,118 +1,61 @@
 # 测试触发索引
-# 作用：测试开始时加载此文件，根据发现的攻击面决定加载哪些模式文件
-# 规模：黑盒触发部分 < 60 行，含白盒触发 < 120 行，不放任何 reasoning_chain，只做路由
+# 作用：测试开始时加载此文件，根据发现的攻击面决定加载哪些 SPA 文件
+# 规模：控制在 120 行以内，不放任何思维链，只做路由
 #
 # 使用方式：
 # 1. 侦查阶段识别目标的攻击面类型
-# 2. 查此索引找到对应模式文件路径
-# 3. 加载对应文件，逐条执行 reasoning_chain
-# 4. 禁止跳过任何一条，包括"看起来不像有问题"的检查
+# 2. 查此索引找到对应 SPA 文件路径
+# 3. 加载对应文件，按 observe→infer→question→verify→extend 逐步执行
+# 4. 不允许跳过任何一步
 
-version: "2.0"
-
-# ============================================================
-# 强制基础检查（对每个接口无条件执行，不依赖接口类型判断）
-# ============================================================
-universal:
-  - universal/UNAUTH_ENDPOINT          # 去掉 token，先测未认证行为
+version: "3.0"
 
 # ============================================================
-# 按攻击面类型触发
+# 按攻击面类型触发（路径指向 spa/<domain>/<ID>）
 # ============================================================
 triggers:
 
-  # 任何认证/登录接口（login / auth / token / session / account）
+  # 任何认证/登录接口
   auth_endpoint:
-    - auth/AUTH_PARAM_COMPLETENESS     # ★ 最高优先级，参数完整性测试
-    - auth/LDAP_NULL_PASSWORD          # 空密码/缺失密码绕过
-    - auth/DEFAULT_CREDENTIAL          # 默认弱凭证
+    - spa/auth/emptyCredentialAuthBypass
+    - spa/auth/firstUserRegistrationRace
 
-  # 文件操作（upload / download / file / attachment / avatar）
-  file_operation:
-    - input/PATH_TRAVERSAL
-    - input/FILE_EXTENSION_XSS
+  # 文件操作（upload / download / file / attachment）
+  file_operation: []
 
-  # 带 ID 参数的接口（/api/resource/{id} 或 ?id=xxx）
-  id_parameter:
-    - authz/IDOR
-    - authz/INDIRECT_OBJECT_REF
+  # 带 ID 参数的接口（/api/resource/{id}）
+  id_parameter: []
 
-  # 接受 JSON body 的创建/更新接口（create / update / register）
-  json_mutation:
-    - authz/MASS_ASSIGN
-    - authz/PARAMETER_BINDING
+  # 接受 JSON body 的创建/更新接口
+  json_mutation: []
 
-  # 接受 URL 参数的功能（webhook / image_url / url / src）
-  url_parameter:
-    - input/SSRF
+  # 接受 URL 参数的功能（webhook / image_url）
+  url_parameter: []
 
-  # 富文本/Markdown 渲染（markdown / mermaid / katex / editor）
-  rich_text:
-    - input/STORED_XSS
-    - input/FILE_EXTENSION_XSS
+  # 富文本/Markdown 渲染
+  rich_text: []
 
-  # 分级共享资源（shared / read-only / permission / role）
-  shared_resource:
-    - authz/PERMISSION_LEVEL_CONFUSION
-    - authz/AUTHZ_BRANCH_GAP
+  # 分级共享资源（shared / permission / role）
+  shared_resource: []
 
-  # 本地/桌面/二进制提权（有本地低权限 shell；目标是服务/安装器/客户端/沙箱运行时）
-  local_binary:
-    - local/WRITABLE_LOAD_PATH_HIJACK       # DLL/EXE/dylib/配置 搜索路径落在可写目录
-    - local/PRIVILEGED_FILE_OP_TOCTOU        # root 文件操作的符号链接/junction 竞态
-    - local/LOCAL_IPC_PEER_TRUST             # 本地 socket/RPC 身份伪造/抢占
-    - local/SANDBOX_POLICY_COVERAGE_GAP      # 沙箱/权限模型 API/通道覆盖盲区
-    - local/CLIENT_SIDE_POLICY_LOCAL_BYPASS  # 客户端强制策略本地旁路
+  # 本地/桌面/二进制提权
+  local_binary: []
 
 # ============================================================
 # 白盒专用触发（有源码时额外加载）
 # ============================================================
 whitebox_triggers:
 
-  auth_endpoint:
-    - whitebox/auth/LDAP_NULL_PASSWORD
-    - whitebox/auth/FIX_INCONSISTENCY
-    - whitebox/auth/FEATURE_GATE_UI_ONLY
+  auth_endpoint: []
 
-  file_operation:
-    - whitebox/input/PATH_TRAVERSAL
-    - whitebox/input/FILE_EXTENSION_TRUST
+  file_operation: []
 
-  id_parameter:
-    - whitebox/authz/MISSING_OWNERSHIP_CHECK
-    - whitebox/authz/INDIRECT_OBJECT_REF
-    - whitebox/authz/ENDPOINT_PARITY_MISSING
+  id_parameter: []
 
-  json_mutation:
-    - whitebox/authz/MASS_ASSIGN_PYDANTIC_EXTRA
-    - whitebox/input/PARAMETER_BINDING_EXPOSURE
+  json_mutation: []
 
-  url_parameter:
-    - whitebox/input/SSRF_VALIDATION_BYPASS
+  url_parameter: []
 
-  rich_text:
-    - whitebox/input/THIRD_PARTY_LOOSE_CONFIG
-    - whitebox/input/DOMPURIFY_ORDER_XSS
-    - whitebox/input/SVG_DATAURI_XSS
-    - whitebox/input/IFRAME_SANDBOX_NULLIFIED
+  rich_text: []
 
-  long_connection:
-    - whitebox/logic/STALE_SESSION_PRIVILEGE
-
-  dynamic_execution:
-    - whitebox/input/RCE_DYNAMIC_LOAD_EXEC
-
-  authz_general:
-    - whitebox/authz/AUTHZ_BRANCH_GAP
-    - whitebox/authz/PERMISSION_LEVEL_CONFUSION
-
-  # 本地/桌面/二进制提权（有源码或二进制可审计时）
-  local_binary:
-    - whitebox/local/WRITABLE_LOAD_PATH_HIJACK
-    - whitebox/local/PRIVILEGED_FILE_OP_TOCTOU
-    - whitebox/local/LOCAL_IPC_PEER_TRUST
-    - whitebox/local/SANDBOX_POLICY_COVERAGE_GAP
-    - whitebox/local/MEMORY_CORRUPTION_PRIMITIVE_AUDIT   # 内核/解析器 UAF/OOB/溢出
-
-  universal:
-    - whitebox/universal/UNAUTH_SENSITIVE_ENDPOINT
+  local_binary: []

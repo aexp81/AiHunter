@@ -1,0 +1,10 @@
+# 测试总结（每次测试结束后追加，强制步骤）
+# 用途：积累实战经验，后期从 newInsight 中提炼直觉
+
+- target: "47.98.53.122 (DJI FlightHub 2)"
+  date: "2026-06-25"
+  hits:
+    - "emptyCredentialAuthBypass → confirmed, omit timestamp bypasses hash"
+  misses:
+    - "observe 'LDAP option' too narrow, non-LDAP target same vuln"
+  newInsight: "Client-side hash without server-side empty check = universal bypass"
